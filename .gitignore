@@ -1,4 +1,8 @@
 .codex
+.codex-last-session.txt
 .DS_Store
 Thumbs.db
 *.log
+work/
+*.iso
+*.CHECKSUM
