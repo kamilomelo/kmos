@@ -236,12 +236,18 @@ prompt_secret() {
   while true; do
     read -r -s -p "$prompt: " first
     printf '\n' >&2
+    if [[ -z "$first" ]]; then
+      if ask_yes_no "Leave $prompt empty?" "no"; then
+        printf '\n'
+        return 0
+      fi
+      continue
+    fi
+
     read -r -s -p "Confirm $prompt: " second
     printf '\n' >&2
 
-    if [[ -z "$first" ]]; then
-      warn "Password cannot be empty."
-    elif [[ "$first" != "$second" ]]; then
+    if [[ "$first" != "$second" ]]; then
       warn "Passwords do not match."
     else
       printf '%s\n' "$first"
@@ -309,31 +315,19 @@ select_disk() {
   default_disk="${candidates[0]}"
   selectable=("${candidates[@]}")
 
-  if [[ ${#candidates[@]} -eq 1 ]]; then
+  info "Autodetected install disk."
+  detail "Default" "$default_disk"
+  if ask_yes_no "Use autodetected default disk?" "yes"; then
     TARGET_DISK="$default_disk"
-    success "Autodetected install disk: $TARGET_DISK"
     return 0
   fi
 
-  info "Multiple candidate disks detected."
-  detail "Default" "$default_disk"
+  selectable=("${fallback[@]}")
   info "Available disks:"
   for idx in "${!selectable[@]}"; do
     printf '  %d) ' "$((idx + 1))" >&2
     lsblk -d -p -o NAME,SIZE,MODEL,TYPE,TRAN,RM,HOTPLUG "${selectable[$idx]}" >&2
   done
-
-  if [[ ${#fallback[@]} -gt ${#selectable[@]} ]]; then
-    warn "USB/removable disks were hidden from the default list."
-    if ask_yes_no "Show USB/removable disks too?" "no"; then
-      selectable=("${fallback[@]}")
-      info "All non-loop disks:"
-      for idx in "${!selectable[@]}"; do
-        printf '  %d) ' "$((idx + 1))" >&2
-        lsblk -d -p -o NAME,SIZE,MODEL,TYPE,TRAN,RM,HOTPLUG "${selectable[$idx]}" >&2
-      done
-    fi
-  fi
 
   while true; do
     read -r -p "Select target disk [1-${#selectable[@]}] (default: 1): " choice
@@ -539,10 +533,10 @@ collect_system_config() {
   esac
   SWAPFILE_SIZE="$(prompt_default "Swap file size, or 0 to skip" "$SWAPFILE_SIZE")"
 
+  ROOT_PASSWORD="$(prompt_secret "root password")"
+
   read -r -p "Primary username: " PRIMARY_USER
   [[ "$PRIMARY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || die "Invalid primary username."
-
-  ROOT_PASSWORD="$(prompt_secret "root password")"
   PRIMARY_PASSWORD="$(prompt_secret "$PRIMARY_USER password")"
 
   while ask_yes_no "Add another user?" "no"; do
@@ -651,7 +645,7 @@ configure_target_system() {
     printf '127.0.1.1 %s.localdomain %s\n' "$HOSTNAME" "$HOSTNAME"
   } > "$MOUNT_POINT/etc/hosts"
 
-  printf 'root:%s\n' "$ROOT_PASSWORD" | arch-chroot "$MOUNT_POINT" chpasswd
+  set_user_password "root" "$ROOT_PASSWORD"
   create_user "$PRIMARY_USER" "$PRIMARY_PASSWORD" "1"
 
   for user in "${EXTRA_USERS[@]}"; do
@@ -695,7 +689,19 @@ create_user() {
   else
     arch-chroot "$MOUNT_POINT" useradd -m -s /bin/bash "$username"
   fi
-  printf '%s:%s\n' "$username" "$password" | arch-chroot "$MOUNT_POINT" chpasswd
+  set_user_password "$username" "$password"
+}
+
+set_user_password() {
+  local username="$1"
+  local password="$2"
+
+  if [[ -n "$password" ]]; then
+    printf '%s:%s\n' "$username" "$password" | arch-chroot "$MOUNT_POINT" chpasswd
+  else
+    arch-chroot "$MOUNT_POINT" passwd -d "$username"
+    warn "No password set for $username."
+  fi
 }
 
 create_swapfile() {
