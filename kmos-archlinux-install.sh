@@ -557,8 +557,8 @@ confirm_install_plan() {
   printf '\n' >&2
   info "Install plan:"
   detail "Disk" "$TARGET_DISK"
-  detail "Root" "$ROOT_PARTITION -> /"
   detail "Boot" "$BOOT_PARTITION -> /boot"
+  detail "Root" "$ROOT_PARTITION -> /"
   detail "Root fs" "$ROOT_FILESYSTEM"
   detail "Timezone" "$TIMEZONE"
   detail "Locale" "$LOCALE"
