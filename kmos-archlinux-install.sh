@@ -7,7 +7,7 @@ set -Eeuo pipefail
 
 MOUNT_POINT="/mnt"
 STEP_INDEX=0
-STEP_TOTAL=7
+STEP_TOTAL=8
 
 UI_RESET=""
 UI_BOLD=""
@@ -29,6 +29,9 @@ LOCALE="en_US.UTF-8"
 KEYMAP=""
 HOSTNAME=""
 SWAPFILE_SIZE="4G"
+KRUB_ID="krub"
+MICROCODE_PACKAGE=""
+ENABLE_OS_PROBER="no"
 ROOT_PASSWORD=""
 PRIMARY_USER=""
 PRIMARY_PASSWORD=""
@@ -43,6 +46,11 @@ BASE_PACKAGES=(
   linux-firmware
   sudo
   nano
+)
+
+KRUB_PACKAGES=(
+  grub
+  efibootmgr
 )
 
 TIMEZONE_OPTIONS=(
@@ -187,6 +195,17 @@ ask_yes_no() {
   done
 }
 
+add_package() {
+  local package="$1"
+  local current=""
+
+  for current in "${BASE_PACKAGES[@]}"; do
+    [[ "$current" == "$package" ]] && return 0
+  done
+
+  BASE_PACKAGES+=("$package")
+}
+
 prompt_default() {
   local prompt="$1"
   local default="$2"
@@ -262,7 +281,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot blkid cfdisk findmnt genfstab grep lsblk mkfs.btrfs mkfs.ext4 mkfs.fat mkfs.xfs mount pacstrap partprobe sed timedatectl udevadm)
+  local tools=(arch-chroot blkid cfdisk findmnt genfstab grep lsblk mkfs.fat mount pacstrap partprobe sed sort timedatectl udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -499,6 +518,66 @@ validate_partitions() {
   [[ "$(partition_type "$ROOT_PARTITION")" == "part" ]] || return 1
 }
 
+detect_microcode_package() {
+  if grep -qm1 "GenuineIntel" /proc/cpuinfo 2>/dev/null; then
+    printf 'intel-ucode\n'
+  elif grep -qm1 "AuthenticAMD" /proc/cpuinfo 2>/dev/null; then
+    printf 'amd-ucode\n'
+  else
+    printf 'none\n'
+  fi
+}
+
+detect_other_os_candidate() {
+  local name=""
+  local type=""
+  local fstype=""
+  local parttype=""
+
+  while read -r name type fstype parttype; do
+    [[ "$type" == "part" ]] || continue
+    [[ "$name" == "$ROOT_PARTITION" || "$name" == "$BOOT_PARTITION" ]] && continue
+    case "$fstype" in
+      ntfs|vfat) return 0 ;;
+    esac
+    [[ "$parttype" == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" ]] && return 0
+  done < <(lsblk -rpno NAME,TYPE,FSTYPE,PARTTYPE "$TARGET_DISK")
+
+  return 1
+}
+
+collect_krub_config() {
+  local package=""
+  local os_prober_default="no"
+
+  for package in "${KRUB_PACKAGES[@]}"; do
+    add_package "$package"
+  done
+
+  MICROCODE_PACKAGE="$(detect_microcode_package)"
+  if [[ "$MICROCODE_PACKAGE" != "none" ]]; then
+    detail "Microcode guess" "$MICROCODE_PACKAGE"
+    if ask_yes_no "Install this CPU microcode package?" "yes"; then
+      add_package "$MICROCODE_PACKAGE"
+    else
+      MICROCODE_PACKAGE="none"
+    fi
+  else
+    warn "CPU microcode package was not auto-detected."
+  fi
+
+  if detect_other_os_candidate; then
+    os_prober_default="yes"
+  fi
+
+  if ask_yes_no "Enable Windows/other OS detection for krub?" "$os_prober_default"; then
+    ENABLE_OS_PROBER="yes"
+    add_package "os-prober"
+  else
+    ENABLE_OS_PROBER="no"
+  fi
+}
+
 collect_system_config() {
   local extra_user=""
   local extra_password=""
@@ -524,15 +603,19 @@ collect_system_config() {
   ROOT_FILESYSTEM="$(prompt_choice "Root filesystem options" "$ROOT_FILESYSTEM" "${FILESYSTEM_OPTIONS[@]}")"
   case "$ROOT_FILESYSTEM" in
     xfs)
-      BASE_PACKAGES+=(xfsprogs)
+      command -v mkfs.xfs >/dev/null 2>&1 || die "mkfs.xfs is not available in this live ISO."
+      add_package "xfsprogs"
       ;;
-    ext4) ;;
+    ext4)
+      command -v mkfs.ext4 >/dev/null 2>&1 || die "mkfs.ext4 is not available in this live ISO."
+      ;;
     btrfs)
       command -v mkfs.btrfs >/dev/null 2>&1 || die "mkfs.btrfs is not available in this live ISO."
-      BASE_PACKAGES+=(btrfs-progs)
+      add_package "btrfs-progs"
       ;;
     *) die "Unsupported root filesystem: $ROOT_FILESYSTEM" ;;
   esac
+  collect_krub_config
   SWAPFILE_SIZE="$(prompt_default "Swap file size, or 0 to skip" "$SWAPFILE_SIZE")"
 
   ROOT_PASSWORD="$(prompt_secret "root password")"
@@ -566,6 +649,9 @@ confirm_install_plan() {
   detail "Boot" "$BOOT_PARTITION -> /boot"
   detail "Root" "$ROOT_PARTITION -> /"
   detail "Root fs" "$ROOT_FILESYSTEM"
+  detail "Bootloader" "$KRUB_ID"
+  detail "Microcode" "$MICROCODE_PACKAGE"
+  detail "OS detection" "$ENABLE_OS_PROBER"
   detail "Timezone" "$TIMEZONE"
   detail "Locale" "$LOCALE"
   if [[ ${#ADDITIONAL_LOCALES[@]} -gt 0 ]]; then
@@ -742,6 +828,49 @@ create_swapfile() {
   success "Swap file configured: $SWAPFILE_SIZE"
 }
 
+enable_krub_os_detection() {
+  local grub_defaults="$MOUNT_POINT/etc/default/grub"
+
+  [[ "$ENABLE_OS_PROBER" == "yes" ]] || return 0
+
+  if [[ ! -f "$grub_defaults" ]]; then
+    warn "Could not find /etc/default/grub to enable OS detection."
+    return 0
+  fi
+
+  if grep -q '^#\?GRUB_DISABLE_OS_PROBER=' "$grub_defaults"; then
+    sed -i 's/^#\?GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=false/' "$grub_defaults"
+  else
+    printf '\nGRUB_DISABLE_OS_PROBER=false\n' >> "$grub_defaults"
+  fi
+
+  success "krub OS detection enabled."
+}
+
+verify_krub_mounts() {
+  findmnt -rn --mountpoint "$MOUNT_POINT" >/dev/null 2>&1 || die "$MOUNT_POINT is not mounted."
+  findmnt -rn --mountpoint "$MOUNT_POINT/boot" >/dev/null 2>&1 || die "$MOUNT_POINT/boot is not mounted."
+
+  findmnt "$MOUNT_POINT" >&2
+  findmnt "$MOUNT_POINT/boot" >&2
+}
+
+install_krub_bootloader() {
+  verify_krub_mounts
+  enable_krub_os_detection
+
+  arch-chroot "$MOUNT_POINT" mkinitcpio -p linux
+  arch-chroot "$MOUNT_POINT" grub-install \
+    --target=x86_64-efi \
+    --efi-directory=/boot \
+    --bootloader-id="$KRUB_ID" \
+    --boot-directory=/boot \
+    --recheck
+  arch-chroot "$MOUNT_POINT" grub-mkconfig -o /boot/grub/grub.cfg
+
+  success "krub bootloader installed."
+}
+
 main() {
   init_ui
   print_banner
@@ -771,7 +900,10 @@ main() {
   advance_step "Configuring target system"
   configure_target_system
 
-  final_success "Base Arch system prepared. Bootloader installation is the next stage."
+  advance_step "Installing krub bootloader"
+  install_krub_bootloader
+
+  final_success "Arch system prepared with krub. Unmount and reboot when ready."
 }
 
 main "$@"
