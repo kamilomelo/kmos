@@ -554,6 +554,10 @@ collect_system_config() {
 }
 
 confirm_install_plan() {
+  local extra_user_summary=""
+  local extra_sudo_summary=""
+  local idx=0
+
   printf '\n' >&2
   info "Install plan:"
   detail "Disk" "$TARGET_DISK"
@@ -567,6 +571,16 @@ confirm_install_plan() {
   fi
   detail "Hostname" "$HOSTNAME"
   detail "Primary user" "$PRIMARY_USER"
+  if [[ ${#EXTRA_USERS[@]} -gt 0 ]]; then
+    extra_user_summary="${EXTRA_USERS[*]}"
+    for idx in "${!EXTRA_USERS[@]}"; do
+      if [[ "${EXTRA_SUDO[$idx]}" == "1" ]]; then
+        extra_sudo_summary+="${EXTRA_USERS[$idx]} "
+      fi
+    done
+    detail "Other users" "$extra_user_summary"
+    detail "Other sudo" "${extra_sudo_summary:-none}"
+  fi
   detail "Swap file" "$SWAPFILE_SIZE"
 
   printf '\n%b%s%b\n' "${UI_DANGER}${UI_BOLD}" "Destructive action" "$UI_RESET" >&2
