@@ -280,7 +280,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot blkid cfdisk chmod dd findmnt genfstab grep lsblk mkfs.fat mount pacstrap partprobe rm sed sort timedatectl udevadm umount)
+  local tools=(arch-chroot blkid cfdisk chmod dd findmnt genfstab grep install lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -537,17 +537,16 @@ detect_other_os_candidate() {
 
 collect_krub_config() {
   local package=""
-  local os_prober_default="no"
 
   for package in "${KRUB_PACKAGES[@]}"; do
     add_package "$package"
   done
 
   if detect_other_os_candidate; then
-    os_prober_default="yes"
+    detail "Other OS" "candidate detected"
   fi
 
-  if ask_yes_no "Enable Windows/other OS detection for krub?" "$os_prober_default"; then
+  if ask_yes_no "Add Windows/other OS entries to krub?" "no"; then
     ENABLE_OS_PROBER="yes"
     add_package "os-prober"
     add_package "ntfs-3g"
@@ -856,6 +855,76 @@ enable_krub_os_detection() {
   success "krub OS detection enabled."
 }
 
+find_windows_boot_partition() {
+  local name=""
+  local type=""
+  local fstype=""
+  local tmp_mount="/tmp/kmos-windows-efi"
+
+  if [[ -f "$MOUNT_POINT/boot/EFI/Microsoft/Boot/bootmgfw.efi" ]]; then
+    printf '%s\n' "$BOOT_PARTITION"
+    return 0
+  fi
+
+  mkdir -p "$tmp_mount"
+  if findmnt -rn --mountpoint "$tmp_mount" >/dev/null 2>&1; then
+    umount "$tmp_mount" || die "$tmp_mount is already mounted and could not be unmounted."
+  fi
+
+  while read -r name type fstype; do
+    [[ "$type" == "part" && "$fstype" == "vfat" ]] || continue
+    [[ "$name" == "$BOOT_PARTITION" ]] && continue
+
+    if mount -o ro "$name" "$tmp_mount" 2>/dev/null; then
+      if [[ -f "$tmp_mount/EFI/Microsoft/Boot/bootmgfw.efi" ]]; then
+        umount "$tmp_mount"
+        rmdir "$tmp_mount" 2>/dev/null || true
+        printf '%s\n' "$name"
+        return 0
+      fi
+      umount "$tmp_mount"
+    fi
+  done < <(lsblk -rpno NAME,TYPE,FSTYPE "$TARGET_DISK")
+
+  rmdir "$tmp_mount" 2>/dev/null || true
+  return 1
+}
+
+write_windows_krub_entry() {
+  local windows_partition=""
+  local windows_uuid=""
+  local entry_file="$MOUNT_POINT/etc/grub.d/41_windows"
+
+  [[ "$ENABLE_OS_PROBER" == "yes" ]] || return 0
+
+  windows_partition="$(find_windows_boot_partition || true)"
+  if [[ -z "$windows_partition" ]]; then
+    warn "No Windows Boot Manager was found on the EFI partitions."
+    return 0
+  fi
+
+  windows_uuid="$(blkid -o value -s UUID "$windows_partition" 2>/dev/null || true)"
+  if [[ -z "$windows_uuid" ]]; then
+    warn "Could not read the EFI filesystem UUID for $windows_partition."
+    return 0
+  fi
+
+  install -Dm0755 /dev/stdin "$entry_file" <<WINDOWS_ENTRY
+#!/bin/sh
+cat <<'GRUB_ENTRY'
+menuentry "Windows Boot Manager" {
+    insmod part_gpt
+    insmod fat
+    insmod chain
+    search --no-floppy --fs-uuid --set=root $windows_uuid
+    chainloader /EFI/Microsoft/Boot/bootmgfw.efi
+}
+GRUB_ENTRY
+WINDOWS_ENTRY
+
+  success "Windows Boot Manager entry prepared for krub."
+}
+
 verify_krub_mounts() {
   findmnt -rn --mountpoint "$MOUNT_POINT" >/dev/null 2>&1 || die "$MOUNT_POINT is not mounted."
   findmnt -rn --mountpoint "$MOUNT_POINT/boot" >/dev/null 2>&1 || die "$MOUNT_POINT/boot is not mounted."
@@ -867,6 +936,7 @@ verify_krub_mounts() {
 install_krub_bootloader() {
   verify_krub_mounts
   enable_krub_os_detection
+  write_windows_krub_entry
 
   arch-chroot "$MOUNT_POINT" mkinitcpio -p linux
   arch-chroot "$MOUNT_POINT" grub-install \
