@@ -6,6 +6,7 @@
 set -Eeuo pipefail
 
 MOUNT_POINT="/mnt"
+WIFI_HANDOFF_DIR="/run/kmos/wifi"
 STEP_INDEX=0
 STEP_TOTAL=8
 
@@ -31,6 +32,11 @@ HOSTNAME=""
 SWAPFILE_SIZE="4G"
 KRUB_ID="krub"
 ENABLE_OS_PROBER="no"
+ENABLE_WIFI_AFTER_BOOT="no"
+WIFI_ADAPTER=""
+WIFI_SSID=""
+WIFI_PASSWORD=""
+WIFI_HIDDEN="0"
 ROOT_PASSWORD=""
 PRIMARY_USER=""
 PRIMARY_PASSWORD=""
@@ -44,6 +50,7 @@ BASE_PACKAGES=(
   linux
   linux-firmware
   openssh
+  wpa_supplicant
   sudo
   nano
 )
@@ -281,7 +288,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot blkid cfdisk chmod dd findmnt genfstab grep install lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl udevadm umount)
+  local tools=(arch-chroot blkid cfdisk chmod dd findmnt genfstab grep install ln lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -556,6 +563,44 @@ collect_krub_config() {
   fi
 }
 
+read_handoff_value() {
+  local name="$1"
+  local value=""
+
+  [[ -r "$WIFI_HANDOFF_DIR/$name" ]] || return 1
+  IFS= read -r value < "$WIFI_HANDOFF_DIR/$name" || true
+  printf '%s\n' "$value"
+}
+
+collect_wifi_boot_config() {
+  [[ -d "$WIFI_HANDOFF_DIR" ]] || return 0
+
+  WIFI_ADAPTER="$(read_handoff_value adapter || true)"
+  WIFI_SSID="$(read_handoff_value ssid || true)"
+  WIFI_PASSWORD="$(read_handoff_value password || true)"
+  WIFI_HIDDEN="$(read_handoff_value hidden || true)"
+
+  if [[ -z "$WIFI_ADAPTER" || -z "$WIFI_SSID" || -z "$WIFI_PASSWORD" ]]; then
+    warn "Wi-Fi handoff data is incomplete. Run kmos-wifi-connect.sh again if you need Wi-Fi after reboot."
+    ENABLE_WIFI_AFTER_BOOT="no"
+    return 0
+  fi
+
+  if [[ ! -d "/sys/class/net/$WIFI_ADAPTER/wireless" ]]; then
+    warn "$WIFI_ADAPTER does not look like a wireless adapter on this live system."
+    ENABLE_WIFI_AFTER_BOOT="no"
+    return 0
+  fi
+
+  case "$WIFI_HIDDEN" in
+    1) WIFI_HIDDEN="1" ;;
+    *) WIFI_HIDDEN="0" ;;
+  esac
+
+  ENABLE_WIFI_AFTER_BOOT="yes"
+  detail "Wi-Fi boot" "$WIFI_ADAPTER -> $WIFI_SSID"
+}
+
 collect_system_config() {
   local extra_user=""
   local extra_password=""
@@ -594,6 +639,7 @@ collect_system_config() {
     *) die "Unsupported root filesystem: $ROOT_FILESYSTEM" ;;
   esac
   collect_krub_config
+  collect_wifi_boot_config
   SWAPFILE_SIZE="$(prompt_default "Swap file size, or 0 to skip" "$SWAPFILE_SIZE")"
 
   ROOT_PASSWORD="$(prompt_secret "root password")"
@@ -630,6 +676,11 @@ confirm_install_plan() {
   detail "Bootloader" "$KRUB_ID"
   detail "OS detection" "$ENABLE_OS_PROBER"
   detail "SSH" "enabled"
+  if [[ "$ENABLE_WIFI_AFTER_BOOT" == "yes" ]]; then
+    detail "Wi-Fi boot" "$WIFI_ADAPTER -> $WIFI_SSID"
+  else
+    detail "Wi-Fi boot" "not configured"
+  fi
   detail "Timezone" "$TIMEZONE"
   detail "Locale" "$LOCALE"
   if [[ ${#ADDITIONAL_LOCALES[@]} -gt 0 ]]; then
@@ -750,8 +801,9 @@ configure_target_system() {
 SUDOERS
 
   configure_ssh
+  configure_wifi_after_boot
   create_swapfile
-  unset ROOT_PASSWORD PRIMARY_PASSWORD
+  unset ROOT_PASSWORD PRIMARY_PASSWORD WIFI_PASSWORD
   EXTRA_PASSWORDS=()
   success "Target system basics configured."
 }
@@ -812,6 +864,47 @@ SSHD_CONFIG
 
   arch-chroot "$MOUNT_POINT" systemctl enable sshd.service
   success "OpenSSH enabled for first boot."
+}
+
+configure_wifi_after_boot() {
+  local wpa_config="$MOUNT_POINT/etc/wpa_supplicant/wpa_supplicant-$WIFI_ADAPTER.conf"
+  local network_config="$MOUNT_POINT/etc/systemd/network/25-wifi.network"
+
+  [[ "$ENABLE_WIFI_AFTER_BOOT" == "yes" ]] || return 0
+
+  install -d -m 0755 "$MOUNT_POINT/etc/wpa_supplicant" "$MOUNT_POINT/etc/systemd/network"
+
+  {
+    printf 'ctrl_interface=DIR=/run/wpa_supplicant GROUP=wheel\n'
+    printf 'update_config=0\n'
+    printf '\n'
+  } > "$wpa_config"
+
+  printf '%s\n' "$WIFI_PASSWORD" \
+    | arch-chroot "$MOUNT_POINT" wpa_passphrase "$WIFI_SSID" \
+    | sed '/^[[:space:]]*#psk=/d' >> "$wpa_config"
+
+  if [[ "$WIFI_HIDDEN" == "1" ]]; then
+    sed -i '/^[[:space:]]*ssid=/a\    scan_ssid=1' "$wpa_config"
+  fi
+
+  chmod 600 "$wpa_config"
+
+  install -Dm0644 /dev/stdin "$network_config" <<WIFI_NETWORK
+[Match]
+Name=$WIFI_ADAPTER
+
+[Network]
+DHCP=yes
+WIFI_NETWORK
+
+  ln -sfn /run/systemd/resolve/stub-resolv.conf "$MOUNT_POINT/etc/resolv.conf"
+  arch-chroot "$MOUNT_POINT" systemctl enable "wpa_supplicant@$WIFI_ADAPTER.service"
+  arch-chroot "$MOUNT_POINT" systemctl enable systemd-networkd.service
+  arch-chroot "$MOUNT_POINT" systemctl enable systemd-resolved.service
+  rm -f "$WIFI_HANDOFF_DIR/adapter" "$WIFI_HANDOFF_DIR/ssid" "$WIFI_HANDOFF_DIR/password" "$WIFI_HANDOFF_DIR/hidden"
+  rmdir "$WIFI_HANDOFF_DIR" 2>/dev/null || true
+  success "Wi-Fi configured for first boot."
 }
 
 create_swapfile() {

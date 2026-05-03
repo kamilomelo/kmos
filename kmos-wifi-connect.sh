@@ -18,6 +18,7 @@ FINAL_SUCCESS_ICON="✔"
 STEP_INDEX=0
 STEP_TOTAL=4
 NETWORK_NAMES=()
+WIFI_HANDOFF_DIR="/run/kmos/wifi"
 
 repeat_char() {
   local char="$1"
@@ -121,7 +122,7 @@ print_banner() {
 
 require_tools() {
   local missing=()
-  local tools=(ip iwctl rfkill ping sed timedatectl)
+  local tools=(chmod ip iwctl mkdir rfkill ping sed timedatectl)
   local t
 
   for t in "${tools[@]}"; do
@@ -363,6 +364,21 @@ connect_wifi() {
   success "Connection command completed."
 }
 
+save_wifi_handoff() {
+  local adapter="$1"
+  local ssid_name="$2"
+  local password="$3"
+  local hidden_network="$4"
+
+  mkdir -p "$WIFI_HANDOFF_DIR"
+  chmod 700 "${WIFI_HANDOFF_DIR%/*}" "$WIFI_HANDOFF_DIR"
+  printf '%s\n' "$adapter" > "$WIFI_HANDOFF_DIR/adapter"
+  printf '%s\n' "$ssid_name" > "$WIFI_HANDOFF_DIR/ssid"
+  printf '%s\n' "$password" > "$WIFI_HANDOFF_DIR/password"
+  printf '%s\n' "$hidden_network" > "$WIFI_HANDOFF_DIR/hidden"
+  chmod 600 "$WIFI_HANDOFF_DIR/adapter" "$WIFI_HANDOFF_DIR/ssid" "$WIFI_HANDOFF_DIR/password" "$WIFI_HANDOFF_DIR/hidden"
+}
+
 verify_internet() {
   read -r -p "Press Enter to ping and wait"
   ping -c 3 km-robota.com || return 1
@@ -401,10 +417,11 @@ main() {
 
   advance_step "Connecting to Wi-Fi"
   connect_wifi "$adapter" "$ssid_name" "$password" "$hidden_network"
-  unset password
 
   advance_step "Verifying internet access"
   verify_internet || die "Then go and fix it."
+  save_wifi_handoff "$adapter" "$ssid_name" "$password" "$hidden_network"
+  unset password
   printf '\n' >&2
   info "Updating system clock"
   timedatectl set-timezone Europe/Zurich
