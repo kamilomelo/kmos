@@ -30,7 +30,6 @@ KEYMAP=""
 HOSTNAME=""
 SWAPFILE_SIZE="4G"
 KRUB_ID="krub"
-MICROCODE_PACKAGE=""
 ENABLE_OS_PROBER="no"
 ROOT_PASSWORD=""
 PRIMARY_USER=""
@@ -518,16 +517,6 @@ validate_partitions() {
   [[ "$(partition_type "$ROOT_PARTITION")" == "part" ]] || return 1
 }
 
-detect_microcode_package() {
-  if grep -qm1 "GenuineIntel" /proc/cpuinfo 2>/dev/null; then
-    printf 'intel-ucode\n'
-  elif grep -qm1 "AuthenticAMD" /proc/cpuinfo 2>/dev/null; then
-    printf 'amd-ucode\n'
-  else
-    printf 'none\n'
-  fi
-}
-
 detect_other_os_candidate() {
   local name=""
   local type=""
@@ -553,18 +542,6 @@ collect_krub_config() {
   for package in "${KRUB_PACKAGES[@]}"; do
     add_package "$package"
   done
-
-  MICROCODE_PACKAGE="$(detect_microcode_package)"
-  if [[ "$MICROCODE_PACKAGE" != "none" ]]; then
-    detail "Microcode guess" "$MICROCODE_PACKAGE"
-    if ask_yes_no "Install this CPU microcode package?" "yes"; then
-      add_package "$MICROCODE_PACKAGE"
-    else
-      MICROCODE_PACKAGE="none"
-    fi
-  else
-    warn "CPU microcode package was not auto-detected."
-  fi
 
   if detect_other_os_candidate; then
     os_prober_default="yes"
@@ -650,7 +627,6 @@ confirm_install_plan() {
   detail "Root" "$ROOT_PARTITION -> /"
   detail "Root fs" "$ROOT_FILESYSTEM"
   detail "Bootloader" "$KRUB_ID"
-  detail "Microcode" "$MICROCODE_PACKAGE"
   detail "OS detection" "$ENABLE_OS_PROBER"
   detail "Timezone" "$TIMEZONE"
   detail "Locale" "$LOCALE"
