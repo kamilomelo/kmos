@@ -43,6 +43,7 @@ BASE_PACKAGES=(
   base
   linux
   linux-firmware
+  openssh
   sudo
   nano
 )
@@ -628,6 +629,7 @@ confirm_install_plan() {
   detail "Root fs" "$ROOT_FILESYSTEM"
   detail "Bootloader" "$KRUB_ID"
   detail "OS detection" "$ENABLE_OS_PROBER"
+  detail "SSH" "enabled"
   detail "Timezone" "$TIMEZONE"
   detail "Locale" "$LOCALE"
   if [[ ${#ADDITIONAL_LOCALES[@]} -gt 0 ]]; then
@@ -747,6 +749,7 @@ configure_target_system() {
 %wheel ALL=(ALL:ALL) ALL
 SUDOERS
 
+  configure_ssh
   create_swapfile
   unset ROOT_PASSWORD PRIMARY_PASSWORD
   EXTRA_PASSWORDS=()
@@ -792,6 +795,23 @@ set_user_password() {
     arch-chroot "$MOUNT_POINT" passwd -d "$username"
     warn "No password set for $username."
   fi
+}
+
+configure_ssh() {
+  local sshd_config="$MOUNT_POINT/etc/ssh/sshd_config"
+
+  if [[ -f "$sshd_config" ]] && ! grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config.d/\*.conf' "$sshd_config"; then
+    sed -i '1iInclude /etc/ssh/sshd_config.d/*.conf' "$sshd_config"
+  fi
+
+  install -Dm0644 /dev/stdin "$MOUNT_POINT/etc/ssh/sshd_config.d/10-kmos.conf" <<'SSHD_CONFIG'
+PermitRootLogin no
+PermitEmptyPasswords no
+PasswordAuthentication yes
+SSHD_CONFIG
+
+  arch-chroot "$MOUNT_POINT" systemctl enable sshd.service
+  success "OpenSSH enabled for first boot."
 }
 
 create_swapfile() {
