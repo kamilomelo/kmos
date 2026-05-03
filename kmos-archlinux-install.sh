@@ -13,7 +13,7 @@ STARSHIP_PRESET_DIR="$SCRIPT_DIR/assets/starship-presets"
 STARSHIP_PRESET_MODE="holow"
 STARSHIP_PRESET_THEME="light"
 STEP_INDEX=0
-STEP_TOTAL=8
+STEP_TOTAL=9
 
 UI_RESET=""
 UI_BOLD=""
@@ -1183,6 +1183,11 @@ install_krub_bootloader() {
   success "krub bootloader installed."
 }
 
+update_target_system() {
+  arch-chroot "$MOUNT_POINT" pacman -Syyuu --noconfirm
+  success "Target system updated."
+}
+
 main() {
   init_ui
   print_banner
@@ -1211,6 +1216,9 @@ main() {
 
   advance_step "Configuring target system"
   configure_target_system
+
+  advance_step "Updating target system"
+  update_target_system
 
   advance_step "Installing krub bootloader"
   install_krub_bootloader
