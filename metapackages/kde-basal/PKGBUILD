@@ -1,0 +1,31 @@
+# Maintainer: Kamilo Melo
+pkgname=kde-basal
+pkgver=2026.05.03
+pkgrel=1
+pkgdesc="KMOS lean KDE Plasma package set"
+arch=('any')
+url="https://github.com/kamilomelo/KMOS"
+license=('MIT')
+depends=(
+  'plasma-desktop'
+  'sddm'
+  'networkmanager'
+  'plasma-nm'
+  'konsole'
+  'kate'
+  'dolphin'
+  'gwenview'
+  'kinfocenter'
+  'partitionmanager'
+  'okular'
+  'spectacle'
+  'plasma-systemmonitor'
+  'systemsettings'
+  'ttf-dejavu'
+  'mesa'
+  'xorg-xwayland'
+)
+
+package() {
+  :
+}

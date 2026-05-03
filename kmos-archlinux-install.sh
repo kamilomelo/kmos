@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 WIFI_HANDOFF_DIR="/run/kmos/wifi"
 BASAL_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/basal"
+KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/kmos-kde-install.sh"
 STARSHIP_PRESET_DIR="$SCRIPT_DIR/assets/starship-presets"
 STARSHIP_PRESET_MODE="holow"
 STARSHIP_PRESET_THEME="light"
@@ -1188,6 +1189,77 @@ update_target_system() {
   success "Target system updated."
 }
 
+run_kde_installer() {
+  local local_installer="$SCRIPT_DIR/kmos-kde-install.sh"
+  local fetched_installer="/tmp/kmos-kde-install.sh"
+
+  if [[ -f "$local_installer" ]]; then
+    bash "$local_installer" --target "$MOUNT_POINT"
+    return 0
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$KDE_INSTALLER_URL" -o "$fetched_installer" || die "Could not fetch KDE installer."
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$fetched_installer" "$KDE_INSTALLER_URL" || die "Could not fetch KDE installer."
+  else
+    die "KDE installer not found locally and neither curl nor wget is available."
+  fi
+
+  bash "$fetched_installer" --target "$MOUNT_POINT"
+}
+
+offer_kde_desktop() {
+  printf '\n' >&2
+  info "You have a minimal install of Arch Linux."
+  if ask_yes_no "Do you want to install KDE desktop?" "no"; then
+    run_kde_installer
+  fi
+}
+
+unmount_target() {
+  sync
+  if findmnt -rn --mountpoint "$MOUNT_POINT" >/dev/null 2>&1; then
+    umount -R "$MOUNT_POINT" || warn "$MOUNT_POINT could not be unmounted cleanly."
+  fi
+}
+
+offer_power_action() {
+  local choice=""
+
+  printf '\n' >&2
+  info "What now?"
+  log "  1) Reboot"
+  log "  2) Shutdown"
+  log "  3) Return to shell"
+
+  while true; do
+    read -r -p "Select [1-3] (default: 1): " choice
+    choice="${choice:-1}"
+    case "$choice" in
+      1)
+        final_success "Install complete. Rebooting."
+        unmount_target
+        reboot
+        return 0
+        ;;
+      2)
+        final_success "Install complete. Shutting down."
+        unmount_target
+        shutdown -h now
+        return 0
+        ;;
+      3)
+        final_success "Install complete. Returning to shell."
+        return 0
+        ;;
+      *)
+        warn "Invalid selection."
+        ;;
+    esac
+  done
+}
+
 main() {
   init_ui
   print_banner
@@ -1223,7 +1295,8 @@ main() {
   advance_step "Installing krub bootloader"
   install_krub_bootloader
 
-  final_success "Arch system prepared with krub. Unmount and reboot when ready."
+  offer_kde_desktop
+  offer_power_action
 }
 
 main "$@"
