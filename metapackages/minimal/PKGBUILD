@@ -1,8 +1,8 @@
 # Maintainer: Kamilo Melo
-pkgname=basal
+pkgname=kmos-minimal
 pkgver=2026.05.03
 pkgrel=1
-pkgdesc="KMOS basal command-line package set"
+pkgdesc="KMOS minimal command-line package set"
 arch=('any')
 url="https://github.com/kamilomelo/KMOS"
 license=('MIT')

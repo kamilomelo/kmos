@@ -7,8 +7,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
-KDE_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/kde-basal"
-KDE_METAPACKAGE_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/metapackages/kde-basal/PKGBUILD"
+KDE_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/kde"
+KDE_METAPACKAGE_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/metapackages/kde/PKGBUILD"
 KDE_METAPACKAGE_PKGBUILD=""
 
 UI_RESET=""
@@ -76,7 +76,7 @@ detail() {
 print_banner() {
   printf '\n' >&2
   printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "KMOS KDE Install" "$UI_RESET" >&2
-  log "Lean KDE Plasma desktop layer for an existing KMOS basal install."
+  log "Lean KDE Plasma desktop layer for an existing KMOS minimal install."
 }
 
 require_root() {
@@ -120,7 +120,7 @@ verify_target() {
 
 load_kde_metapackage() {
   local pkgbuild="$KDE_METAPACKAGE_DIR/PKGBUILD"
-  local tmp_pkgbuild="/tmp/kmos-kde-basal.PKGBUILD"
+  local tmp_pkgbuild="/tmp/kmos-kde.PKGBUILD"
 
   if [[ ! -r "$pkgbuild" ]]; then
     if command -v curl >/dev/null 2>&1; then
@@ -138,7 +138,7 @@ load_kde_metapackage() {
   mapfile -t KDE_PACKAGES < <(source "$pkgbuild"; printf '%s\n' "${depends[@]}" | sort -u)
   [[ ${#KDE_PACKAGES[@]} -gt 0 ]] || die "KDE metapackage has no dependencies."
 
-  detail "Metapackage" "kde-basal"
+  detail "Metapackage" "kmos-kde"
   detail "Packages" "${#KDE_PACKAGES[@]}"
 }
 
@@ -149,7 +149,7 @@ install_kde_packages() {
 
 install_kde_assets() {
   if [[ -r "$KDE_METAPACKAGE_PKGBUILD" ]]; then
-    install -Dm0644 "$KDE_METAPACKAGE_PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/kde-basal/PKGBUILD"
+    install -Dm0644 "$KDE_METAPACKAGE_PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/kde/PKGBUILD"
   fi
 }
 

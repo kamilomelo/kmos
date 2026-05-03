@@ -8,7 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 WIFI_HANDOFF_DIR="/run/kmos/wifi"
-BASAL_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/basal"
+MINIMAL_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/minimal"
 KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/kmos-kde-install.sh"
 STARSHIP_PRESET_DIR="$SCRIPT_DIR/assets/starship-presets"
 STARSHIP_PRESET_MODE="holow"
@@ -221,12 +221,12 @@ add_package() {
   BASE_PACKAGES+=("$package")
 }
 
-load_basal_metapackage() {
-  local pkgbuild="$BASAL_METAPACKAGE_DIR/PKGBUILD"
+load_minimal_metapackage() {
+  local pkgbuild="$MINIMAL_METAPACKAGE_DIR/PKGBUILD"
   local package=""
 
   if [[ ! -r "$pkgbuild" ]]; then
-    warn "Basal metapackage not found: $pkgbuild"
+    warn "Minimal metapackage not found: $pkgbuild"
     return 0
   fi
 
@@ -235,7 +235,7 @@ load_basal_metapackage() {
     add_package "$package"
   done < <(source "$pkgbuild"; printf '%s\n' "${depends[@]}")
 
-  success "Basal metapackage loaded."
+  success "Minimal metapackage loaded."
 }
 
 prompt_default() {
@@ -665,7 +665,7 @@ collect_system_config() {
       ;;
     *) die "Unsupported root filesystem: $ROOT_FILESYSTEM" ;;
   esac
-  load_basal_metapackage
+  load_minimal_metapackage
   collect_krub_config
   collect_wifi_boot_config
   SWAPFILE_SIZE="$(prompt_default "Swap file size, or 0 to skip" "$SWAPFILE_SIZE")"
@@ -703,7 +703,7 @@ confirm_install_plan() {
   detail "Root fs" "$ROOT_FILESYSTEM"
   detail "Bootloader" "$KRUB_ID"
   detail "OS detection" "$ENABLE_OS_PROBER"
-  detail "Metapackage" "basal"
+  detail "Metapackage" "kmos-minimal"
   detail "SSH" "enabled"
   detail "Starship" "$STARSHIP_PRESET_MODE/$STARSHIP_PRESET_THEME"
   if [[ "$ENABLE_WIFI_AFTER_BOOT" == "yes" ]]; then
@@ -928,8 +928,8 @@ SSHD_CONFIG
 install_kmos_assets() {
   local preset=""
 
-  if [[ -r "$BASAL_METAPACKAGE_DIR/PKGBUILD" ]]; then
-    install -Dm0644 "$BASAL_METAPACKAGE_DIR/PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/basal/PKGBUILD"
+  if [[ -r "$MINIMAL_METAPACKAGE_DIR/PKGBUILD" ]]; then
+    install -Dm0644 "$MINIMAL_METAPACKAGE_DIR/PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/minimal/PKGBUILD"
   fi
 
   if [[ -d "$STARSHIP_PRESET_DIR" ]]; then
