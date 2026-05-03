@@ -34,6 +34,7 @@ KRUB_ID="krub"
 ENABLE_OS_PROBER="no"
 ENABLE_WIFI_AFTER_BOOT="no"
 WIFI_ADAPTER=""
+WIFI_MAC=""
 WIFI_SSID=""
 WIFI_PASSWORD=""
 WIFI_HIDDEN="0"
@@ -49,6 +50,7 @@ BASE_PACKAGES=(
   base
   linux
   linux-firmware
+  dhcpcd
   openssh
   wpa_supplicant
   sudo
@@ -288,7 +290,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot blkid cfdisk chmod dd findmnt genfstab grep install ln lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl udevadm umount)
+  local tools=(arch-chroot blkid cat cfdisk chmod dd findmnt genfstab grep install ln lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -592,6 +594,8 @@ collect_wifi_boot_config() {
     return 0
   fi
 
+  WIFI_MAC="$(cat "/sys/class/net/$WIFI_ADAPTER/address" 2>/dev/null || true)"
+
   case "$WIFI_HIDDEN" in
     1) WIFI_HIDDEN="1" ;;
     *) WIFI_HIDDEN="0" ;;
@@ -866,17 +870,18 @@ SSHD_CONFIG
   success "OpenSSH enabled for first boot."
 }
 
+wpa_quote() {
+  local value="$1"
+
+  value="$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '"%s"' "$value"
+}
+
 configure_wifi_after_boot() {
   local wpa_config="$MOUNT_POINT/etc/wpa_supplicant/wpa_supplicant-$WIFI_ADAPTER.conf"
-  local network_config="$MOUNT_POINT/etc/systemd/network/25-wifi.network"
-  local wpa_output=""
+  local link_config="$MOUNT_POINT/etc/systemd/network/10-kmos-wifi.link"
 
   [[ "$ENABLE_WIFI_AFTER_BOOT" == "yes" ]] || return 0
-
-  if ! command -v arch-chroot >/dev/null 2>&1; then
-    warn "arch-chroot is unavailable. Skipping first-boot Wi-Fi setup."
-    return 0
-  fi
 
   install -d -m 0755 "$MOUNT_POINT/etc/wpa_supplicant" "$MOUNT_POINT/etc/systemd/network"
 
@@ -884,41 +889,34 @@ configure_wifi_after_boot() {
     printf 'ctrl_interface=DIR=/run/wpa_supplicant GROUP=wheel\n'
     printf 'update_config=0\n'
     printf '\n'
+    printf 'network={\n'
+    printf '    ssid=%s\n' "$(wpa_quote "$WIFI_SSID")"
+    if [[ "$WIFI_HIDDEN" == "1" ]]; then
+      printf '    scan_ssid=1\n'
+    fi
+    printf '    psk=%s\n' "$(wpa_quote "$WIFI_PASSWORD")"
+    printf '    key_mgmt=WPA-PSK\n'
+    printf '}\n'
   } > "$wpa_config"
-
-  if ! wpa_output="$(arch-chroot "$MOUNT_POINT" wpa_passphrase "$WIFI_SSID" "$WIFI_PASSWORD" 2>&1)"; then
-    warn "Could not generate first-boot Wi-Fi config. The base install will continue without Wi-Fi auto-connect."
-    printf '%s\n' "$wpa_output" >&2
-    rm -f "$wpa_config"
-    return 0
-  fi
-
-  printf '%s\n' "$wpa_output" | sed '/^[[:space:]]*#psk=/d' >> "$wpa_config"
-
-  if [[ "$WIFI_HIDDEN" == "1" ]]; then
-    sed -i '/^[[:space:]]*ssid=/a\    scan_ssid=1' "$wpa_config"
-  fi
 
   chmod 600 "$wpa_config"
 
-  install -Dm0644 /dev/stdin "$network_config" <<WIFI_NETWORK
+  if [[ -n "$WIFI_MAC" ]]; then
+    install -Dm0644 /dev/stdin "$link_config" <<WIFI_LINK
 [Match]
-Name=$WIFI_ADAPTER
+MACAddress=$WIFI_MAC
 
-[Network]
-DHCP=yes
-WIFI_NETWORK
+[Link]
+Name=$WIFI_ADAPTER
+WIFI_LINK
+  fi
 
   if ! arch-chroot "$MOUNT_POINT" systemctl enable "wpa_supplicant@$WIFI_ADAPTER.service"; then
     warn "Could not enable wpa_supplicant@$WIFI_ADAPTER.service. The base install will continue."
     return 0
   fi
-  if ! arch-chroot "$MOUNT_POINT" systemctl enable systemd-networkd.service; then
-    warn "Could not enable systemd-networkd.service. The base install will continue."
-    return 0
-  fi
-  if ! arch-chroot "$MOUNT_POINT" systemctl enable systemd-resolved.service; then
-    warn "Could not enable systemd-resolved.service. The base install will continue."
+  if ! arch-chroot "$MOUNT_POINT" systemctl enable "dhcpcd@$WIFI_ADAPTER.service"; then
+    warn "Could not enable dhcpcd@$WIFI_ADAPTER.service. The base install will continue."
     return 0
   fi
   rm -f "$WIFI_HANDOFF_DIR/adapter" "$WIFI_HANDOFF_DIR/ssid" "$WIFI_HANDOFF_DIR/password" "$WIFI_HANDOFF_DIR/hidden"
