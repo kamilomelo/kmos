@@ -7,7 +7,6 @@ arch=('any')
 url="https://github.com/kamilomelo/KMOS"
 license=('MIT')
 depends=(
-  'bash'
   'btop'
   'fastfetch'
   'starship'
