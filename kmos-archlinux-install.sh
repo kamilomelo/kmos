@@ -280,7 +280,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot blkid cfdisk findmnt genfstab grep lsblk mkfs.fat mount pacstrap partprobe sed sort timedatectl udevadm umount)
+  local tools=(arch-chroot blkid cfdisk chmod dd findmnt genfstab grep lsblk mkfs.fat mount pacstrap partprobe rm sed sort timedatectl udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -550,6 +550,7 @@ collect_krub_config() {
   if ask_yes_no "Enable Windows/other OS detection for krub?" "$os_prober_default"; then
     ENABLE_OS_PROBER="yes"
     add_package "os-prober"
+    add_package "ntfs-3g"
   else
     ENABLE_OS_PROBER="no"
   fi
@@ -795,13 +796,45 @@ set_user_password() {
 }
 
 create_swapfile() {
+  local size_mib=""
+
   [[ "$SWAPFILE_SIZE" != "0" ]] || return 0
 
-  arch-chroot "$MOUNT_POINT" fallocate -l "$SWAPFILE_SIZE" /swapfile
-  arch-chroot "$MOUNT_POINT" chmod 600 /swapfile
-  arch-chroot "$MOUNT_POINT" mkswap /swapfile
+  size_mib="$(swapfile_size_mib "$SWAPFILE_SIZE")"
+  rm -f "$MOUNT_POINT/swapfile"
+  sed -i '\|^/swapfile |d' "$MOUNT_POINT/etc/fstab"
+
+  if [[ "$ROOT_FILESYSTEM" == "btrfs" ]]; then
+    arch-chroot "$MOUNT_POINT" btrfs filesystem mkswapfile --size "${size_mib}M" /swapfile
+    arch-chroot "$MOUNT_POINT" chmod 600 /swapfile
+  else
+    dd if=/dev/zero of="$MOUNT_POINT/swapfile" bs=1M count="$size_mib" status=progress
+    chmod 600 "$MOUNT_POINT/swapfile"
+    arch-chroot "$MOUNT_POINT" mkswap /swapfile
+  fi
+
+  arch-chroot "$MOUNT_POINT" swapon /swapfile
+  arch-chroot "$MOUNT_POINT" swapoff /swapfile
   printf '/swapfile none swap defaults 0 0\n' >> "$MOUNT_POINT/etc/fstab"
   success "Swap file configured: $SWAPFILE_SIZE"
+}
+
+swapfile_size_mib() {
+  local raw_size="$1"
+  local number=""
+  local unit=""
+
+  [[ "$raw_size" =~ ^([0-9]+)([GgMm]?)$ ]] || die "Invalid swap file size: $raw_size. Use 0, 4096M, or 4G."
+
+  number="${BASH_REMATCH[1]}"
+  unit="${BASH_REMATCH[2]}"
+  [[ "$number" != "0" ]] || die "Use 0 to skip swap, not as a swap file size."
+
+  case "$unit" in
+    G|g) printf '%s\n' "$((number * 1024))" ;;
+    M|m|"") printf '%s\n' "$number" ;;
+    *) die "Invalid swap file size: $raw_size" ;;
+  esac
 }
 
 enable_krub_os_detection() {
@@ -843,6 +876,11 @@ install_krub_bootloader() {
     --boot-directory=/boot \
     --recheck
   arch-chroot "$MOUNT_POINT" grub-mkconfig -o /boot/grub/grub.cfg
+  [[ -s "$MOUNT_POINT/boot/grub/grub.cfg" ]] || die "krub did not generate /boot/grub/grub.cfg."
+  grep -q '^[[:space:]]*menuentry ' "$MOUNT_POINT/boot/grub/grub.cfg" || die "krub config has no bootable menu entries."
+  if [[ "$ENABLE_OS_PROBER" == "yes" ]] && ! grep -qi 'windows\|microsoft' "$MOUNT_POINT/boot/grub/grub.cfg"; then
+    warn "krub did not find a Windows entry. BitLocker, Windows fast startup, or the selected EFI partition may still need attention."
+  fi
 
   success "krub bootloader installed."
 }
