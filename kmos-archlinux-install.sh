@@ -869,8 +869,14 @@ SSHD_CONFIG
 configure_wifi_after_boot() {
   local wpa_config="$MOUNT_POINT/etc/wpa_supplicant/wpa_supplicant-$WIFI_ADAPTER.conf"
   local network_config="$MOUNT_POINT/etc/systemd/network/25-wifi.network"
+  local wpa_output=""
 
   [[ "$ENABLE_WIFI_AFTER_BOOT" == "yes" ]] || return 0
+
+  if ! command -v arch-chroot >/dev/null 2>&1; then
+    warn "arch-chroot is unavailable. Skipping first-boot Wi-Fi setup."
+    return 0
+  fi
 
   install -d -m 0755 "$MOUNT_POINT/etc/wpa_supplicant" "$MOUNT_POINT/etc/systemd/network"
 
@@ -880,9 +886,14 @@ configure_wifi_after_boot() {
     printf '\n'
   } > "$wpa_config"
 
-  printf '%s\n' "$WIFI_PASSWORD" \
-    | arch-chroot "$MOUNT_POINT" wpa_passphrase "$WIFI_SSID" \
-    | sed '/^[[:space:]]*#psk=/d' >> "$wpa_config"
+  if ! wpa_output="$(arch-chroot "$MOUNT_POINT" wpa_passphrase "$WIFI_SSID" "$WIFI_PASSWORD" 2>&1)"; then
+    warn "Could not generate first-boot Wi-Fi config. The base install will continue without Wi-Fi auto-connect."
+    printf '%s\n' "$wpa_output" >&2
+    rm -f "$wpa_config"
+    return 0
+  fi
+
+  printf '%s\n' "$wpa_output" | sed '/^[[:space:]]*#psk=/d' >> "$wpa_config"
 
   if [[ "$WIFI_HIDDEN" == "1" ]]; then
     sed -i '/^[[:space:]]*ssid=/a\    scan_ssid=1' "$wpa_config"
@@ -898,10 +909,18 @@ Name=$WIFI_ADAPTER
 DHCP=yes
 WIFI_NETWORK
 
-  ln -sfn /run/systemd/resolve/stub-resolv.conf "$MOUNT_POINT/etc/resolv.conf"
-  arch-chroot "$MOUNT_POINT" systemctl enable "wpa_supplicant@$WIFI_ADAPTER.service"
-  arch-chroot "$MOUNT_POINT" systemctl enable systemd-networkd.service
-  arch-chroot "$MOUNT_POINT" systemctl enable systemd-resolved.service
+  if ! arch-chroot "$MOUNT_POINT" systemctl enable "wpa_supplicant@$WIFI_ADAPTER.service"; then
+    warn "Could not enable wpa_supplicant@$WIFI_ADAPTER.service. The base install will continue."
+    return 0
+  fi
+  if ! arch-chroot "$MOUNT_POINT" systemctl enable systemd-networkd.service; then
+    warn "Could not enable systemd-networkd.service. The base install will continue."
+    return 0
+  fi
+  if ! arch-chroot "$MOUNT_POINT" systemctl enable systemd-resolved.service; then
+    warn "Could not enable systemd-resolved.service. The base install will continue."
+    return 0
+  fi
   rm -f "$WIFI_HANDOFF_DIR/adapter" "$WIFI_HANDOFF_DIR/ssid" "$WIFI_HANDOFF_DIR/password" "$WIFI_HANDOFF_DIR/hidden"
   rmdir "$WIFI_HANDOFF_DIR" 2>/dev/null || true
   success "Wi-Fi configured for first boot."
