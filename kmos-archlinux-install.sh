@@ -454,7 +454,17 @@ detect_root_partition() {
     [[ "$parttype" == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" ]] && continue
     [[ -n "$mountpoints" ]] && continue
     case "$fstype" in
-      ext4|xfs|btrfs) out_candidates+=("$name") ;;
+      ext4|xfs|btrfs)
+        out_candidates+=("$name")
+        continue
+        ;;
+    esac
+
+    # Accept fresh Linux partitions that are not formatted yet.
+    case "$parttype" in
+      0fc63daf-8483-4772-8e79-3d69d8477de4|4f68bce3-e8cd-4db1-96e7-fbcaf984b709)
+        out_candidates+=("$name")
+        ;;
     esac
   done < <(lsblk -rpno NAME,TYPE "$TARGET_DISK" | sort)
 }
