@@ -863,14 +863,13 @@ confirm_install_plan() {
 
   printf '\n%b%s%b\n' "${UI_DANGER}${UI_BOLD}" "Destructive action" "$UI_RESET" >&2
   log "The root partition will be formatted. Data on $ROOT_PARTITION will be erased."
+  log "The boot partition will be formatted as FAT32. Data on $BOOT_PARTITION will be erased."
   read -r -p "Type FORMAT to continue: " confirm
   [[ "$confirm" == "FORMAT" ]] || die "Install cancelled."
 }
 
 format_and_mount() {
-  local boot_fstype=""
   local detected_root_fstype=""
-  local fsck_rc=0
 
   case "$ROOT_FILESYSTEM" in
     ext4)
@@ -892,23 +891,9 @@ format_and_mount() {
   detected_root_fstype="$(blkid -o value -s TYPE "$ROOT_PARTITION" 2>/dev/null || true)"
   [[ "$detected_root_fstype" == "$ROOT_FILESYSTEM" ]] || die "Expected $ROOT_PARTITION to be formatted as $ROOT_FILESYSTEM, but detected: ${detected_root_fstype:-unknown}"
 
-  boot_fstype="$(partition_fstype "$BOOT_PARTITION")"
-  if [[ "$boot_fstype" != "vfat" ]]; then
-    warn "$BOOT_PARTITION is not vfat. It must be an EFI system partition for this installer."
-    read -r -p "Type FORMAT-BOOT to format it as FAT32, or anything else to stop: " confirm
-    [[ "$confirm" == "FORMAT-BOOT" ]] || die "Boot partition was not formatted."
-    run_cmd mkfs.fat -F 32 "$BOOT_PARTITION"
-    run_cmd partprobe "$TARGET_DISK" || true
-    udevadm settle || true
-  fi
-
-  # Reused EFI partitions can carry FAT metadata issues that only surface later
-  # during initramfs/grub writes. Repair/check before mounting.
-  run_cmd fsck.fat -a "$BOOT_PARTITION" || fsck_rc=$?
-  # fsck.fat exit codes: 0 (clean), 1 (errors corrected) are acceptable.
-  if ((fsck_rc > 1)); then
-    die "EFI partition check failed on $BOOT_PARTITION (fsck.fat rc=$fsck_rc). Repair it manually before continuing."
-  fi
+  run_cmd mkfs.fat -F 32 "$BOOT_PARTITION"
+  run_cmd partprobe "$TARGET_DISK" || true
+  udevadm settle || true
 
   if findmnt -rn "$MOUNT_POINT" >/dev/null 2>&1; then
     umount -R "$MOUNT_POINT" || die "$MOUNT_POINT is already mounted and could not be unmounted."
