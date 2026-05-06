@@ -329,7 +329,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot blkid cat cfdisk chmod dd dirname findmnt genfstab grep install ln lspci lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl touch udevadm umount)
+  local tools=(arch-chroot awk blkid cat cfdisk chmod dd df dirname findmnt fsck.fat genfstab grep install ln lspci lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl touch udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -884,14 +884,37 @@ format_and_mount() {
     udevadm settle || true
   fi
 
+  # Reused EFI partitions can carry FAT metadata issues that only surface later
+  # during initramfs/grub writes. Repair/check before mounting.
+  if ! fsck.fat -a "$BOOT_PARTITION"; then
+    die "EFI partition check failed on $BOOT_PARTITION. Repair it manually before continuing."
+  fi
+
   if findmnt -rn "$MOUNT_POINT" >/dev/null 2>&1; then
     umount -R "$MOUNT_POINT" || die "$MOUNT_POINT is already mounted and could not be unmounted."
   fi
 
   mount -t "$ROOT_FILESYSTEM" "$ROOT_PARTITION" "$MOUNT_POINT"
   mount --mkdir "$BOOT_PARTITION" "$MOUNT_POINT/boot"
+  verify_boot_writable
   success "Mounted / and /boot."
   findmnt "$MOUNT_POINT" >&2
+}
+
+verify_boot_writable() {
+  local boot_test_file="$MOUNT_POINT/boot/.kmos-boot-write-test"
+  local available_kb=""
+
+  available_kb="$(df -Pk "$MOUNT_POINT/boot" | awk 'NR==2 {print $4}')"
+  [[ -n "$available_kb" ]] || die "Could not read free space on $MOUNT_POINT/boot."
+  if ((available_kb < 262144)); then
+    die "Not enough free space on $MOUNT_POINT/boot (${available_kb}KB). Need at least 262144KB."
+  fi
+
+  if ! dd if=/dev/zero of="$boot_test_file" bs=1 count=1 conv=fsync status=none; then
+    die "Cannot write to $MOUNT_POINT/boot. Check EFI partition health and hardware before continuing."
+  fi
+  rm -f "$boot_test_file"
 }
 
 setup_time() {
