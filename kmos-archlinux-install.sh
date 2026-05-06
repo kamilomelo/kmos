@@ -891,10 +891,34 @@ setup_time() {
 }
 
 install_base_system() {
+  cleanup_boot_artifacts
   info "Installing minimal base packages"
   pacstrap -K "$MOUNT_POINT" "${BASE_PACKAGES[@]}"
   genfstab -U "$MOUNT_POINT" >> "$MOUNT_POINT/etc/fstab"
   success "Base system installed and fstab generated."
+}
+
+cleanup_boot_artifacts() {
+  local removed=0
+  local artifact=""
+  local artifacts=(
+    "$MOUNT_POINT/boot/intel-ucode.img"
+    "$MOUNT_POINT/boot/amd-ucode.img"
+    "$MOUNT_POINT/boot/initramfs-linux.img"
+    "$MOUNT_POINT/boot/initramfs-linux-fallback.img"
+    "$MOUNT_POINT/boot/vmlinuz-linux"
+  )
+
+  for artifact in "${artifacts[@]}"; do
+    if [[ -e "$artifact" ]]; then
+      rm -f "$artifact"
+      removed=1
+    fi
+  done
+
+  if ((removed == 1)); then
+    success "Removed stale boot artifacts from /boot before pacstrap."
+  fi
 }
 
 configure_pacman() {
