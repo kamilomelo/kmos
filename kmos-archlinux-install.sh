@@ -49,8 +49,6 @@ PRIMARY_USER=""
 PRIMARY_PASSWORD=""
 GRAPHICS_SUMMARY="not detected"
 GRAPHICS_PACKAGE_SUMMARY="none"
-NVIDIA_COMPUTE_ENABLED="no"
-NVIDIA_COMPUTE_SUMMARY="disabled"
 MICROCODE_SUMMARY="not detected"
 ADDITIONAL_LOCALES=()
 declare -a EXTRA_USERS=()
@@ -650,8 +648,7 @@ detect_graphics_drivers() {
   local controller=""
   local has_intel=0
   local has_amd=0
-  local has_nvidia_open=0
-  local has_nvidia_legacy=0
+  local has_nvidia=0
   local -a detected_vendors=()
   local -a detected_packages=()
 
@@ -663,11 +660,7 @@ detect_graphics_drivers() {
     elif [[ "$controller" == *"[1002:"* || "$controller" == *"[1022:"* ]]; then
       has_amd=1
     elif [[ "$controller" == *"[10de:"* ]]; then
-      if nvidia_controller_supports_open "$controller"; then
-        has_nvidia_open=1
-      else
-        has_nvidia_legacy=1
-      fi
+      has_nvidia=1
     fi
   done < <(lspci -nn | grep -E 'VGA compatible controller|3D controller|Display controller' || true)
 
@@ -687,14 +680,16 @@ detect_graphics_drivers() {
     append_unique detected_packages "vulkan-radeon"
   fi
 
-  if ((has_nvidia_legacy == 1)); then
+  if ((has_nvidia == 1)); then
     append_unique detected_vendors "NVIDIA"
-    add_package "nvidia"
-    append_unique detected_packages "nvidia"
-  elif ((has_nvidia_open == 1)); then
-    append_unique detected_vendors "NVIDIA"
-    add_package "nvidia-open"
-    append_unique detected_packages "nvidia-open"
+    if ask_yes_no "NVIDIA GPU detected. Install nvidia-open driver?" "yes"; then
+      add_package "nvidia-open"
+      add_package "nvidia-utils"
+      add_package "nvtop"
+      append_unique detected_packages "nvidia-open"
+      append_unique detected_packages "nvidia-utils"
+      append_unique detected_packages "nvtop"
+    fi
   fi
 
   if [[ ${#detected_vendors[@]} -eq 0 ]]; then
@@ -705,41 +700,13 @@ detect_graphics_drivers() {
   fi
 
   GRAPHICS_SUMMARY="${detected_vendors[*]}"
-  GRAPHICS_PACKAGE_SUMMARY="${detected_packages[*]}"
+  if [[ ${#detected_packages[@]} -gt 0 ]]; then
+    GRAPHICS_PACKAGE_SUMMARY="${detected_packages[*]}"
+  else
+    GRAPHICS_PACKAGE_SUMMARY="none"
+  fi
   detail "Graphics" "$GRAPHICS_SUMMARY"
   detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
-
-  if ((has_nvidia_legacy == 1 && has_nvidia_open == 1)); then
-    warn "Mixed NVIDIA generations detected. Using proprietary nvidia for widest compatibility."
-  elif ((has_nvidia_legacy == 1)); then
-    warn "Pre-Turing NVIDIA hardware detected. Using proprietary nvidia instead of nvidia-open."
-  fi
-
-  if ((has_nvidia_open == 1 || has_nvidia_legacy == 1)); then
-    if ask_yes_no "Add NVIDIA compute packages (cuda and opencl-nvidia)?" "no"; then
-      NVIDIA_COMPUTE_ENABLED="yes"
-      NVIDIA_COMPUTE_SUMMARY="cuda opencl-nvidia"
-      add_package "cuda"
-      add_package "opencl-nvidia"
-    else
-      NVIDIA_COMPUTE_ENABLED="no"
-      NVIDIA_COMPUTE_SUMMARY="disabled"
-    fi
-  else
-    NVIDIA_COMPUTE_ENABLED="no"
-    NVIDIA_COMPUTE_SUMMARY="not applicable"
-  fi
-}
-
-nvidia_controller_supports_open() {
-  local controller="$1"
-  local device_id=""
-
-  [[ "$controller" =~ \[10de:([0-9A-Fa-f]{4})\] ]] || return 1
-  device_id="${BASH_REMATCH[1]}"
-
-  # Turing and newer NVIDIA GPUs use PCI device IDs starting at 0x1e00.
-  ((16#$device_id >= 16#1e00))
 }
 
 detect_cpu_microcode() {
@@ -839,7 +806,6 @@ confirm_install_plan() {
   detail "OS detection" "$ENABLE_OS_PROBER"
   detail "Graphics" "$GRAPHICS_SUMMARY"
   detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
-  detail "GPU compute" "$NVIDIA_COMPUTE_SUMMARY"
   detail "Microcode" "$MICROCODE_SUMMARY"
   detail "Metapackage" "kmos-minimal"
   detail "SSH" "enabled"
