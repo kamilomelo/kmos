@@ -58,12 +58,12 @@ declare -a EXTRA_SUDO=()
 
 BASE_PACKAGES=(
   base
+  base-devel
   linux
   linux-firmware
   dhcpcd
   openssh
   wpa_supplicant
-  sudo
   nano
 )
 
