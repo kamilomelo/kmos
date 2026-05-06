@@ -51,6 +51,7 @@ GRAPHICS_SUMMARY="not detected"
 GRAPHICS_PACKAGE_SUMMARY="none"
 NVIDIA_COMPUTE_ENABLED="no"
 NVIDIA_COMPUTE_SUMMARY="disabled"
+MICROCODE_SUMMARY="not detected"
 ADDITIONAL_LOCALES=()
 declare -a EXTRA_USERS=()
 declare -a EXTRA_PASSWORDS=()
@@ -59,6 +60,7 @@ declare -a EXTRA_SUDO=()
 BASE_PACKAGES=(
   base
   base-devel
+  git
   linux
   linux-firmware
   dhcpcd
@@ -740,6 +742,23 @@ nvidia_controller_supports_open() {
   ((16#$device_id >= 16#1e00))
 }
 
+detect_cpu_microcode() {
+  local cpu_info=""
+
+  cpu_info="$(grep -m1 '^vendor_id[[:space:]]*:' /proc/cpuinfo 2>/dev/null || true)"
+
+  if [[ "$cpu_info" == *"GenuineIntel"* ]]; then
+    add_package "intel-ucode"
+    MICROCODE_SUMMARY="intel-ucode"
+  elif [[ "$cpu_info" == *"AuthenticAMD"* ]]; then
+    add_package "amd-ucode"
+    MICROCODE_SUMMARY="amd-ucode"
+  else
+    MICROCODE_SUMMARY="none"
+    warn "CPU vendor not recognized for microcode package."
+  fi
+}
+
 collect_system_config() {
   local extra_user=""
   local extra_password=""
@@ -779,6 +798,7 @@ collect_system_config() {
   esac
 
   detect_graphics_drivers
+  detect_cpu_microcode
   load_minimal_metapackage
   collect_krub_config
   collect_wifi_boot_config
@@ -820,6 +840,7 @@ confirm_install_plan() {
   detail "Graphics" "$GRAPHICS_SUMMARY"
   detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
   detail "GPU compute" "$NVIDIA_COMPUTE_SUMMARY"
+  detail "Microcode" "$MICROCODE_SUMMARY"
   detail "Metapackage" "kmos-minimal"
   detail "SSH" "enabled"
   detail "Starship" "$STARSHIP_PRESET_MODE/$STARSHIP_PRESET_THEME"
