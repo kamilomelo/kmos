@@ -47,6 +47,10 @@ WIFI_HIDDEN="0"
 ROOT_PASSWORD=""
 PRIMARY_USER=""
 PRIMARY_PASSWORD=""
+GRAPHICS_SUMMARY="not detected"
+GRAPHICS_PACKAGE_SUMMARY="none"
+NVIDIA_COMPUTE_ENABLED="no"
+NVIDIA_COMPUTE_SUMMARY="disabled"
 ADDITIONAL_LOCALES=()
 declare -a EXTRA_USERS=()
 declare -a EXTRA_PASSWORDS=()
@@ -221,6 +225,18 @@ add_package() {
   BASE_PACKAGES+=("$package")
 }
 
+append_unique() {
+  local -n values_ref="$1"
+  local value="$2"
+  local current=""
+
+  for current in "${values_ref[@]}"; do
+    [[ "$current" == "$value" ]] && return 0
+  done
+
+  values_ref+=("$value")
+}
+
 load_minimal_metapackage() {
   local pkgbuild="$MINIMAL_METAPACKAGE_DIR/PKGBUILD"
   local package=""
@@ -313,7 +329,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot blkid cat cfdisk chmod dd dirname findmnt genfstab grep install ln lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl touch udevadm umount)
+  local tools=(arch-chroot blkid cat cfdisk chmod dd dirname findmnt genfstab grep install ln lspci lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl touch udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -628,6 +644,102 @@ collect_wifi_boot_config() {
   detail "Wi-Fi boot" "$WIFI_ADAPTER -> $WIFI_SSID"
 }
 
+detect_graphics_drivers() {
+  local controller=""
+  local has_intel=0
+  local has_amd=0
+  local has_nvidia_open=0
+  local has_nvidia_legacy=0
+  local -a detected_vendors=()
+  local -a detected_packages=()
+
+  while IFS= read -r controller; do
+    [[ -n "$controller" ]] || continue
+
+    if [[ "$controller" == *"[8086:"* ]]; then
+      has_intel=1
+    elif [[ "$controller" == *"[1002:"* || "$controller" == *"[1022:"* ]]; then
+      has_amd=1
+    elif [[ "$controller" == *"[10de:"* ]]; then
+      if nvidia_controller_supports_open "$controller"; then
+        has_nvidia_open=1
+      else
+        has_nvidia_legacy=1
+      fi
+    fi
+  done < <(lspci -nn | grep -E 'VGA compatible controller|3D controller|Display controller' || true)
+
+  if ((has_intel == 1)); then
+    append_unique detected_vendors "Intel"
+    add_package "mesa"
+    add_package "vulkan-intel"
+    append_unique detected_packages "mesa"
+    append_unique detected_packages "vulkan-intel"
+  fi
+
+  if ((has_amd == 1)); then
+    append_unique detected_vendors "AMD"
+    add_package "mesa"
+    add_package "vulkan-radeon"
+    append_unique detected_packages "mesa"
+    append_unique detected_packages "vulkan-radeon"
+  fi
+
+  if ((has_nvidia_legacy == 1)); then
+    append_unique detected_vendors "NVIDIA"
+    add_package "nvidia"
+    append_unique detected_packages "nvidia"
+  elif ((has_nvidia_open == 1)); then
+    append_unique detected_vendors "NVIDIA"
+    add_package "nvidia-open"
+    append_unique detected_packages "nvidia-open"
+  fi
+
+  if [[ ${#detected_vendors[@]} -eq 0 ]]; then
+    GRAPHICS_SUMMARY="no supported GPU detected"
+    GRAPHICS_PACKAGE_SUMMARY="none"
+    warn "No Intel, AMD, or NVIDIA display controller was detected from the live system."
+    return 0
+  fi
+
+  GRAPHICS_SUMMARY="${detected_vendors[*]}"
+  GRAPHICS_PACKAGE_SUMMARY="${detected_packages[*]}"
+  detail "Graphics" "$GRAPHICS_SUMMARY"
+  detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
+
+  if ((has_nvidia_legacy == 1 && has_nvidia_open == 1)); then
+    warn "Mixed NVIDIA generations detected. Using proprietary nvidia for widest compatibility."
+  elif ((has_nvidia_legacy == 1)); then
+    warn "Pre-Turing NVIDIA hardware detected. Using proprietary nvidia instead of nvidia-open."
+  fi
+
+  if ((has_nvidia_open == 1 || has_nvidia_legacy == 1)); then
+    if ask_yes_no "Add NVIDIA compute packages (cuda and opencl-nvidia)?" "no"; then
+      NVIDIA_COMPUTE_ENABLED="yes"
+      NVIDIA_COMPUTE_SUMMARY="cuda opencl-nvidia"
+      add_package "cuda"
+      add_package "opencl-nvidia"
+    else
+      NVIDIA_COMPUTE_ENABLED="no"
+      NVIDIA_COMPUTE_SUMMARY="disabled"
+    fi
+  else
+    NVIDIA_COMPUTE_ENABLED="no"
+    NVIDIA_COMPUTE_SUMMARY="not applicable"
+  fi
+}
+
+nvidia_controller_supports_open() {
+  local controller="$1"
+  local device_id=""
+
+  [[ "$controller" =~ \[10de:([0-9A-Fa-f]{4})\] ]] || return 1
+  device_id="${BASH_REMATCH[1]}"
+
+  # Turing and newer NVIDIA GPUs use PCI device IDs starting at 0x1e00.
+  ((16#$device_id >= 16#1e00))
+}
+
 collect_system_config() {
   local extra_user=""
   local extra_password=""
@@ -665,6 +777,8 @@ collect_system_config() {
       ;;
     *) die "Unsupported root filesystem: $ROOT_FILESYSTEM" ;;
   esac
+
+  detect_graphics_drivers
   load_minimal_metapackage
   collect_krub_config
   collect_wifi_boot_config
@@ -703,6 +817,9 @@ confirm_install_plan() {
   detail "Root fs" "$ROOT_FILESYSTEM"
   detail "Bootloader" "$KRUB_ID"
   detail "OS detection" "$ENABLE_OS_PROBER"
+  detail "Graphics" "$GRAPHICS_SUMMARY"
+  detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
+  detail "GPU compute" "$NVIDIA_COMPUTE_SUMMARY"
   detail "Metapackage" "kmos-minimal"
   detail "SSH" "enabled"
   detail "Starship" "$STARSHIP_PRESET_MODE/$STARSHIP_PRESET_THEME"
