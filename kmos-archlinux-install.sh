@@ -853,6 +853,7 @@ confirm_install_plan() {
 format_and_mount() {
   local boot_fstype=""
   local detected_root_fstype=""
+  local fsck_rc=0
 
   case "$ROOT_FILESYSTEM" in
     ext4)
@@ -886,8 +887,10 @@ format_and_mount() {
 
   # Reused EFI partitions can carry FAT metadata issues that only surface later
   # during initramfs/grub writes. Repair/check before mounting.
-  if ! fsck.fat -a "$BOOT_PARTITION"; then
-    die "EFI partition check failed on $BOOT_PARTITION. Repair it manually before continuing."
+  fsck.fat -a "$BOOT_PARTITION" || fsck_rc=$?
+  # fsck.fat exit codes: 0 (clean), 1 (errors corrected) are acceptable.
+  if ((fsck_rc > 1)); then
+    die "EFI partition check failed on $BOOT_PARTITION (fsck.fat rc=$fsck_rc). Repair it manually before continuing."
   fi
 
   if findmnt -rn "$MOUNT_POINT" >/dev/null 2>&1; then
@@ -907,8 +910,8 @@ verify_boot_writable() {
 
   available_kb="$(df -Pk "$MOUNT_POINT/boot" | awk 'NR==2 {print $4}')"
   [[ -n "$available_kb" ]] || die "Could not read free space on $MOUNT_POINT/boot."
-  if ((available_kb < 262144)); then
-    die "Not enough free space on $MOUNT_POINT/boot (${available_kb}KB). Need at least 262144KB."
+  if ((available_kb < 65536)); then
+    die "Not enough free space on $MOUNT_POINT/boot (${available_kb}KB). Need at least 65536KB."
   fi
 
   if ! dd if=/dev/zero of="$boot_test_file" bs=1 count=1 conv=fsync status=none; then
