@@ -7,8 +7,10 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
-KDE_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/kde"
-KDE_METAPACKAGE_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/metapackages/kde/PKGBUILD"
+METAPACKAGE_ROOT_DIR="$SCRIPT_DIR/metapackages"
+METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/metapackages"
+KDE_METAPACKAGE_RELATIVE_PATH="kde/test/PKGBUILD"
+KDE_METAPACKAGE_NAME="kmos-kde-test"
 KDE_METAPACKAGE_PKGBUILD=""
 
 UI_RESET=""
@@ -23,6 +25,7 @@ SUCCESS_ICON="▸"
 FINAL_SUCCESS_ICON="✔"
 
 KDE_PACKAGES=()
+declare -a RESOLVED_METAPACKAGES=()
 
 init_ui() {
   if [[ -t 2 && "${TERM:-dumb}" != "dumb" ]]; then
@@ -119,27 +122,113 @@ verify_target() {
 }
 
 load_kde_metapackage() {
-  local pkgbuild="$KDE_METAPACKAGE_DIR/PKGBUILD"
-  local tmp_pkgbuild="/tmp/kmos-kde.PKGBUILD"
+  local pkgbuild=""
 
-  if [[ ! -r "$pkgbuild" ]]; then
-    if command -v curl >/dev/null 2>&1; then
-      curl -fsSL "$KDE_METAPACKAGE_URL" -o "$tmp_pkgbuild" || die "Could not fetch KDE metapackage."
-      pkgbuild="$tmp_pkgbuild"
-    elif command -v wget >/dev/null 2>&1; then
-      wget -qO "$tmp_pkgbuild" "$KDE_METAPACKAGE_URL" || die "Could not fetch KDE metapackage."
-      pkgbuild="$tmp_pkgbuild"
-    else
-      die "KDE metapackage not found locally and neither curl nor wget is available."
-    fi
-  fi
-
+  pkgbuild="$(get_metapackage_pkgbuild "$KDE_METAPACKAGE_NAME" "$KDE_METAPACKAGE_RELATIVE_PATH")"
   KDE_METAPACKAGE_PKGBUILD="$pkgbuild"
-  mapfile -t KDE_PACKAGES < <(source "$pkgbuild"; printf '%s\n' "${depends[@]}" | sort -u)
+  KDE_PACKAGES=()
+  RESOLVED_METAPACKAGES=()
+  resolve_metapackage_depends "$pkgbuild"
+  mapfile -t KDE_PACKAGES < <(printf '%s\n' "${KDE_PACKAGES[@]}" | sort -u)
   [[ ${#KDE_PACKAGES[@]} -gt 0 ]] || die "KDE metapackage has no dependencies."
 
-  detail "Metapackage" "kmos-kde"
+  detail "Metapackage" "$KDE_METAPACKAGE_NAME"
   detail "Packages" "${#KDE_PACKAGES[@]}"
+}
+
+append_unique() {
+  local -n values_ref="$1"
+  local value="$2"
+  local current=""
+
+  for current in "${values_ref[@]}"; do
+    [[ "$current" == "$value" ]] && return 0
+  done
+
+  values_ref+=("$value")
+}
+
+metapackage_relative_path_for_name() {
+  case "$1" in
+    kmos-audio) printf 'desktop-shared/audio/PKGBUILD\n' ;;
+    kmos-browsers) printf 'desktop-shared/browsers/PKGBUILD\n' ;;
+    kmos-deprecated) printf 'desktop-shared/deprecated/PKGBUILD\n' ;;
+    kmos-devices) printf 'desktop-shared/devices/PKGBUILD\n' ;;
+    kmos-docs) printf 'desktop-shared/docs/PKGBUILD\n' ;;
+    kmos-filesystems) printf 'desktop-shared/filesystems/PKGBUILD\n' ;;
+    kmos-fonts) printf 'desktop-shared/fonts/PKGBUILD\n' ;;
+    kmos-graphics) printf 'desktop-shared/graphics/PKGBUILD\n' ;;
+    kmos-kde-full) printf 'desktop-shared/full/PKGBUILD\n' ;;
+    kmos-maintenance) printf 'desktop-shared/maintenance/PKGBUILD\n' ;;
+    kmos-network) printf 'desktop-shared/network/PKGBUILD\n' ;;
+    kmos-privacy) printf 'desktop-shared/privacy/PKGBUILD\n' ;;
+    kmos-kde-base) printf 'kde/base/PKGBUILD\n' ;;
+    kmos-kde-multimedia) printf 'kde/multimedia/PKGBUILD\n' ;;
+    kmos-kde-plasma) printf 'kde/base/plasma/PKGBUILD\n' ;;
+    kmos-kde-test) printf 'kde/test/PKGBUILD\n' ;;
+    kmos-kde-utils) printf 'kde/utils/PKGBUILD\n' ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+get_metapackage_pkgbuild() {
+  local pkgname="$1"
+  local relative_path="${2:-}"
+  local local_path=""
+  local remote_url=""
+  local fetched_path=""
+
+  if [[ -z "$relative_path" ]]; then
+    relative_path="$(metapackage_relative_path_for_name "$pkgname")" || die "Unknown KMOS metapackage: $pkgname"
+  fi
+
+  local_path="$METAPACKAGE_ROOT_DIR/$relative_path"
+  if [[ -r "$local_path" ]]; then
+    printf '%s\n' "$local_path"
+    return 0
+  fi
+
+  remote_url="$METAPACKAGE_RAW_ROOT_URL/$relative_path"
+  fetched_path="/tmp/${pkgname}.PKGBUILD"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$remote_url" -o "$fetched_path" || die "Could not fetch KMOS metapackage: $pkgname"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$fetched_path" "$remote_url" || die "Could not fetch KMOS metapackage: $pkgname"
+  else
+    die "Metapackage $pkgname not found locally and neither curl nor wget is available."
+  fi
+
+  printf '%s\n' "$fetched_path"
+}
+
+resolve_metapackage_depends() {
+  local pkgbuild="$1"
+  local pkgname=""
+  local dependency=""
+  local -a depends=()
+  local dep_pkgbuild=""
+
+  pkgname="$(source "$pkgbuild"; printf '%s\n' "$pkgname")"
+  [[ -n "$pkgname" ]] || die "Could not read pkgname from $pkgbuild"
+
+  for dependency in "${RESOLVED_METAPACKAGES[@]}"; do
+    [[ "$dependency" == "$pkgname" ]] && return 0
+  done
+  RESOLVED_METAPACKAGES+=("$pkgname")
+
+  mapfile -t depends < <(source "$pkgbuild"; printf '%s\n' "${depends[@]}")
+
+  for dependency in "${depends[@]}"; do
+    [[ -n "$dependency" ]] || continue
+    if [[ "$dependency" == kmos-* ]]; then
+      dep_pkgbuild="$(get_metapackage_pkgbuild "$dependency")"
+      resolve_metapackage_depends "$dep_pkgbuild"
+    else
+      append_unique KDE_PACKAGES "$dependency"
+    fi
+  done
 }
 
 install_kde_packages() {
@@ -149,7 +238,7 @@ install_kde_packages() {
 
 install_kde_assets() {
   if [[ -r "$KDE_METAPACKAGE_PKGBUILD" ]]; then
-    install -Dm0644 "$KDE_METAPACKAGE_PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/kde/PKGBUILD"
+    install -Dm0644 "$KDE_METAPACKAGE_PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/kde/test/PKGBUILD"
   fi
 }
 
@@ -282,9 +371,37 @@ migrate_wifi_to_networkmanager() {
 }
 
 enable_kde_services() {
-  arch-chroot "$MOUNT_POINT" systemctl enable NetworkManager.service
-  arch-chroot "$MOUNT_POINT" systemctl enable sddm.service
-  success "NetworkManager and SDDM enabled."
+  if arch-chroot "$MOUNT_POINT" pacman -Q networkmanager >/dev/null 2>&1; then
+    arch-chroot "$MOUNT_POINT" systemctl disable dhcpcd.service >/dev/null 2>&1 || true
+    arch-chroot "$MOUNT_POINT" systemctl enable NetworkManager.service
+  fi
+
+  if arch-chroot "$MOUNT_POINT" pacman -Q sddm >/dev/null 2>&1; then
+    arch-chroot "$MOUNT_POINT" systemctl enable sddm.service
+    arch-chroot "$MOUNT_POINT" systemctl set-default graphical.target >/dev/null 2>&1 || true
+  fi
+
+  if arch-chroot "$MOUNT_POINT" pacman -Q bluez >/dev/null 2>&1; then
+    arch-chroot "$MOUNT_POINT" systemctl enable bluetooth.service
+  fi
+
+  if arch-chroot "$MOUNT_POINT" pacman -Q cups >/dev/null 2>&1; then
+    arch-chroot "$MOUNT_POINT" systemctl enable cups.service
+  fi
+
+  if arch-chroot "$MOUNT_POINT" pacman -Q pipewire >/dev/null 2>&1; then
+    arch-chroot "$MOUNT_POINT" systemctl --global enable pipewire.socket
+  fi
+
+  if arch-chroot "$MOUNT_POINT" pacman -Q pipewire-pulse >/dev/null 2>&1; then
+    arch-chroot "$MOUNT_POINT" systemctl --global enable pipewire-pulse.socket
+  fi
+
+  if arch-chroot "$MOUNT_POINT" pacman -Q wireplumber >/dev/null 2>&1; then
+    arch-chroot "$MOUNT_POINT" systemctl --global enable wireplumber.service
+  fi
+
+  success "Desktop services enabled."
 }
 
 main() {
