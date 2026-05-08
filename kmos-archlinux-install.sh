@@ -1421,6 +1421,7 @@ unmount_target() {
 
 offer_power_action() {
   local choice=""
+  local countdown=10
 
   printf '\n' >&2
   info "What now?"
@@ -1429,7 +1430,18 @@ offer_power_action() {
   log "  3) Return to shell"
 
   while true; do
-    read -r -p "Select [1-3] (default: 1): " choice
+    choice=""
+    countdown=10
+
+    while ((countdown > 0)); do
+      printf '\rSelect [1-3] (default: 1 in %2ss): ' "$countdown" >&2
+      if read -r -t 1 choice; then
+        break
+      fi
+      ((countdown -= 1))
+    done
+    printf '\n' >&2
+
     choice="${choice:-1}"
     case "$choice" in
       1)

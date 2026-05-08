@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 METAPACKAGE_ROOT_DIR="$SCRIPT_DIR/metapackages"
 METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/metapackages"
+KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/kmos-kde-post.sh"
+KDE_PROFILE="${KMOS_KDE_PROFILE:-test}"
 
 UI_RESET=""
 UI_BOLD=""
@@ -130,6 +132,11 @@ parse_args() {
         [[ $# -gt 0 ]] || die "--target requires a mount point."
         MOUNT_POINT="$1"
         ;;
+      --profile)
+        shift
+        [[ $# -gt 0 ]] || die "--profile requires a value."
+        KDE_PROFILE="$1"
+        ;;
       *)
         die "Unknown argument: $1"
         ;;
@@ -144,21 +151,33 @@ verify_target() {
 }
 
 select_kde_metapackages() {
-  SELECTED_METAPACKAGES=(
-    kmos-audio
-    kmos-browsers
-    kmos-devices
-    kmos-docs
-    kmos-filesystems
-    kmos-fonts
-    kmos-graphics
-    kmos-kde-base
-    kmos-kde-multimedia
-    kmos-kde-utils
-    kmos-maintenance
-    kmos-network
-    kmos-privacy
-  )
+  case "$KDE_PROFILE" in
+    test)
+      SELECTED_METAPACKAGES=(
+        kmos-kde-test
+      )
+      ;;
+    full)
+      SELECTED_METAPACKAGES=(
+        kmos-audio
+        kmos-browsers
+        kmos-devices
+        kmos-docs
+        kmos-filesystems
+        kmos-fonts
+        kmos-graphics
+        kmos-kde-base
+        kmos-kde-multimedia
+        kmos-kde-utils
+        kmos-maintenance
+        kmos-network
+        kmos-privacy
+      )
+      ;;
+    *)
+      die "Unknown KDE profile: $KDE_PROFILE"
+      ;;
+  esac
 }
 
 load_kde_metapackages() {
@@ -174,6 +193,7 @@ load_kde_metapackages() {
   mapfile -t KDE_PACKAGES < <(printf '%s\n' "${KDE_PACKAGES[@]}" | sort -u)
   [[ ${#KDE_PACKAGES[@]} -gt 0 ]] || die "KDE metapackage has no dependencies."
 
+  detail "Profile" "$KDE_PROFILE"
   detail "Metapackages" "${SELECTED_METAPACKAGES[*]}"
   detail "Packages" "${#KDE_PACKAGES[@]}"
 }
@@ -456,6 +476,26 @@ enable_kde_services() {
   success "Desktop services enabled."
 }
 
+run_kde_post_installer() {
+  local local_installer="$SCRIPT_DIR/kmos-kde-post.sh"
+  local fetched_installer="/tmp/kmos-kde-post.sh"
+
+  if [[ -f "$local_installer" ]]; then
+    bash "$local_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
+    return 0
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$KDE_POST_INSTALLER_URL" -o "$fetched_installer" || die "Could not fetch KDE post installer."
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$fetched_installer" "$KDE_POST_INSTALLER_URL" || die "Could not fetch KDE post installer."
+  else
+    die "KDE post installer not found locally and neither curl nor wget is available."
+  fi
+
+  bash "$fetched_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
+}
+
 main() {
   init_ui
   parse_args "$@"
@@ -470,6 +510,7 @@ main() {
   disable_kwallet
   migrate_wifi_to_networkmanager
   enable_kde_services
+  run_kde_post_installer
   final_success "KDE desktop layer installed. Reboot when ready."
 }
 

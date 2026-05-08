@@ -7,9 +7,6 @@ arch=('any')
 url="https://github.com/kamilomelo/KMOS"
 license=('MIT')
 depends=(
-  'firefox-adblock-plus'
-  'firefox-dark-reader'
-  'firefox-decentraleyes'
   'firefox-developer-edition'
 )
 
