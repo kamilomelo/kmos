@@ -159,10 +159,6 @@ select_kde_metapackages() {
     kmos-network
     kmos-privacy
   )
-
-  if ask_yes_no "Install deprecated desktop packages?" "no"; then
-    SELECTED_METAPACKAGES+=(kmos-deprecated)
-  fi
 }
 
 load_kde_metapackages() {
