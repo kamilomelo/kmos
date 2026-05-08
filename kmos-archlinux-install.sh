@@ -1394,8 +1394,8 @@ run_kde_installer() {
 
 offer_kde_desktop() {
   printf '\n' >&2
-  info "Your base system is ready."
-  if ask_yes_no "Do you want to install a desktop or keep your system headless?" "no"; then
+  info "Your base system is ready. Select no to keep it headless."
+  if ask_yes_no "Do you want to install a desktop?" "yes"; then
     run_kde_installer
   fi
 }
