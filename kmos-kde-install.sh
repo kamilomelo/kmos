@@ -9,9 +9,6 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 METAPACKAGE_ROOT_DIR="$SCRIPT_DIR/metapackages"
 METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/metapackages"
-KDE_METAPACKAGE_RELATIVE_PATH="kde/test/PKGBUILD"
-KDE_METAPACKAGE_NAME="kmos-kde-test"
-KDE_METAPACKAGE_PKGBUILD=""
 
 UI_RESET=""
 UI_BOLD=""
@@ -26,6 +23,7 @@ FINAL_SUCCESS_ICON="✔"
 
 KDE_PACKAGES=()
 declare -a RESOLVED_METAPACKAGES=()
+declare -a SELECTED_METAPACKAGES=()
 
 init_ui() {
   if [[ -t 2 && "${TERM:-dumb}" != "dumb" ]]; then
@@ -82,6 +80,30 @@ print_banner() {
   log "Lean KDE Plasma desktop layer for an existing KMOS minimal install."
 }
 
+ask_yes_no() {
+  local prompt="$1"
+  local default="${2:-}"
+  local answer=""
+
+  while true; do
+    if [[ "$default" == "yes" ]]; then
+      read -r -p "$prompt [Y/n]: " answer
+      answer="${answer:-Y}"
+    elif [[ "$default" == "no" ]]; then
+      read -r -p "$prompt [y/N]: " answer
+      answer="${answer:-N}"
+    else
+      read -r -p "$prompt [y/n]: " answer
+    fi
+
+    case "$answer" in
+      [Yy]*) return 0 ;;
+      [Nn]*) return 1 ;;
+      *) warn "Please answer yes or no." ;;
+    esac
+  done
+}
+
 require_root() {
   [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Run this script as root from the Arch ISO."
 }
@@ -121,18 +143,42 @@ verify_target() {
   [[ -d "$MOUNT_POINT/etc" ]] || die "$MOUNT_POINT does not look like an installed system."
 }
 
-load_kde_metapackage() {
+select_kde_metapackages() {
+  SELECTED_METAPACKAGES=(
+    kmos-audio
+    kmos-browsers
+    kmos-devices
+    kmos-docs
+    kmos-filesystems
+    kmos-fonts
+    kmos-graphics
+    kmos-kde-base
+    kmos-kde-multimedia
+    kmos-kde-utils
+    kmos-maintenance
+    kmos-network
+    kmos-privacy
+  )
+
+  if ask_yes_no "Install deprecated desktop packages?" "no"; then
+    SELECTED_METAPACKAGES+=(kmos-deprecated)
+  fi
+}
+
+load_kde_metapackages() {
+  local metapackage=""
   local pkgbuild=""
 
-  pkgbuild="$(get_metapackage_pkgbuild "$KDE_METAPACKAGE_NAME" "$KDE_METAPACKAGE_RELATIVE_PATH")"
-  KDE_METAPACKAGE_PKGBUILD="$pkgbuild"
   KDE_PACKAGES=()
   RESOLVED_METAPACKAGES=()
-  resolve_metapackage_depends "$pkgbuild"
+  for metapackage in "${SELECTED_METAPACKAGES[@]}"; do
+    pkgbuild="$(get_metapackage_pkgbuild "$metapackage")"
+    resolve_metapackage_depends "$pkgbuild"
+  done
   mapfile -t KDE_PACKAGES < <(printf '%s\n' "${KDE_PACKAGES[@]}" | sort -u)
   [[ ${#KDE_PACKAGES[@]} -gt 0 ]] || die "KDE metapackage has no dependencies."
 
-  detail "Metapackage" "$KDE_METAPACKAGE_NAME"
+  detail "Metapackages" "${SELECTED_METAPACKAGES[*]}"
   detail "Packages" "${#KDE_PACKAGES[@]}"
 }
 
@@ -237,9 +283,15 @@ install_kde_packages() {
 }
 
 install_kde_assets() {
-  if [[ -r "$KDE_METAPACKAGE_PKGBUILD" ]]; then
-    install -Dm0644 "$KDE_METAPACKAGE_PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/kde/test/PKGBUILD"
-  fi
+  local metapackage=""
+  local pkgbuild=""
+  local relative_path=""
+
+  for metapackage in "${SELECTED_METAPACKAGES[@]}"; do
+    relative_path="$(metapackage_relative_path_for_name "$metapackage")" || continue
+    pkgbuild="$(get_metapackage_pkgbuild "$metapackage" "$relative_path")"
+    install -Dm0644 "$pkgbuild" "$MOUNT_POINT/usr/share/kmos/metapackages/$relative_path"
+  done
 }
 
 remove_kwallet_helpers() {
@@ -415,7 +467,8 @@ main() {
   require_root
   require_tools
   verify_target
-  load_kde_metapackage
+  select_kde_metapackages
+  load_kde_metapackages
   install_kde_packages
   install_kde_assets
   disable_kwallet
