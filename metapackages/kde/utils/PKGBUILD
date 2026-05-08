@@ -12,6 +12,7 @@ depends=(
   'filelight'
   'kate'
   'kcalc'
+  'markdownpart'
   'okular'
   'partitionmanager'
   'yakuake'
