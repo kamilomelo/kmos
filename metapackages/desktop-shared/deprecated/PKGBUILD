@@ -9,9 +9,11 @@ license=('MIT')
 depends=(
   'kile'
   'libreoffice'
+  'plasma-x11-session'
   'simple-scan'
   'texlive'
   'xorg-server'
+  'xorg-xrandr'
   'xorg-xinit'
 )
 
