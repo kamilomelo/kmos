@@ -8,7 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 WIFI_HANDOFF_DIR="/run/kmos/wifi"
-MINIMAL_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/minimal"
+NODESKTOP_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/nodesktop"
 KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/kmos-kde-install.sh"
 STARSHIP_PRESET_DIR="$SCRIPT_DIR/assets/starship-presets"
 STARSHIP_PRESET_MODE="holow"
@@ -254,12 +254,12 @@ append_unique() {
   values_ref+=("$value")
 }
 
-load_minimal_metapackage() {
-  local pkgbuild="$MINIMAL_METAPACKAGE_DIR/PKGBUILD"
+load_nodesktop_metapackage() {
+  local pkgbuild="$NODESKTOP_METAPACKAGE_DIR/PKGBUILD"
   local package=""
 
   if [[ ! -r "$pkgbuild" ]]; then
-    warn "Minimal metapackage not found: $pkgbuild"
+    warn "Nodesktop metapackage not found: $pkgbuild"
     return 0
   fi
 
@@ -268,7 +268,7 @@ load_minimal_metapackage() {
     add_package "$package"
   done < <(source "$pkgbuild"; printf '%s\n' "${depends[@]}")
 
-  success "Minimal metapackage loaded."
+  success "Nodesktop metapackage loaded."
 }
 
 prompt_default() {
@@ -793,7 +793,7 @@ collect_system_config() {
 
   detect_graphics_drivers
   detect_cpu_microcode
-  load_minimal_metapackage
+  load_nodesktop_metapackage
   collect_krub_config
   collect_wifi_boot_config
   SWAPFILE_SIZE="$(prompt_default "Swap file size, or 0 to skip" "$SWAPFILE_SIZE")"
@@ -834,7 +834,7 @@ confirm_install_plan() {
   detail "Graphics" "$GRAPHICS_SUMMARY"
   detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
   detail "Microcode" "$MICROCODE_SUMMARY"
-  detail "Metapackage" "kmos-minimal"
+  detail "Metapackage" "kmos-nodesktop"
   detail "SSH" "enabled"
   detail "Starship" "$STARSHIP_PRESET_MODE/$STARSHIP_PRESET_THEME"
   if [[ "$ENABLE_WIFI_AFTER_BOOT" == "yes" ]]; then
@@ -1099,8 +1099,8 @@ SSHD_CONFIG
 install_kmos_assets() {
   local preset=""
 
-  if [[ -r "$MINIMAL_METAPACKAGE_DIR/PKGBUILD" ]]; then
-    install -Dm0644 "$MINIMAL_METAPACKAGE_DIR/PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/minimal/PKGBUILD"
+  if [[ -r "$NODESKTOP_METAPACKAGE_DIR/PKGBUILD" ]]; then
+    install -Dm0644 "$NODESKTOP_METAPACKAGE_DIR/PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/nodesktop/PKGBUILD"
   fi
 
   if [[ -d "$STARSHIP_PRESET_DIR" ]]; then
@@ -1133,6 +1133,11 @@ STARSHIP_PROFILE
 # KMOS Starship prompt
 if [[ $- == *i* ]] && command -v starship >/dev/null 2>&1; then
   eval "$(starship init bash)"
+fi
+
+# KMOS zoxide
+if [[ $- == *i* ]] && command -v zoxide >/dev/null 2>&1; then
+  eval "$(zoxide init bash)"
 fi
 BASHRC
   fi
@@ -1389,8 +1394,8 @@ run_kde_installer() {
 
 offer_kde_desktop() {
   printf '\n' >&2
-  info "You have a minimal install of Arch Linux."
-  if ask_yes_no "Do you want to install KDE desktop?" "no"; then
+  info "Your base system is ready."
+  if ask_yes_no "Do you want to install a desktop or keep your system headless?" "no"; then
     run_kde_installer
   fi
 }
