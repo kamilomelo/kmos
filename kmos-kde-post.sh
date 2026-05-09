@@ -133,6 +133,9 @@ write_konsole_rc() {
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Desktop Entry]
 DefaultProfile=kmos.profile
+
+[UiSettings]
+ColorScheme=KMOS-Linux
 EOF
 }
 
