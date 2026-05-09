@@ -10,7 +10,7 @@ MOUNT_POINT="/mnt"
 METAPACKAGE_ROOT_DIR="$SCRIPT_DIR/metapackages"
 METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/metapackages"
 KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/kmos-kde-post.sh"
-KDE_PROFILE="${KMOS_KDE_PROFILE:-test}"
+KDE_PROFILE="${KMOS_KDE_PROFILE:-full}"
 
 UI_RESET=""
 UI_BOLD=""
