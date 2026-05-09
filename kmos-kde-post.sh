@@ -130,12 +130,12 @@ apply_splash_defaults() {
 }
 
 apply_sddm_defaults() {
-  local source_theme_dir="/usr/share/sddm/themes/breeze"
+  local source_theme_dir="$MOUNT_POINT/usr/share/sddm/themes/breeze"
   local target_theme_name="breeze-kmos"
   local target_theme_dir="$MOUNT_POINT/usr/share/sddm/themes/$target_theme_name"
 
   [[ -r "$ASSET_WALLPAPER" ]] || die "Missing wallpaper asset: $ASSET_WALLPAPER"
-  [[ -d "$source_theme_dir" ]] || die "Missing SDDM Breeze theme: $source_theme_dir"
+  [[ -d "$source_theme_dir" ]] || die "Missing SDDM Breeze theme in target system: $source_theme_dir"
 
   install -Dm0644 "$ASSET_WALLPAPER" "$MOUNT_POINT$TARGET_WALLPAPER"
   rm -rf "$target_theme_dir"
