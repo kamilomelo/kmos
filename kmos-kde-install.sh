@@ -11,6 +11,7 @@ METAPACKAGE_ROOT_DIR="$SCRIPT_DIR/metapackages"
 METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/metapackages"
 KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/kmos-kde-post.sh"
 KDE_PROFILE="${KMOS_KDE_PROFILE:-full}"
+PRUNE_LIST_FILE="$SCRIPT_DIR/assets/package-prune/kde-remove-packages.txt"
 
 UI_RESET=""
 UI_BOLD=""
@@ -327,9 +328,23 @@ remove_kwallet_helpers() {
 
 remove_unwanted_packages() {
   local package=""
+  local line=""
   local installed=()
+  local remove_list=()
 
-  for package in firefox noto-fonts; do
+  if [[ -f "$PRUNE_LIST_FILE" ]]; then
+    while IFS= read -r line; do
+      line="${line%%#*}"
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      [[ -n "$line" ]] || continue
+      remove_list+=("$line")
+    done < "$PRUNE_LIST_FILE"
+  else
+    warn "Prune list not found: $PRUNE_LIST_FILE"
+  fi
+
+  for package in "${remove_list[@]}"; do
     if arch-chroot "$MOUNT_POINT" pacman -Q "$package" >/dev/null 2>&1; then
       installed+=("$package")
     fi
