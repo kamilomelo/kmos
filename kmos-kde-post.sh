@@ -191,6 +191,62 @@ Schema=kmos-github
 EOF
 }
 
+hide_desktop_entry() {
+  local source="$1"
+  local rel_path="${source#"$MOUNT_POINT/usr/share/applications/"}"
+  local target="$MOUNT_POINT/usr/local/share/applications/$rel_path"
+
+  install -Dm0644 "$source" "$target"
+  if grep -q '^[[:space:]]*NoDisplay=' "$target"; then
+    sed -i 's/^[[:space:]]*NoDisplay=.*/NoDisplay=true/' "$target"
+  else
+    printf '\nNoDisplay=true\n' >> "$target"
+  fi
+
+  if grep -q '^[[:space:]]*Hidden=' "$target"; then
+    sed -i 's/^[[:space:]]*Hidden=.*/Hidden=true/' "$target"
+  else
+    printf 'Hidden=true\n' >> "$target"
+  fi
+}
+
+apply_menu_hides() {
+  local app_dir="$MOUNT_POINT/usr/share/applications"
+  local desktop=""
+  local matched=0
+  local -a patterns=(
+    "qv4l2*.desktop"
+    "qvidcap*.desktop"
+    "*kwrite*.desktop"
+    "lstopo*.desktop"
+    "avahi-discover*.desktop"
+    "bssh*.desktop"
+    "bvnc*.desktop"
+    "assistant*.desktop"
+    "designer*.desktop"
+    "linguist*.desktop"
+    "qdbusviewer*.desktop"
+    "*qtcreator*.desktop"
+  )
+  local pattern=""
+
+  [[ -d "$app_dir" ]] || return 0
+
+  for pattern in "${patterns[@]}"; do
+    for desktop in "$app_dir"/$pattern; do
+      [[ -f "$desktop" ]] || continue
+      hide_desktop_entry "$desktop"
+      matched=1
+    done
+  done
+
+  if ((matched == 1)); then
+    success "Configured menu hides for optional Qt/Avahi/V4L2 tools."
+  else
+    success "No matching desktop entries found for menu hide list."
+  fi
+}
+
 apply_splash_defaults() {
   local home_dir=""
   local username=""
@@ -503,6 +559,7 @@ apply_post_tweaks() {
   apply_yakuake_defaults
   apply_dolphin_defaults
   apply_kate_defaults
+  apply_menu_hides
   record_profile
   success "KDE post-install hook executed."
 }
