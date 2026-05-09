@@ -141,6 +141,7 @@ apply_sddm_defaults() {
   rm -rf "$target_theme_dir"
   cp -a "$source_theme_dir" "$target_theme_dir"
   sed -i 's/fillMode: Image.PreserveAspectCrop/fillMode: Image.PreserveAspectFit/' "$target_theme_dir/Background.qml"
+  sed -i '0,/visible: false/s//visible: true/' "$target_theme_dir/Background.qml"
 
   install -Dm0644 /dev/stdin "$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf" <<'EOF'
 [Theme]
