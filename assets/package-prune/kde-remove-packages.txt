@@ -3,3 +3,7 @@
 # Packages are removed only if installed.
 firefox
 noto-fonts
+v4l-utils
+kwrite
+hwloc
+avahi
