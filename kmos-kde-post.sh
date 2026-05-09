@@ -322,6 +322,33 @@ EOF
   success "Application Dashboard staged as default launcher."
 }
 
+apply_taskmanager_unpin_defaults() {
+  install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-unpin-taskmanager.js" <<'EOF'
+var panels = panelIds;
+for (var i = 0; i < panels.length; ++i) {
+    var panel = panelById(panels[i]);
+    if (!panel || !panel.widgetIds) {
+        continue;
+    }
+
+    var widgets = panel.widgetIds;
+    for (var j = 0; j < widgets.length; ++j) {
+        var widget = panel.widgetById(widgets[j]);
+        if (!widget) {
+            continue;
+        }
+
+        if (widget.type === "org.kde.plasma.taskmanager" || widget.type === "org.kde.plasma.icontasks") {
+            widget.currentConfigGroup = ["General"];
+            widget.writeConfig("launchers", "");
+        }
+    }
+}
+EOF
+
+  success "Task Manager launchers staged as unpinned."
+}
+
 apply_color_scheme_defaults() {
   local home_dir=""
   local username=""
@@ -470,6 +497,7 @@ apply_post_tweaks() {
   apply_lockscreen_defaults
   apply_desktop_wallpaper_defaults
   apply_application_dashboard_defaults
+  apply_taskmanager_unpin_defaults
   apply_color_scheme_defaults
   apply_konsole_defaults
   apply_yakuake_defaults
