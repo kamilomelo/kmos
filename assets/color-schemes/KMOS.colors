@@ -139,7 +139,7 @@ AccentColor=117,117,117
 ColorScheme=KMOS
 LastUsedCustomAccentColor=117,117,117
 Name=KMOS
-accentActiveTitlebar=true
+accentActiveTitlebar=false
 accentInactiveTitlebar=false
 shadeSortColumn=true
 
