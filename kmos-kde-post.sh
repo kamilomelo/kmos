@@ -328,6 +328,7 @@ apply_konsole_defaults() {
   [[ -r "$ASSET_KONSOLE_COLOR_SCHEME" ]] || die "Missing Konsole color scheme asset: $ASSET_KONSOLE_COLOR_SCHEME"
 
   install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT$TARGET_KONSOLE_COLOR_SCHEME"
+  install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/usr/share/konsole/KMOS-Linux.colorscheme"
   write_konsole_profile "$MOUNT_POINT/etc/skel/.local/share/konsole/kmos.profile"
   install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/konsole/KMOS-Linux.colorscheme"
   write_konsole_rc "$MOUNT_POINT/etc/skel/.config/konsolerc"
