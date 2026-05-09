@@ -118,6 +118,7 @@ write_konsole_profile() {
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
 ColorScheme=KMOS-Linux
+UseTransparency=true
 
 [General]
 Name=kmos

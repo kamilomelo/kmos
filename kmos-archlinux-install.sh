@@ -1437,7 +1437,7 @@ offer_power_action() {
 
     while ((countdown > 0)); do
       printf '\rSelect [1-3] (default: 1 in %2ss): ' "$countdown" >&2
-      if read -r -t 1 choice; then
+      if read -r -t 1 choice < /dev/tty; then
         timed_out=0
         break
       fi
@@ -1454,14 +1454,20 @@ offer_power_action() {
       1)
         final_success "Install complete. Rebooting."
         unmount_target
-        systemctl reboot >/dev/null 2>&1 || reboot -f
-        return 0
+        sync
+        systemctl reboot >/dev/null 2>&1 || reboot -f || shutdown -r now || {
+          if [[ -w /proc/sysrq-trigger ]]; then
+            printf 'b' > /proc/sysrq-trigger
+          fi
+        }
+        exit 0
         ;;
       2)
         final_success "Install complete. Shutting down."
         unmount_target
+        sync
         systemctl poweroff >/dev/null 2>&1 || shutdown -h now
-        return 0
+        exit 0
         ;;
       3)
         final_success "Install complete. Returning to shell."
