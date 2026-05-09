@@ -325,6 +325,22 @@ remove_kwallet_helpers() {
   fi
 }
 
+remove_unwanted_packages() {
+  local package=""
+  local installed=()
+
+  for package in firefox noto-fonts; do
+    if arch-chroot "$MOUNT_POINT" pacman -Q "$package" >/dev/null 2>&1; then
+      installed+=("$package")
+    fi
+  done
+
+  if [[ ${#installed[@]} -gt 0 ]]; then
+    arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm "${installed[@]}" || warn "Could not remove one or more unwanted packages: ${installed[*]}"
+    success "Removed unwanted packages when present: ${installed[*]}"
+  fi
+}
+
 write_kwallet_config() {
   local target="$1"
 
@@ -506,6 +522,7 @@ main() {
   select_kde_metapackages
   load_kde_metapackages
   install_kde_packages
+  remove_unwanted_packages
   install_kde_assets
   disable_kwallet
   migrate_wifi_to_networkmanager
