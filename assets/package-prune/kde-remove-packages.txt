@@ -7,3 +7,5 @@ v4l-utils
 kwrite
 hwloc
 avahi
+qt6-tools
+qtcreator
