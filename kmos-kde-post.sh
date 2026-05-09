@@ -110,6 +110,30 @@ frameContrast=0.2
 EOF
 }
 
+write_konsole_profile() {
+  local target="$1"
+
+  install -Dm0644 /dev/stdin "$target" <<'EOF'
+[Appearance]
+ColorScheme=Linux
+UseTransparency=true
+Transparency=27
+
+[General]
+Name=kmos
+Parent=FALLBACK/
+EOF
+}
+
+write_konsole_rc() {
+  local target="$1"
+
+  install -Dm0644 /dev/stdin "$target" <<'EOF'
+[Desktop Entry]
+DefaultProfile=kmos.profile
+EOF
+}
+
 apply_splash_defaults() {
   local home_dir=""
   local username=""
@@ -207,6 +231,32 @@ EOF
   success "Desktop wallpaper defaults staged for first Plasma start."
 }
 
+apply_application_dashboard_defaults() {
+  install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-kickerdash.js" <<'EOF'
+var panels = panelIds;
+for (var i = 0; i < panels.length; ++i) {
+    var panel = panelById(panels[i]);
+    if (!panel || !panel.widgetIds) {
+        continue;
+    }
+
+    var widgets = panel.widgetIds;
+    for (var j = 0; j < widgets.length; ++j) {
+        var widget = panel.widgetById(widgets[j]);
+        if (!widget) {
+            continue;
+        }
+
+        if (widget.type === "org.kde.plasma.kicker" || widget.type === "org.kde.plasma.kickoff") {
+            widget.type = "org.kde.plasma.kickerdash";
+        }
+    }
+}
+EOF
+
+  success "Application Dashboard staged as default launcher."
+}
+
 apply_color_scheme_defaults() {
   local home_dir=""
   local username=""
@@ -231,6 +281,28 @@ apply_color_scheme_defaults() {
   success "KMOS color scheme installed and set as default."
 }
 
+apply_konsole_defaults() {
+  local home_dir=""
+  local username=""
+
+  write_konsole_profile "$MOUNT_POINT/etc/skel/.local/share/konsole/kmos.profile"
+  write_konsole_rc "$MOUNT_POINT/etc/skel/.config/konsolerc"
+
+  write_konsole_profile "$MOUNT_POINT/root/.local/share/konsole/kmos.profile"
+  write_konsole_rc "$MOUNT_POINT/root/.config/konsolerc"
+
+  if [[ -d "$MOUNT_POINT/home" ]]; then
+    while IFS= read -r -d '' home_dir; do
+      username="$(basename "$home_dir")"
+      write_konsole_profile "$home_dir/.local/share/konsole/kmos.profile"
+      write_konsole_rc "$home_dir/.config/konsolerc"
+      arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.local" "/home/$username/.config/konsolerc" 2>/dev/null || true
+    done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
+  fi
+
+  success "Konsole defaults configured."
+}
+
 record_profile() {
   install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/kmos/kde-profile" <<EOF
 $KDE_PROFILE
@@ -242,7 +314,9 @@ apply_post_tweaks() {
   apply_sddm_defaults
   apply_lockscreen_defaults
   apply_desktop_wallpaper_defaults
+  apply_application_dashboard_defaults
   apply_color_scheme_defaults
+  apply_konsole_defaults
   record_profile
   success "KDE post-install hook executed."
 }

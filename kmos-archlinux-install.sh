@@ -1422,6 +1422,7 @@ unmount_target() {
 offer_power_action() {
   local choice=""
   local countdown=10
+  local timed_out=0
 
   printf '\n' >&2
   info "What now?"
@@ -1432,17 +1433,23 @@ offer_power_action() {
   while true; do
     choice=""
     countdown=10
+    timed_out=1
 
     while ((countdown > 0)); do
       printf '\rSelect [1-3] (default: 1 in %2ss): ' "$countdown" >&2
       if read -r -t 1 choice; then
+        timed_out=0
         break
       fi
       ((countdown -= 1))
     done
     printf '\n' >&2
 
-    choice="${choice:-1}"
+    if ((timed_out == 1)); then
+      choice="1"
+    else
+      choice="${choice:-1}"
+    fi
     case "$choice" in
       1)
         final_success "Install complete. Rebooting."
