@@ -1456,71 +1456,20 @@ unmount_target() {
   fi
 }
 
-offer_power_action() {
-  local choice=""
-  local countdown=10
-  local timed_out=0
-  local tty_ok=0
+final_reboot() {
+  final_success "Install complete. Rebooting."
+  unmount_target
+  sync
 
-  printf '\n' >&2
-  info "What now?"
-  log "  1) Reboot"
-  log "  2) Shutdown"
-  if [[ -r /dev/tty ]]; then
-    tty_ok=1
-  fi
-
-  while true; do
-    choice=""
-    countdown=10
-    timed_out=1
-
-    while ((countdown > 0)); do
-      printf '\rSelect [1-2] (default: 1 in %2ss): ' "$countdown" >&2
-      if ((tty_ok == 1)); then
-        if read -r -t 1 choice < /dev/tty; then
-          timed_out=0
-          break
-        fi
-      else
-        sleep 1
+  if ! systemctl reboot -i >/dev/null 2>&1; then
+    reboot -f >/dev/null 2>&1 || shutdown -r now >/dev/null 2>&1 || {
+      if [[ -w /proc/sysrq-trigger ]]; then
+        printf 'b' > /proc/sysrq-trigger
       fi
-      ((countdown -= 1))
-    done
-    printf '\n' >&2
-
-    if ((timed_out == 1)); then
-      choice="1"
-    else
-      choice="${choice:-1}"
-    fi
-    case "$choice" in
-      1)
-        final_success "Install complete. Rebooting."
-        unmount_target
-        sync
-        if ! systemctl reboot -i >/dev/null 2>&1; then
-          reboot -f >/dev/null 2>&1 || shutdown -r now >/dev/null 2>&1 || {
-            if [[ -w /proc/sysrq-trigger ]]; then
-              printf 'b' > /proc/sysrq-trigger
-            fi
-            die "Unable to reboot automatically."
-          }
-        fi
-        exit 0
-        ;;
-      2)
-        final_success "Install complete. Shutting down."
-        unmount_target
-        sync
-        systemctl poweroff >/dev/null 2>&1 || shutdown -h now
-        exit 0
-        ;;
-      *)
-        warn "Invalid selection."
-        ;;
-    esac
-  done
+      die "Unable to reboot automatically."
+    }
+  fi
+  exit 0
 }
 
 main() {
@@ -1559,7 +1508,7 @@ main() {
   install_krub_bootloader
 
   offer_kde_desktop
-  offer_power_action
+  final_reboot
 }
 
 main "$@"
