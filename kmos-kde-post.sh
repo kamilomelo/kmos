@@ -143,6 +143,20 @@ Parent=FALLBACK/
 EOF
 }
 
+write_konsole_dolphin_profile() {
+  local target="$1"
+
+  install -Dm0644 /dev/stdin "$target" <<'EOF'
+[Appearance]
+ColorScheme=KMOS-Linux
+UseTransparency=false
+
+[General]
+Name=kmos-dolphin
+Parent=FALLBACK/
+EOF
+}
+
 write_konsole_rc() {
   local target="$1"
 
@@ -176,6 +190,9 @@ write_dolphin_rc() {
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [General]
 ShowPreview=true
+
+[TerminalPanel]
+Profile=kmos-dolphin.profile
 
 [PreviewSettings]
 Plugins=appimagethumbnail,audiothumbnail,blenderthumbnail,comicbookthumbnail,cursorthumbnail,directorythumbnail,djvuthumbnail,ebookthumbnail,exrthumbnail,ffmpegthumbs,fontthumbnail,glycin-heif,glycin-image-rs,glycin-jxl,glycin-svg,gsthumbnail,heif,imagethumbnail,jpegthumbnail,kraorathumbnail,mltpreview,mobithumbnail,opendocumentthumbnail,rawthumbnail,svgthumbnail,textthumbnail,windowsexethumbnail,windowsimagethumbnail
@@ -439,12 +456,14 @@ apply_konsole_defaults() {
   install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/usr/share/konsole/KMOS-Linux.colorscheme"
   write_konsole_rc "$MOUNT_POINT/etc/xdg/konsolerc"
   write_konsole_profile "$MOUNT_POINT/etc/skel/.local/share/konsole/kmos.profile"
+  write_konsole_dolphin_profile "$MOUNT_POINT/etc/skel/.local/share/konsole/kmos-dolphin.profile"
   write_konsole_default_profile "$MOUNT_POINT/etc/skel/.local/share/konsole/Default.profile"
   install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/konsole/KMOS-Linux.colorscheme"
   write_konsole_rc "$MOUNT_POINT/etc/skel/.config/konsolerc"
 
   install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/konsole/KMOS-Linux.colorscheme"
   write_konsole_profile "$MOUNT_POINT/root/.local/share/konsole/kmos.profile"
+  write_konsole_dolphin_profile "$MOUNT_POINT/root/.local/share/konsole/kmos-dolphin.profile"
   write_konsole_default_profile "$MOUNT_POINT/root/.local/share/konsole/Default.profile"
   write_konsole_rc "$MOUNT_POINT/root/.config/konsolerc"
 
@@ -453,6 +472,7 @@ apply_konsole_defaults() {
       username="$(basename "$home_dir")"
       install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$home_dir/.local/share/konsole/KMOS-Linux.colorscheme"
       write_konsole_profile "$home_dir/.local/share/konsole/kmos.profile"
+      write_konsole_dolphin_profile "$home_dir/.local/share/konsole/kmos-dolphin.profile"
       write_konsole_default_profile "$home_dir/.local/share/konsole/Default.profile"
       write_konsole_rc "$home_dir/.config/konsolerc"
       arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.local" "/home/$username/.config/konsolerc" 2>/dev/null || true
