@@ -1,0 +1,41 @@
+{
+  "metadata": {
+    "name": "kmos-github",
+    "revision": 1
+  },
+  "editor-colors": {
+    "BackgroundColor": "#000000",
+    "CurrentLine": "#0d1117",
+    "IconBorder": "#000000",
+    "LineNumbers": "#6e7681",
+    "TextSelection": "#1f2937"
+  },
+  "text-styles": {
+    "Normal": {
+      "text-color": "#c9d1d9",
+      "selected-text-color": "#c9d1d9"
+    },
+    "Keyword": {
+      "bold": true,
+      "text-color": "#ff7b72",
+      "selected-text-color": "#ff7b72"
+    },
+    "Function": {
+      "text-color": "#d2a8ff",
+      "selected-text-color": "#d2a8ff"
+    },
+    "String": {
+      "text-color": "#a5d6ff",
+      "selected-text-color": "#a5d6ff"
+    },
+    "Comment": {
+      "italic": true,
+      "text-color": "#8b949e",
+      "selected-text-color": "#8b949e"
+    },
+    "DataType": {
+      "text-color": "#ffa657",
+      "selected-text-color": "#ffa657"
+    }
+  }
+}

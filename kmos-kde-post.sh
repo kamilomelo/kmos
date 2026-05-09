@@ -12,6 +12,8 @@ ASSET_WALLPAPER="$SCRIPT_DIR/assets/KM-R-wallpaper.png"
 ASSET_COLOR_SCHEME="$SCRIPT_DIR/assets/color-schemes/KMOS.colors"
 ASSET_KONSOLE_COLOR_SCHEME="$SCRIPT_DIR/assets/konsole/KMOS-Linux.colorscheme"
 ASSET_YAKUAKE_SKIN_DIR="$SCRIPT_DIR/assets/yakuake/monochrome"
+ASSET_KATE_THEME_AYU="$SCRIPT_DIR/assets/kate/kmos-ayu.theme"
+ASSET_KATE_THEME_GITHUB="$SCRIPT_DIR/assets/kate/kmos-github.theme"
 TARGET_WALLPAPER="/opt/kmos/assets/KM-R-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/KMOS.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/KMOS-Linux.colorscheme"
@@ -177,6 +179,15 @@ ShowPreview=true
 
 [PreviewSettings]
 Plugins=appimagethumbnail,audiothumbnail,blenderthumbnail,comicbookthumbnail,cursorthumbnail,directorythumbnail,djvuthumbnail,ebookthumbnail,exrthumbnail,ffmpegthumbs,fontthumbnail,glycin-heif,glycin-image-rs,glycin-jxl,glycin-svg,gsthumbnail,heif,imagethumbnail,jpegthumbnail,kraorathumbnail,mltpreview,mobithumbnail,opendocumentthumbnail,rawthumbnail,svgthumbnail,textthumbnail,windowsexethumbnail,windowsimagethumbnail
+EOF
+}
+
+write_kate_rc() {
+  local target="$1"
+
+  install -Dm0644 /dev/stdin "$target" <<'EOF'
+[KTextEditor Renderer]
+Schema=kmos-github
 EOF
 }
 
@@ -419,6 +430,34 @@ apply_dolphin_defaults() {
   success "Dolphin previews enabled by default."
 }
 
+apply_kate_defaults() {
+  local home_dir=""
+  local username=""
+
+  [[ -r "$ASSET_KATE_THEME_AYU" ]] || die "Missing Kate theme asset: $ASSET_KATE_THEME_AYU"
+  [[ -r "$ASSET_KATE_THEME_GITHUB" ]] || die "Missing Kate theme asset: $ASSET_KATE_THEME_GITHUB"
+
+  install -Dm0644 "$ASSET_KATE_THEME_AYU" "$MOUNT_POINT/usr/share/org.kde.syntax-highlighting/themes/kmos-ayu.theme"
+  install -Dm0644 "$ASSET_KATE_THEME_GITHUB" "$MOUNT_POINT/usr/share/org.kde.syntax-highlighting/themes/kmos-github.theme"
+  install -Dm0644 "$ASSET_KATE_THEME_AYU" "$MOUNT_POINT/opt/kmos/assets/kate/kmos-ayu.theme"
+  install -Dm0644 "$ASSET_KATE_THEME_GITHUB" "$MOUNT_POINT/opt/kmos/assets/kate/kmos-github.theme"
+
+  write_kate_rc "$MOUNT_POINT/etc/skel/.config/katerc"
+  write_kate_rc "$MOUNT_POINT/root/.config/katerc"
+
+  if [[ -d "$MOUNT_POINT/home" ]]; then
+    while IFS= read -r -d '' home_dir; do
+      username="$(basename "$home_dir")"
+      install -Dm0644 "$ASSET_KATE_THEME_AYU" "$home_dir/.local/share/org.kde.syntax-highlighting/themes/kmos-ayu.theme"
+      install -Dm0644 "$ASSET_KATE_THEME_GITHUB" "$home_dir/.local/share/org.kde.syntax-highlighting/themes/kmos-github.theme"
+      write_kate_rc "$home_dir/.config/katerc"
+      arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.local" "/home/$username/.config/katerc" 2>/dev/null || true
+    done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
+  fi
+
+  success "Kate themes installed and kmos-github set as default."
+}
+
 record_profile() {
   install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/kmos/kde-profile" <<EOF
 $KDE_PROFILE
@@ -435,6 +474,7 @@ apply_post_tweaks() {
   apply_konsole_defaults
   apply_yakuake_defaults
   apply_dolphin_defaults
+  apply_kate_defaults
   record_profile
   success "KDE post-install hook executed."
 }

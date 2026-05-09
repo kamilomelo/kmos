@@ -1,0 +1,41 @@
+{
+  "metadata": {
+    "name": "kmos-ayu",
+    "revision": 1
+  },
+  "editor-colors": {
+    "BackgroundColor": "#000000",
+    "CurrentLine": "#0b0b0b",
+    "IconBorder": "#000000",
+    "LineNumbers": "#3b3b3b",
+    "TextSelection": "#1f2a36"
+  },
+  "text-styles": {
+    "Normal": {
+      "text-color": "#e6e1cf",
+      "selected-text-color": "#e6e1cf"
+    },
+    "Keyword": {
+      "bold": true,
+      "text-color": "#ff8f40",
+      "selected-text-color": "#ff8f40"
+    },
+    "Function": {
+      "text-color": "#ffb454",
+      "selected-text-color": "#ffb454"
+    },
+    "String": {
+      "text-color": "#aad94c",
+      "selected-text-color": "#aad94c"
+    },
+    "Comment": {
+      "italic": true,
+      "text-color": "#5c6773",
+      "selected-text-color": "#5c6773"
+    },
+    "DataType": {
+      "text-color": "#f29e74",
+      "selected-text-color": "#f29e74"
+    }
+  }
+}
