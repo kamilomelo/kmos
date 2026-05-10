@@ -10,7 +10,7 @@ MOUNT_POINT="/mnt"
 KDE_PROFILE="${KMOS_KDE_PROFILE:-test}"
 ASSET_WALLPAPER="$SCRIPT_DIR/assets/KM-R-wallpaper.png"
 ASSET_COLOR_SCHEME="$SCRIPT_DIR/assets/color-schemes/KMOS.colors"
-ASSET_KONSOLE_COLOR_SCHEME="$SCRIPT_DIR/assets/konsole/kmos-linux.colorscheme"
+ASSET_KONSOLE_COLOR_SCHEME="$SCRIPT_DIR/assets/konsole/kmos.colorscheme"
 ASSET_KONSOLE_PROFILE="$SCRIPT_DIR/assets/konsole/kmos.profile"
 ASSET_KONSOLE_DOLPHIN_PROFILE="$SCRIPT_DIR/assets/konsole/kmos-dolphin.profile"
 ASSET_YAKUAKE_SKIN_DIR="$SCRIPT_DIR/assets/yakuake/monochrome"
@@ -18,7 +18,7 @@ ASSET_KATE_THEME_AYU="$SCRIPT_DIR/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$SCRIPT_DIR/assets/kate/kmos-github.theme"
 TARGET_WALLPAPER="/opt/kmos/assets/KM-R-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/KMOS.colors"
-TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos-linux.colorscheme"
+TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
 
 UI_RESET=""
 UI_BOLD=""
@@ -122,7 +122,7 @@ write_konsole_profile() {
 
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
-ColorScheme=kmos-linux
+ColorScheme=kmos
 UseTransparency=true
 
 [General]
@@ -136,7 +136,7 @@ write_konsole_default_profile() {
 
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
-ColorScheme=kmos-linux
+ColorScheme=kmos
 UseTransparency=true
 
 [General]
@@ -150,7 +150,7 @@ write_konsole_dolphin_profile() {
 
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
-ColorScheme=kmos-linux
+ColorScheme=kmos
 UseTransparency=false
 
 [General]
@@ -167,7 +167,7 @@ write_konsole_rc() {
 DefaultProfile=kmos.profile
 
 [UiSettings]
-ColorScheme=kmos-linux
+ColorScheme=kmos
 EOF
 }
 
@@ -457,15 +457,15 @@ apply_konsole_defaults() {
   [[ -r "$ASSET_KONSOLE_DOLPHIN_PROFILE" ]] || die "Missing Konsole profile asset: $ASSET_KONSOLE_DOLPHIN_PROFILE"
 
   install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT$TARGET_KONSOLE_COLOR_SCHEME"
-  install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/usr/share/konsole/kmos-linux.colorscheme"
+  install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/usr/share/konsole/kmos.colorscheme"
   write_konsole_rc "$MOUNT_POINT/etc/xdg/konsolerc"
   install -Dm0644 "$ASSET_KONSOLE_PROFILE" "$MOUNT_POINT/etc/skel/.local/share/konsole/kmos.profile"
   install -Dm0644 "$ASSET_KONSOLE_DOLPHIN_PROFILE" "$MOUNT_POINT/etc/skel/.local/share/konsole/kmos-dolphin.profile"
   write_konsole_default_profile "$MOUNT_POINT/etc/skel/.local/share/konsole/Default.profile"
-  install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/konsole/kmos-linux.colorscheme"
+  install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/konsole/kmos.colorscheme"
   write_konsole_rc "$MOUNT_POINT/etc/skel/.config/konsolerc"
 
-  install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/konsole/kmos-linux.colorscheme"
+  install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/konsole/kmos.colorscheme"
   install -Dm0644 "$ASSET_KONSOLE_PROFILE" "$MOUNT_POINT/root/.local/share/konsole/kmos.profile"
   install -Dm0644 "$ASSET_KONSOLE_DOLPHIN_PROFILE" "$MOUNT_POINT/root/.local/share/konsole/kmos-dolphin.profile"
   write_konsole_default_profile "$MOUNT_POINT/root/.local/share/konsole/Default.profile"
@@ -474,7 +474,7 @@ apply_konsole_defaults() {
   if [[ -d "$MOUNT_POINT/home" ]]; then
     while IFS= read -r -d '' home_dir; do
       username="$(basename "$home_dir")"
-      install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$home_dir/.local/share/konsole/kmos-linux.colorscheme"
+      install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$home_dir/.local/share/konsole/kmos.colorscheme"
       install -Dm0644 "$ASSET_KONSOLE_PROFILE" "$home_dir/.local/share/konsole/kmos.profile"
       install -Dm0644 "$ASSET_KONSOLE_DOLPHIN_PROFILE" "$home_dir/.local/share/konsole/kmos-dolphin.profile"
       write_konsole_default_profile "$home_dir/.local/share/konsole/Default.profile"
