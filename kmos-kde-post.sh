@@ -110,7 +110,7 @@ write_kdeglobals_defaults() {
 
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [General]
-ColorScheme=kmos
+ColorScheme=KMOS
 AccentColor=117,117,117
 LastUsedCustomAccentColor=117,117,117
 LookAndFeelPackage=org.kde.kmos.desktop
@@ -131,12 +131,12 @@ set -eu
 
 cfg="${XDG_CONFIG_HOME:-$HOME/.config}/kdeglobals"
 
-if [ -r "$cfg" ] && grep -q '^[[:space:]]*ColorScheme=kmos$' "$cfg"; then
+if [ -r "$cfg" ] && grep -q '^[[:space:]]*ColorScheme=KMOS$' "$cfg"; then
   exit 0
 fi
 
 if command -v plasma-apply-colorscheme >/dev/null 2>&1; then
-  plasma-apply-colorscheme kmos >/dev/null 2>&1 || true
+  plasma-apply-colorscheme KMOS >/dev/null 2>&1 || true
 fi
 EOF
 
@@ -172,7 +172,7 @@ EOF
 
   install -Dm0644 /dev/stdin "$target_theme_dir/contents/defaults/kdeglobals" <<'EOF'
 [General]
-ColorScheme=kmos
+ColorScheme=KMOS
 AccentColor=117,117,117
 LastUsedCustomAccentColor=117,117,117
 LookAndFeelPackage=org.kde.kmos.desktop
@@ -514,11 +514,15 @@ apply_color_scheme_defaults() {
   [[ -r "$ASSET_COLOR_SCHEME" ]] || die "Missing color scheme asset: $ASSET_COLOR_SCHEME"
 
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT$TARGET_COLOR_SCHEME"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/KMOS.colors"
+  sed -i 's/^ColorScheme=kmos$/ColorScheme=KMOS/; s/^Name=kmos$/Name=KMOS/' "$MOUNT_POINT/usr/share/color-schemes/KMOS.colors"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/kmos.colors"
   install_lookandfeel_defaults
   write_color_scheme_autostart "$autostart_script" "$autostart_desktop"
-  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/color-schemes/kmos.colors"
-  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/color-schemes/kmos.colors"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/color-schemes/KMOS.colors"
+  sed -i 's/^ColorScheme=kmos$/ColorScheme=KMOS/; s/^Name=kmos$/Name=KMOS/' "$MOUNT_POINT/etc/skel/.local/share/color-schemes/KMOS.colors"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/color-schemes/KMOS.colors"
+  sed -i 's/^ColorScheme=kmos$/ColorScheme=KMOS/; s/^Name=kmos$/Name=KMOS/' "$MOUNT_POINT/root/.local/share/color-schemes/KMOS.colors"
 
   write_kdeglobals_defaults "$MOUNT_POINT/etc/xdg/kdeglobals"
   write_kdeglobals_defaults "$MOUNT_POINT/etc/skel/.config/kdeglobals"
@@ -527,7 +531,8 @@ apply_color_scheme_defaults() {
   if [[ -d "$MOUNT_POINT/home" ]]; then
     while IFS= read -r -d '' home_dir; do
       username="$(basename "$home_dir")"
-      install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/kmos.colors"
+      install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/KMOS.colors"
+      sed -i 's/^ColorScheme=kmos$/ColorScheme=KMOS/; s/^Name=kmos$/Name=KMOS/' "$home_dir/.local/share/color-schemes/KMOS.colors"
       write_kdeglobals_defaults "$home_dir/.config/kdeglobals"
       arch-chroot "$MOUNT_POINT" chown "$username:$username" "/home/$username/.config" "/home/$username/.config/kdeglobals" 2>/dev/null || true
     done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
