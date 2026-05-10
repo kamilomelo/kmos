@@ -237,12 +237,14 @@ apply_menu_hides() {
     "qv4l2*.desktop"
     "qvidcap*.desktop"
     "*kwrite*.desktop"
+    "org.kde.kwrite.desktop"
     "lstopo*.desktop"
     "avahi-discover*.desktop"
     "bssh*.desktop"
     "bvnc*.desktop"
     "assistant*.desktop"
     "assistant*-qt6.desktop"
+    "qtassistant*.desktop"
     "designer*.desktop"
     "designer*-qt6.desktop"
     "linguist*.desktop"
@@ -250,6 +252,8 @@ apply_menu_hides() {
     "qdbusviewer*.desktop"
     "qdbusviewer*-qt6.desktop"
     "*qtcreator*.desktop"
+    "mpv.desktop"
+    "org.kde.plasma.emojier.desktop"
   )
   local pattern=""
 
