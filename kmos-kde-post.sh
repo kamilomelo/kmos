@@ -447,6 +447,8 @@ apply_color_scheme_defaults() {
 
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT$TARGET_COLOR_SCHEME"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/kmos.colors"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/color-schemes/kmos.colors"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/color-schemes/kmos.colors"
 
   write_kdeglobals_defaults "$MOUNT_POINT/etc/xdg/kdeglobals"
   write_kdeglobals_defaults "$MOUNT_POINT/etc/skel/.config/kdeglobals"
@@ -455,6 +457,7 @@ apply_color_scheme_defaults() {
   if [[ -d "$MOUNT_POINT/home" ]]; then
     while IFS= read -r -d '' home_dir; do
       username="$(basename "$home_dir")"
+      install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/kmos.colors"
       write_kdeglobals_defaults "$home_dir/.config/kdeglobals"
       arch-chroot "$MOUNT_POINT" chown "$username:$username" "/home/$username/.config" "/home/$username/.config/kdeglobals" 2>/dev/null || true
     done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
