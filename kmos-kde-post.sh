@@ -17,6 +17,7 @@ ASSET_YAKUAKE_SKIN_DIR="$SCRIPT_DIR/assets/yakuake/monochrome"
 ASSET_KATE_THEME_AYU="$SCRIPT_DIR/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$SCRIPT_DIR/assets/kate/kmos-github.theme"
 ASSET_DASHBOARD_ICON="$SCRIPT_DIR/assets/kmos-dashboard.svg"
+ASSET_MENU_HIDE_LIST="$SCRIPT_DIR/assets/to-delete-from-menu.txt"
 TARGET_WALLPAPER="/opt/kmos/assets/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
@@ -235,31 +236,26 @@ apply_menu_hides() {
   local app_dir="$MOUNT_POINT/usr/share/applications"
   local desktop=""
   local matched=0
-  local -a patterns=(
-    "qv4l2*.desktop"
-    "qvidcap*.desktop"
-    "*kwrite*.desktop"
-    "org.kde.kwrite.desktop"
-    "lstopo*.desktop"
-    "avahi-discover*.desktop"
-    "bssh*.desktop"
-    "bvnc*.desktop"
-    "assistant*.desktop"
-    "assistant*-qt6.desktop"
-    "qtassistant*.desktop"
-    "designer*.desktop"
-    "designer*-qt6.desktop"
-    "linguist*.desktop"
-    "linguist*-qt6.desktop"
-    "qdbusviewer*.desktop"
-    "qdbusviewer*-qt6.desktop"
-    "*qtcreator*.desktop"
-    "mpv.desktop"
-    "org.kde.plasma.emojier.desktop"
-  )
   local pattern=""
+  local name=""
+  local -a patterns=()
 
   [[ -d "$app_dir" ]] || return 0
+  [[ -r "$ASSET_MENU_HIDE_LIST" ]] || die "Missing menu hide list asset: $ASSET_MENU_HIDE_LIST"
+
+  while IFS= read -r name; do
+    name="${name%%#*}"
+    name="${name#"${name%%[![:space:]]*}"}"
+    name="${name%"${name##*[![:space:]]}"}"
+    [[ -n "$name" ]] || continue
+    case "$name" in
+      *.desktop) patterns+=("$name") ;;
+      *)
+        patterns+=("$name.desktop")
+        patterns+=("*$name*.desktop")
+        ;;
+    esac
+  done < "$ASSET_MENU_HIDE_LIST"
 
   for pattern in "${patterns[@]}"; do
     for desktop in "$app_dir"/$pattern; do
@@ -270,9 +266,9 @@ apply_menu_hides() {
   done
 
   if ((matched == 1)); then
-    success "Configured menu hides for optional Qt/Avahi/V4L2 tools."
+    success "Configured menu hides from asset list."
   else
-    success "No matching desktop entries found for menu hide list."
+    success "No matching desktop entries found for menu hide asset list."
   fi
 }
 

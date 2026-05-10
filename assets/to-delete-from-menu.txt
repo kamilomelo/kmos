@@ -1,0 +1,15 @@
+Qt Assistant
+Qt Creator
+Qt D-Bus Viewer
+Qt Linguist
+Qt Widgets Designer
+Qt Assistant
+Avahi SSH Server Browser
+Avahi VNC Server Browser
+mpv Media Player
+Qt V4L2 test Utility
+Qt V4L2 video capture utility
+Avahi Zeroconf Browser
+Hardware Locality lstopo
+Emoji Selector
+KWrite
