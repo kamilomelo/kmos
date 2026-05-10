@@ -379,7 +379,11 @@ apply_application_dashboard_defaults() {
   [[ -r "$ASSET_DASHBOARD_ICON" ]] || die "Missing dashboard icon asset: $ASSET_DASHBOARD_ICON"
 
   install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT$TARGET_DASHBOARD_ICON"
+  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/opt/kmos/assets/start-here-kde-symbolic.svg"
+  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/opt/kmos/assets/start-here-kde.svg"
   install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/kmos-dashboard.svg"
+  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/start-here-kde-symbolic.svg"
+  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/start-here-kde.svg"
 
   if [[ -f "$layout_template" ]]; then
     sed -i 's/org.kde.plasma.kickoff/org.kde.plasma.kickerdash/' "$layout_template"
@@ -402,12 +406,7 @@ for (var i = 0; i < panels.length; ++i) {
 
         if (widget.type === "org.kde.plasma.kicker" || widget.type === "org.kde.plasma.kickoff") {
             panel.removeWidget(widget);
-            var dashboard = panel.addWidget("org.kde.plasma.kickerdash");
-            if (dashboard) {
-                dashboard.currentConfigGroup = ["General"];
-                dashboard.writeConfig("icon", "kmos-dashboard");
-                dashboard.writeConfig("Icon", "kmos-dashboard");
-            }
+            panel.addWidget("org.kde.plasma.kickerdash");
             break;
         }
     }
