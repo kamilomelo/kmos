@@ -18,6 +18,7 @@ ASSET_KATE_THEME_AYU="$SCRIPT_DIR/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$SCRIPT_DIR/assets/kate/kmos-github.theme"
 TARGET_WALLPAPER="/opt/kmos/assets/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
+TARGET_COLOR_SCHEME_LEGACY="/opt/kmos/assets/color-schemes/KMOS.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
 
 UI_RESET=""
@@ -436,6 +437,8 @@ apply_color_scheme_defaults() {
 
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT$TARGET_COLOR_SCHEME"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/kmos.colors"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT$TARGET_COLOR_SCHEME_LEGACY"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/KMOS.colors"
 
   write_kdeglobals_defaults "$MOUNT_POINT/etc/xdg/kdeglobals"
   write_kdeglobals_defaults "$MOUNT_POINT/etc/skel/.config/kdeglobals"
