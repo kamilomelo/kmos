@@ -1,5 +1,5 @@
 #!/bin/bash
-# KMOS Wi-Fi Connect
+# kmos Wi-Fi Connect
 # Copyright (c) 2026 Kamilo Melo, KM-RoBoTa
 # SPDX-License-Identifier: MIT
 
@@ -45,7 +45,7 @@ init_ui() {
     UI_DANGER=$'\033[31m'
   fi
 
-  if [[ "${TERM:-}" == "linux" || "${KMOS_ASCII_UI:-0}" == "1" ]]; then
+  if [[ "${TERM:-}" == "linux" || "${kmos_ASCII_UI:-0}" == "1" ]]; then
     SUCCESS_ICON=">"
     FINAL_SUCCESS_ICON="OK"
   fi
@@ -114,10 +114,10 @@ advance_step() {
 print_banner() {
   printf '\n' >&2
   printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 20)" "$UI_RESET" >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "KMOS Wi-Fi Connect" "$UI_RESET" >&2
+  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "kmos Wi-Fi Connect" "$UI_RESET" >&2
   printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 20)" "$UI_RESET" >&2
   log "Connect Arch ISO to Wi-Fi when ethernet is not available."
-  #log "Then clone or pull KMOS scripts from GitHub."
+  #log "Then clone or pull kmos scripts from GitHub."
 }
 
 require_tools() {
@@ -387,11 +387,11 @@ verify_internet() {
 }
 
 print_next_commands() {
-  local repo_url="https://github.com/kamilomelo/KMOS.git"
+  local repo_url="https://github.com/kamilomelo/kmos.git"
 
   info "Next commands after network is ready:"
   printf '\n%s\n' "  git clone $repo_url" >&2
-  printf '%s\n' "  cd KMOS" >&2
+  printf '%s\n' "  cd kmos" >&2
   printf '%s\n\n' "  git pull --ff-only" >&2
 }
 

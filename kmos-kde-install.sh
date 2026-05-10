@@ -1,5 +1,5 @@
 #!/bin/bash
-# KMOS KDE Install
+# kmos KDE Install
 # Copyright (c) 2026 Kamilo Melo, KM-RoBoTa
 # SPDX-License-Identifier: MIT
 
@@ -8,9 +8,9 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 METAPACKAGE_ROOT_DIR="$SCRIPT_DIR/metapackages"
-METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/metapackages"
-KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/kmos-kde-post.sh"
-KDE_PROFILE="${KMOS_KDE_PROFILE:-full}"
+METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/metapackages"
+KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/kmos-kde-post.sh"
+KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
 PRUNE_LIST_FILE="$SCRIPT_DIR/assets/package-prune/kde-remove-packages.txt"
 
 UI_RESET=""
@@ -40,7 +40,7 @@ init_ui() {
     UI_DANGER=$'\033[31m'
   fi
 
-  if [[ "${TERM:-}" == "linux" || "${ASCII_UI:-${KMOS_ASCII_UI:-0}}" == "1" ]]; then
+  if [[ "${TERM:-}" == "linux" || "${ASCII_UI:-${kmos_ASCII_UI:-0}}" == "1" ]]; then
     SUCCESS_ICON=">"
     FINAL_SUCCESS_ICON="OK"
   fi
@@ -79,8 +79,8 @@ detail() {
 
 print_banner() {
   printf '\n' >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "KMOS KDE Install" "$UI_RESET" >&2
-  log "Lean KDE Plasma desktop layer for an existing KMOS minimal install."
+  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "kmos KDE Install" "$UI_RESET" >&2
+  log "Lean KDE Plasma desktop layer for an existing kmos minimal install."
 }
 
 ask_yes_no() {
@@ -244,7 +244,7 @@ get_metapackage_pkgbuild() {
   local fetched_path=""
 
   if [[ -z "$relative_path" ]]; then
-    relative_path="$(metapackage_relative_path_for_name "$pkgname")" || die "Unknown KMOS metapackage: $pkgname"
+    relative_path="$(metapackage_relative_path_for_name "$pkgname")" || die "Unknown kmos metapackage: $pkgname"
   fi
 
   local_path="$METAPACKAGE_ROOT_DIR/$relative_path"
@@ -256,9 +256,9 @@ get_metapackage_pkgbuild() {
   remote_url="$METAPACKAGE_RAW_ROOT_URL/$relative_path"
   fetched_path="/tmp/${pkgname}.PKGBUILD"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$remote_url" -o "$fetched_path" || die "Could not fetch KMOS metapackage: $pkgname"
+    curl -fsSL "$remote_url" -o "$fetched_path" || die "Could not fetch kmos metapackage: $pkgname"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$fetched_path" "$remote_url" || die "Could not fetch KMOS metapackage: $pkgname"
+    wget -qO "$fetched_path" "$remote_url" || die "Could not fetch kmos metapackage: $pkgname"
   else
     die "Metapackage $pkgname not found locally and neither curl nor wget is available."
   fi
@@ -409,7 +409,7 @@ write_nm_connection() {
 
   {
     printf '[connection]\n'
-    printf 'id=KMOS Wi-Fi %s\n' "$ssid"
+    printf 'id=kmos Wi-Fi %s\n' "$ssid"
     printf 'uuid=%s\n' "$uuid"
     printf 'type=wifi\n'
     printf 'interface-name=%s\n' "$interface"

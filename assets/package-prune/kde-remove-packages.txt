@@ -1,4 +1,4 @@
-# KMOS KDE post-install package prune list
+# kmos KDE post-install package prune list
 # One package per line. Lines starting with # are ignored.
 # Packages are removed only if installed.
 firefox

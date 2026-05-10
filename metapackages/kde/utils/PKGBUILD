@@ -2,9 +2,9 @@
 pkgname=kmos-kde-utils
 pkgver=2026.05.08
 pkgrel=1
-pkgdesc="KMOS KDE utility package set"
+pkgdesc="kmos KDE utility package set"
 arch=('any')
-url="https://github.com/kamilomelo/KMOS"
+url="https://github.com/kamilomelo/kmos"
 license=('MIT')
 depends=(
   'ark'

@@ -1,5 +1,5 @@
 #!/bin/bash
-# KMOS Arch Linux Install
+# kmos Arch Linux Install
 # Copyright (c) 2026 Kamilo Melo, KM-RoBoTa
 # SPDX-License-Identifier: MIT
 
@@ -9,12 +9,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 WIFI_HANDOFF_DIR="/run/kmos/wifi"
 NODESKTOP_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/nodesktop"
-KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/KMOS/main/kmos-kde-install.sh"
+KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/kmos-kde-install.sh"
 STARSHIP_PRESET_DIR="$SCRIPT_DIR/assets/starship-presets"
 STARSHIP_PRESET_MODE="holow"
 STARSHIP_PRESET_THEME="light"
-DEBUG_MODE="${KMOS_DEBUG:-0}"
-PACMAN_RETRIES="${KMOS_PACMAN_RETRIES:-4}"
+DEBUG_MODE="${kmos_DEBUG:-0}"
+PACMAN_RETRIES="${kmos_PACMAN_RETRIES:-4}"
 STEP_INDEX=0
 STEP_TOTAL=9
 
@@ -117,7 +117,7 @@ init_ui() {
     UI_DANGER=$'\033[31m'
   fi
 
-  if [[ "${TERM:-}" == "linux" || "${ASCII_UI:-${KMOS_ASCII_UI:-0}}" == "1" ]]; then
+  if [[ "${TERM:-}" == "linux" || "${ASCII_UI:-${kmos_ASCII_UI:-0}}" == "1" ]]; then
     SUCCESS_ICON=">"
     FINAL_SUCCESS_ICON="OK"
   fi
@@ -223,7 +223,7 @@ advance_step() {
 print_banner() {
   printf '\n' >&2
   printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 23)" "$UI_RESET" >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "KMOS Arch Linux Install" "$UI_RESET" >&2
+  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "kmos Arch Linux Install" "$UI_RESET" >&2
   printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 23)" "$UI_RESET" >&2
   log "Lean Arch Linux installer for the base system."
   log "This stage prepares partitions, installs base packages, and configures users."
@@ -1179,12 +1179,12 @@ STARSHIP_PROFILE
   if ! grep -q 'starship init bash' "$bashrc"; then
     cat >> "$bashrc" <<'BASHRC'
 
-# KMOS Starship prompt
+# kmos Starship prompt
 if [[ $- == *i* ]] && command -v starship >/dev/null 2>&1; then
   eval "$(starship init bash)"
 fi
 
-# KMOS zoxide
+# kmos zoxide
 if [[ $- == *i* ]] && command -v zoxide >/dev/null 2>&1; then
   eval "$(zoxide init bash)"
 fi

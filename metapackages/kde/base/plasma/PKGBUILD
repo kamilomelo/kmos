@@ -2,9 +2,9 @@
 pkgname=kmos-kde-plasma
 pkgver=2026.05.07
 pkgrel=1
-pkgdesc="KMOS stripped KDE Plasma package set"
+pkgdesc="kmos stripped KDE Plasma package set"
 arch=('any')
-url="https://github.com/kamilomelo/KMOS"
+url="https://github.com/kamilomelo/kmos"
 license=('MIT')
 depends=(
   'aurorae'

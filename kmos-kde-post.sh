@@ -1,5 +1,5 @@
 #!/bin/bash
-# KMOS KDE Post Install
+# kmos KDE Post Install
 # Copyright (c) 2026 Kamilo Melo, KM-RoBoTa
 # SPDX-License-Identifier: MIT
 
@@ -7,7 +7,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
-KDE_PROFILE="${KMOS_KDE_PROFILE:-test}"
+KDE_PROFILE="${kmos_kde_profile:-test}"
 ASSET_WALLPAPER="$SCRIPT_DIR/assets/kmos-wallpaper.png"
 ASSET_COLOR_SCHEME="$SCRIPT_DIR/assets/color-schemes/kmos.colors"
 ASSET_KONSOLE_COLOR_SCHEME="$SCRIPT_DIR/assets/konsole/kmos.colorscheme"
@@ -18,7 +18,6 @@ ASSET_KATE_THEME_AYU="$SCRIPT_DIR/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$SCRIPT_DIR/assets/kate/kmos-github.theme"
 TARGET_WALLPAPER="/opt/kmos/assets/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
-TARGET_COLOR_SCHEME_LEGACY="/opt/kmos/assets/color-schemes/KMOS.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
 
 UI_RESET=""
@@ -40,7 +39,7 @@ init_ui() {
     UI_DANGER=$'\033[31m'
   fi
 
-  if [[ "${TERM:-}" == "linux" || "${ASCII_UI:-${KMOS_ASCII_UI:-0}}" == "1" ]]; then
+  if [[ "${TERM:-}" == "linux" || "${ascii_ui:-0}" == "1" ]]; then
     SUCCESS_ICON=">"
     FINAL_SUCCESS_ICON="OK"
   fi
@@ -437,8 +436,6 @@ apply_color_scheme_defaults() {
 
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT$TARGET_COLOR_SCHEME"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/kmos.colors"
-  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT$TARGET_COLOR_SCHEME_LEGACY"
-  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/KMOS.colors"
 
   write_kdeglobals_defaults "$MOUNT_POINT/etc/xdg/kdeglobals"
   write_kdeglobals_defaults "$MOUNT_POINT/etc/skel/.config/kdeglobals"
@@ -452,7 +449,7 @@ apply_color_scheme_defaults() {
     done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
   fi
 
-  success "KMOS color scheme installed and set as default."
+  success "kmos color scheme installed and set as default."
 }
 
 apply_konsole_defaults() {

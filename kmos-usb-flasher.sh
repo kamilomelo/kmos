@@ -1,5 +1,5 @@
 #!/bin/bash
-# KMOS USB Flasher
+# kmos USB Flasher
 # Copyright (c) 2026 Kamilo Melo, KM-RoBoTa
 # SPDX-License-Identifier: MIT
 
@@ -163,7 +163,7 @@ warning_block() {
 print_banner() {
   printf '\n' >&2
   printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 16)" "$UI_RESET" >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "KMOS USB Flasher" "$UI_RESET" >&2
+  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "kmos USB Flasher" "$UI_RESET" >&2
   printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 16)" "$UI_RESET" >&2
   log "Bootable USB creator for good Linux Operating Systems."
   log "Downloads, verifies, and writes the selected ISO to a USB device."

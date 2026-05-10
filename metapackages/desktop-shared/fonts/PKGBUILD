@@ -2,9 +2,9 @@
 pkgname=kmos-fonts
 pkgver=2026.05.08
 pkgrel=1
-pkgdesc="KMOS font package set"
+pkgdesc="kmos font package set"
 arch=('any')
-url="https://github.com/kamilomelo/KMOS"
+url="https://github.com/kamilomelo/kmos"
 license=('MIT')
 depends=(
   'opendesktop-fonts'
