@@ -295,6 +295,14 @@ hide_desktop_entry() {
   fi
 }
 
+refresh_menu_cache() {
+  arch-chroot "$MOUNT_POINT" kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$MOUNT_POINT/usr/local/share/applications" >/dev/null 2>&1 || true
+    update-desktop-database "$MOUNT_POINT/usr/share/applications" >/dev/null 2>&1 || true
+  fi
+}
+
 apply_menu_hides() {
   local app_dir="$MOUNT_POINT/usr/share/applications"
   local desktop=""
@@ -333,6 +341,8 @@ apply_menu_hides() {
   else
     success "No matching desktop entries found for menu hide asset list."
   fi
+
+  refresh_menu_cache
 }
 
 apply_splash_defaults() {
@@ -434,16 +444,29 @@ EOF
 
 apply_application_dashboard_defaults() {
   local layout_template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
+  local icon=""
+  local -a theme_dirs=(
+    "$MOUNT_POINT/usr/share/icons/breeze"
+    "$MOUNT_POINT/usr/share/icons/breeze-dark"
+  )
+  local -a sizes=(16 22 24 32 64 96)
 
   [[ -r "$ASSET_DASHBOARD_ICON" ]] || die "Missing dashboard icon asset: $ASSET_DASHBOARD_ICON"
 
   install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT$TARGET_DASHBOARD_ICON"
   install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/kmos.svg"
   install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/plasma-symbolic.svg"
-  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/places/start-here-kde.svg"
-  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/places/start-here-kde-symbolic.svg"
-  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/places/start-here-kde-plasma.svg"
-  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/places/start-here-kde-plasma-symbolic.svg"
+
+  for icon in "${theme_dirs[@]}"; do
+    for size in "${sizes[@]}"; do
+      install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/places/$size/start-here-kde.svg"
+      install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/places/$size/start-here-kde-symbolic.svg"
+      install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/places/$size/start-here-kde-plasma.svg"
+      install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/places/$size/start-here-kde-plasma-symbolic.svg"
+    done
+    install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/apps/22/plasma-symbolic.svg"
+    install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/apps/24/plasma-symbolic.svg"
+  done
 
   if [[ -f "$layout_template" ]]; then
     sed -i 's/org.kde.plasma.kickoff/org.kde.plasma.kickerdash/' "$layout_template"
