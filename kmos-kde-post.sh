@@ -242,9 +242,13 @@ apply_menu_hides() {
     "bssh*.desktop"
     "bvnc*.desktop"
     "assistant*.desktop"
+    "assistant*-qt6.desktop"
     "designer*.desktop"
+    "designer*-qt6.desktop"
     "linguist*.desktop"
+    "linguist*-qt6.desktop"
     "qdbusviewer*.desktop"
+    "qdbusviewer*-qt6.desktop"
     "*qtcreator*.desktop"
   )
   local pattern=""
