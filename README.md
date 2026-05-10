@@ -10,7 +10,7 @@ It provides:
 ## How To Use It
 
 ### 1) Prepare Installation USB
-Use `kmos-usb-flasher.sh` on a working machine to write the Arch ISO to USB.
+Use `tools/kmos-usb-flasher.sh` on a working machine to write the Arch ISO to USB.
 
 ### 2) Boot Target Machine With Arch ISO
 Boot from the flashed USB and open a shell.
@@ -26,7 +26,7 @@ cd kmos
 
 The installer handles partitioning, base setup, bootloader, and then asks for desktop mode:
 - `nodesktop` (headless/minimal), or
-- KDE desktop path (calls `kmos-kde-install.sh` + `kmos-kde-post.sh`).
+- KDE desktop path (calls `desktop/kmos-kde-install.sh` + `desktop/kmos-kde-post.sh`).
 
 ### 4) If Ethernet Is NOT Available (Wi-Fi Path)
 Use the repository from external media, then run Wi-Fi setup first:
@@ -35,7 +35,7 @@ Use the repository from external media, then run Wi-Fi setup first:
 # Example: mount external USB containing the kmos repo
 mount /dev/<usb-partition> /mnt
 cd /mnt/<kmos-folder>
-./kmos-wifi-connect.sh
+./tools/kmos-wifi-connect.sh
 ```
 
 After Wi-Fi is connected, continue with:
@@ -49,15 +49,14 @@ After Wi-Fi is connected, continue with:
 ```text
 .
 ├── kmos-archlinux-install.sh      # Main Arch installer (base + optional desktop stage)
-├── kmos-kde-install.sh            # KDE package install stage
-├── kmos-kde-post.sh               # KDE post-install defaults and tweaks
-├── kmos-wifi-connect.sh           # Wi-Fi bootstrap for Arch ISO/live session
-├── kmos-usb-flasher.sh            # Bootable USB flasher
+├── desktop/                       # KDE installer stages
+│   ├── kmos-kde-install.sh        # KDE package install stage
+│   └── kmos-kde-post.sh           # KDE post-install defaults and tweaks
+├── tools/                         # Helper scripts
+│   ├── kmos-wifi-connect.sh       # Wi-Fi bootstrap for Arch ISO/live session
+│   └── kmos-usb-flasher.sh        # Bootable USB flasher
 ├── metapackages/                  # PKGBUILD bundle definitions (nodesktop, kde, shared sets)
 ├── assets/                        # Wallpaper, themes, Konsole/Kate presets, prune list
-├── installers/arch/               # Modular installer scaffold (phased architecture)
-├── docs/                          # Design and implementation notes
-├── tools/                         # Development helpers
 └── LICENSE
 ```
 

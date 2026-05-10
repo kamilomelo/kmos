@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 WIFI_HANDOFF_DIR="/run/kmos/wifi"
 NODESKTOP_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/nodesktop"
-KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/kmos-kde-install.sh"
+KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/desktop/kmos-kde-install.sh"
 STARSHIP_PRESET_DIR="$SCRIPT_DIR/assets/starship-presets"
 STARSHIP_PRESET_MODE="holow"
 STARSHIP_PRESET_THEME="light"
@@ -671,7 +671,7 @@ collect_wifi_boot_config() {
   WIFI_HIDDEN="$(read_handoff_value hidden || true)"
 
   if [[ -z "$WIFI_ADAPTER" || -z "$WIFI_SSID" || -z "$WIFI_PASSWORD" ]]; then
-    warn "Wi-Fi handoff data is incomplete. Run kmos-wifi-connect.sh again if you need Wi-Fi after reboot."
+    warn "Wi-Fi handoff data is incomplete. Run tools/kmos-wifi-connect.sh again if you need Wi-Fi after reboot."
     ENABLE_WIFI_AFTER_BOOT="no"
     return 0
   fi
@@ -1422,7 +1422,7 @@ update_target_system() {
 }
 
 run_kde_installer() {
-  local local_installer="$SCRIPT_DIR/kmos-kde-install.sh"
+  local local_installer="$SCRIPT_DIR/desktop/kmos-kde-install.sh"
   local fetched_installer="/tmp/kmos-kde-install.sh"
 
   if [[ -f "$local_installer" ]]; then
