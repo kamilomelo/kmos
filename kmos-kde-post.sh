@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 KDE_PROFILE="${KMOS_KDE_PROFILE:-test}"
 ASSET_WALLPAPER="$SCRIPT_DIR/assets/KM-R-wallpaper.png"
-ASSET_COLOR_SCHEME="$SCRIPT_DIR/assets/color-schemes/KMOS.colors"
+ASSET_COLOR_SCHEME="$SCRIPT_DIR/assets/color-schemes/kmos.colors"
 ASSET_KONSOLE_COLOR_SCHEME="$SCRIPT_DIR/assets/konsole/kmos.colorscheme"
 ASSET_KONSOLE_PROFILE="$SCRIPT_DIR/assets/konsole/kmos.profile"
 ASSET_KONSOLE_DOLPHIN_PROFILE="$SCRIPT_DIR/assets/konsole/kmos-dolphin.profile"
@@ -17,7 +17,7 @@ ASSET_YAKUAKE_SKIN_DIR="$SCRIPT_DIR/assets/yakuake/monochrome"
 ASSET_KATE_THEME_AYU="$SCRIPT_DIR/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$SCRIPT_DIR/assets/kate/kmos-github.theme"
 TARGET_WALLPAPER="/opt/kmos/assets/KM-R-wallpaper.png"
-TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/KMOS.colors"
+TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
 
 UI_RESET=""
@@ -107,7 +107,7 @@ write_kdeglobals_defaults() {
 
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [General]
-ColorScheme=KMOS
+ColorScheme=kmos
 AccentColor=117,117,117
 LastUsedCustomAccentColor=117,117,117
 
@@ -431,7 +431,7 @@ apply_color_scheme_defaults() {
   [[ -r "$ASSET_COLOR_SCHEME" ]] || die "Missing color scheme asset: $ASSET_COLOR_SCHEME"
 
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT$TARGET_COLOR_SCHEME"
-  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/KMOS.colors"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/kmos.colors"
 
   write_kdeglobals_defaults "$MOUNT_POINT/etc/xdg/kdeglobals"
   write_kdeglobals_defaults "$MOUNT_POINT/etc/skel/.config/kdeglobals"

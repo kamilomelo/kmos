@@ -136,9 +136,9 @@ ForegroundVisited=192,128,255
 
 [General]
 AccentColor=117,117,117
-ColorScheme=KMOS
+ColorScheme=kmos
 LastUsedCustomAccentColor=117,117,117
-Name=KMOS
+Name=kmos
 accentActiveTitlebar=false
 accentInactiveTitlebar=false
 shadeSortColumn=true
