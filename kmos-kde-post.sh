@@ -120,6 +120,36 @@ frameContrast=0.2
 EOF
 }
 
+write_color_scheme_autostart() {
+  local target_script="$1"
+  local target_desktop="$2"
+
+  install -Dm0755 /dev/stdin "$target_script" <<'EOF'
+#!/bin/sh
+set -eu
+
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/kdeglobals"
+
+if [ -r "$cfg" ] && grep -q '^[[:space:]]*ColorScheme=kmos$' "$cfg"; then
+  exit 0
+fi
+
+if command -v plasma-apply-colorscheme >/dev/null 2>&1; then
+  plasma-apply-colorscheme kmos >/dev/null 2>&1 || true
+fi
+EOF
+
+  install -Dm0644 /dev/stdin "$target_desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=kmos color scheme
+Exec=$target_script
+OnlyShowIn=KDE;
+X-GNOME-Autostart-enabled=false
+NoDisplay=true
+EOF
+}
+
 write_konsole_profile() {
   local target="$1"
 
@@ -443,11 +473,14 @@ EOF
 apply_color_scheme_defaults() {
   local home_dir=""
   local username=""
+  local autostart_script="$MOUNT_POINT/usr/share/kmos/bin/kmos-apply-colorscheme.sh"
+  local autostart_desktop="$MOUNT_POINT/etc/xdg/autostart/kmos-apply-colorscheme.desktop"
 
   [[ -r "$ASSET_COLOR_SCHEME" ]] || die "Missing color scheme asset: $ASSET_COLOR_SCHEME"
 
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT$TARGET_COLOR_SCHEME"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/kmos.colors"
+  write_color_scheme_autostart "$autostart_script" "$autostart_desktop"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/color-schemes/kmos.colors"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/color-schemes/kmos.colors"
 
