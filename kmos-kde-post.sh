@@ -16,9 +16,11 @@ ASSET_KONSOLE_DOLPHIN_PROFILE="$SCRIPT_DIR/assets/konsole/kmos-dolphin.profile"
 ASSET_YAKUAKE_SKIN_DIR="$SCRIPT_DIR/assets/yakuake/monochrome"
 ASSET_KATE_THEME_AYU="$SCRIPT_DIR/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$SCRIPT_DIR/assets/kate/kmos-github.theme"
+ASSET_DASHBOARD_ICON="$SCRIPT_DIR/assets/kmos-dashboard.svg"
 TARGET_WALLPAPER="/opt/kmos/assets/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
+TARGET_DASHBOARD_ICON="/opt/kmos/assets/kmos-dashboard.svg"
 
 UI_RESET=""
 UI_BOLD=""
@@ -374,6 +376,11 @@ EOF
 apply_application_dashboard_defaults() {
   local layout_template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
 
+  [[ -r "$ASSET_DASHBOARD_ICON" ]] || die "Missing dashboard icon asset: $ASSET_DASHBOARD_ICON"
+
+  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT$TARGET_DASHBOARD_ICON"
+  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/kmos-dashboard.svg"
+
   if [[ -f "$layout_template" ]]; then
     sed -i 's/org.kde.plasma.kickoff/org.kde.plasma.kickerdash/' "$layout_template"
   fi
@@ -395,7 +402,12 @@ for (var i = 0; i < panels.length; ++i) {
 
         if (widget.type === "org.kde.plasma.kicker" || widget.type === "org.kde.plasma.kickoff") {
             panel.removeWidget(widget);
-            panel.addWidget("org.kde.plasma.kickerdash");
+            var dashboard = panel.addWidget("org.kde.plasma.kickerdash");
+            if (dashboard) {
+                dashboard.currentConfigGroup = ["General"];
+                dashboard.writeConfig("icon", "kmos-dashboard");
+                dashboard.writeConfig("Icon", "kmos-dashboard");
+            }
             break;
         }
     }
