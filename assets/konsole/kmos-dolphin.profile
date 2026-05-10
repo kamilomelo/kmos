@@ -1,5 +1,5 @@
 [Appearance]
-ColorScheme=KMOS-Linux
+ColorScheme=kmos-linux
 UseTransparency=false
 
 [General]
