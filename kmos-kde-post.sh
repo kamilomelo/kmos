@@ -295,6 +295,32 @@ hide_desktop_entry() {
   fi
 }
 
+write_kmenuedit_menu_overlay() {
+  local target="$1"
+  local name=""
+
+  install -d "$(dirname "$target")"
+  {
+    printf '%s\n' '<!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"'
+    printf '%s\n' ' "http://www.freedesktop.org/standards/menu-spec/1.0/menu.dtd">'
+    printf '%s\n' '<Menu>'
+    printf '%s\n' '  <Name>Applications</Name>'
+    printf '%s\n' '  <Exclude>'
+    while IFS= read -r name; do
+      name="${name%%#*}"
+      name="${name#"${name%%[![:space:]]*}"}"
+      name="${name%"${name##*[![:space:]]}"}"
+      [[ -n "$name" ]] || continue
+      case "$name" in
+        *.desktop) printf '    <Filename>%s</Filename>\n' "$name" ;;
+        *) printf '    <Filename>%s.desktop</Filename>\n' "$name" ;;
+      esac
+    done < "$ASSET_MENU_HIDE_LIST"
+    printf '%s\n' '  </Exclude>'
+    printf '%s\n' '</Menu>'
+  } | install -Dm0644 /dev/stdin "$target"
+}
+
 refresh_menu_cache() {
   arch-chroot "$MOUNT_POINT" kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
   if command -v update-desktop-database >/dev/null 2>&1; then
@@ -313,6 +339,8 @@ apply_menu_hides() {
 
   [[ -d "$app_dir" ]] || return 0
   [[ -r "$ASSET_MENU_HIDE_LIST" ]] || die "Missing menu hide list asset: $ASSET_MENU_HIDE_LIST"
+
+  write_kmenuedit_menu_overlay "$MOUNT_POINT/etc/xdg/menus/applications-kmenuedit.menu"
 
   while IFS= read -r name; do
     name="${name%%#*}"
@@ -557,6 +585,8 @@ apply_color_scheme_defaults() {
   if [[ -d "$MOUNT_POINT/home" ]]; then
     while IFS= read -r -d '' home_dir; do
       username="$(basename "$home_dir")"
+      write_kmenuedit_menu_overlay "$home_dir/.config/menus/applications-kmenuedit.menu"
+      arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.config/menus" 2>/dev/null || true
       install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/KMOS.colors"
       sed -i 's/^ColorScheme=kmos$/ColorScheme=KMOS/; s/^Name=kmos$/Name=KMOS/' "$home_dir/.local/share/color-schemes/KMOS.colors"
       write_kdeglobals_defaults "$home_dir/.config/kdeglobals"
