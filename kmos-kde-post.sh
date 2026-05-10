@@ -113,6 +113,7 @@ write_kdeglobals_defaults() {
 ColorScheme=kmos
 AccentColor=117,117,117
 LastUsedCustomAccentColor=117,117,117
+LookAndFeelPackage=org.kde.kmos.desktop
 
 [KDE]
 contrast=4
@@ -147,6 +148,38 @@ Exec=$target_script
 OnlyShowIn=KDE;
 X-GNOME-Autostart-enabled=false
 NoDisplay=true
+EOF
+}
+
+install_lookandfeel_defaults() {
+  local target_theme_dir="$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.kmos.desktop"
+
+  install -d "$target_theme_dir/contents/defaults"
+
+  install -Dm0644 /dev/stdin "$target_theme_dir/metadata.json" <<'EOF'
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Id": "org.kde.kmos.desktop",
+        "Name": "kmos",
+        "Description": "kmos look and feel defaults",
+        "License": "MIT",
+        "Category": "",
+        "Version": "1.0"
+    }
+}
+EOF
+
+  install -Dm0644 /dev/stdin "$target_theme_dir/contents/defaults/kdeglobals" <<'EOF'
+[General]
+ColorScheme=kmos
+AccentColor=117,117,117
+LastUsedCustomAccentColor=117,117,117
+LookAndFeelPackage=org.kde.kmos.desktop
+
+[KDE]
+contrast=4
+frameContrast=0.2
 EOF
 }
 
@@ -480,6 +513,7 @@ apply_color_scheme_defaults() {
 
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT$TARGET_COLOR_SCHEME"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/usr/share/color-schemes/kmos.colors"
+  install_lookandfeel_defaults
   write_color_scheme_autostart "$autostart_script" "$autostart_desktop"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/color-schemes/kmos.colors"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/color-schemes/kmos.colors"
