@@ -811,7 +811,7 @@ while IFS= read -r line; do
 done < "$list_file"
 
 [[ ${#packages[@]} -gt 0 ]] || exit 0
-paru --pacman "$pacman_wrapper" -S --needed --noconfirm --skipreview "${packages[@]}"
+paru --pacman "$pacman_wrapper" --noprovides -S --needed --noconfirm --skipreview "${packages[@]}"
 EOF
 }
 
