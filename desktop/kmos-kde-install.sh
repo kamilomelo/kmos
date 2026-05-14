@@ -114,7 +114,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot basename cat chmod chown cp find findmnt grep head install mkdir runuser sed sort)
+  local tools=(arch-chroot basename cat chmod cp find findmnt grep head install mkdir sed sort)
   local tool=""
 
   for tool in "${tools[@]}"; do
@@ -294,11 +294,6 @@ resolve_metapackage_depends() {
   done
 }
 
-install_kde_packages() {
-  arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm "${KDE_PACKAGES[@]}"
-  success "KDE packages installed."
-}
-
 run_target_pacman_without_packagekit_hook() {
   local pacman_cmd="$1"
   local hookdir="/var/cache/kmos/empty-hooks"
@@ -307,60 +302,9 @@ run_target_pacman_without_packagekit_hook() {
   arch-chroot "$MOUNT_POINT" bash -lc "pacman --hookdir '$hookdir' $pacman_cmd"
 }
 
-get_metapackage_builder_user() {
-  local username=""
-  local uid=""
-  local home=""
-
-  while IFS=: read -r username _ uid _ _ home _; do
-    [[ "$uid" =~ ^[0-9]+$ ]] || continue
-    ((uid >= 1000)) || continue
-    [[ "$home" == /home/* ]] || continue
-    [[ -d "$MOUNT_POINT$home" ]] || continue
-    printf '%s\n' "$username"
-    return 0
-  done < "$MOUNT_POINT/etc/passwd"
-
-  return 1
-}
-
-build_target_metapackage() {
-  local pkgbuild="$1"
-  local pkgname=""
-  local build_root=""
-  local builder_user=""
-
-  pkgname="$(source "$pkgbuild"; printf '%s\n' "$pkgname")"
-  [[ -n "$pkgname" ]] || die "Could not read pkgname from $pkgbuild"
-  builder_user="$(get_metapackage_builder_user)" || die "Could not find a normal user to build metapackages."
-
-  build_root="/var/cache/kmos/build/$pkgname"
-  install -Dm0644 "$pkgbuild" "$MOUNT_POINT$build_root/PKGBUILD"
-  arch-chroot "$MOUNT_POINT" mkdir -p "$build_root"
-  arch-chroot "$MOUNT_POINT" chown -R "$builder_user:$builder_user" "$build_root"
-  arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "cd '$build_root' && makepkg --nodeps --force --clean --cleanbuild --noconfirm >/dev/null" || die "Could not build metapackage: $pkgname"
-  arch-chroot "$MOUNT_POINT" bash -lc "compgen -G '$build_root/${pkgname}-*.pkg.tar.*' >/dev/null" || die "Could not locate built metapackage archive for $pkgname"
-  printf '%s\n' "$build_root/${pkgname}-"'*.pkg.tar.*'
-}
-
-install_kde_metapackages() {
-  local count="${#RESOLVED_METAPACKAGES[@]}"
-  local index=0
-  local metapackage=""
-  local relative_path=""
-  local pkgbuild=""
-  local package_glob=""
-
-  while ((count - index > 0)); do
-    metapackage="${RESOLVED_METAPACKAGES[$((count - index - 1))]}"
-    relative_path="$(metapackage_relative_path_for_name "$metapackage")" || die "Unknown kmos metapackage: $metapackage"
-    pkgbuild="$(get_metapackage_pkgbuild "$metapackage" "$relative_path")"
-    package_glob="$(build_target_metapackage "$pkgbuild")"
-    run_target_pacman_without_packagekit_hook "pacman -U --noconfirm $package_glob"
-    ((index += 1))
-  done
-
-  success "kmos metapackages installed into target system."
+install_kde_packages() {
+  run_target_pacman_without_packagekit_hook "-S --needed --noconfirm ${KDE_PACKAGES[*]}"
+  success "KDE packages installed."
 }
 
 install_kde_assets() {
@@ -386,7 +330,7 @@ remove_kwallet_helpers() {
   done
 
   if [[ ${#installed[@]} -gt 0 ]]; then
-    run_target_pacman_without_packagekit_hook "pacman -Rns --noconfirm ${installed[*]}" || warn "Could not remove optional KWallet helper packages."
+    run_target_pacman_without_packagekit_hook "-Rns --noconfirm ${installed[*]}" || warn "Could not remove optional KWallet helper packages."
   fi
 }
 
@@ -415,7 +359,7 @@ remove_unwanted_packages() {
   done
 
   if [[ ${#installed[@]} -gt 0 ]]; then
-    run_target_pacman_without_packagekit_hook "pacman -Rns --noconfirm ${installed[*]}" || warn "Could not remove one or more unwanted packages: ${installed[*]}"
+    run_target_pacman_without_packagekit_hook "-Rns --noconfirm ${installed[*]}" || warn "Could not remove one or more unwanted packages: ${installed[*]}"
     success "Removed unwanted packages when present: ${installed[*]}"
   fi
 }
@@ -601,7 +545,6 @@ main() {
   select_kde_metapackages
   load_kde_metapackages
   install_kde_packages
-  install_kde_metapackages
   remove_unwanted_packages
   install_kde_assets
   disable_kwallet

@@ -766,7 +766,7 @@ ensure_paru_installed() {
     return 0
   fi
 
-  run_target_pacman_without_packagekit_hook "pacman -S --needed --noconfirm paru"
+  run_target_pacman_without_packagekit_hook "-S --needed --noconfirm paru"
   success "paru installed."
 }
 

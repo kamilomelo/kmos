@@ -293,35 +293,6 @@ load_nodesktop_metapackage() {
   success "Nodesktop metapackage loaded."
 }
 
-build_target_metapackage() {
-  local pkgbuild="$1"
-  local pkgname=""
-  local build_root=""
-
-  pkgname="$(source "$pkgbuild"; printf '%s\n' "$pkgname")"
-  [[ -n "$pkgname" ]] || die "Could not read pkgname from $pkgbuild"
-
-  build_root="/var/cache/kmos/build/$pkgname"
-  install -Dm0644 "$pkgbuild" "$MOUNT_POINT$build_root/PKGBUILD"
-  arch-chroot "$MOUNT_POINT" mkdir -p "$build_root"
-  arch-chroot "$MOUNT_POINT" chown -R "$PRIMARY_USER:$PRIMARY_USER" "$build_root"
-  arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "cd '$build_root' && makepkg --nodeps --force --clean --cleanbuild --noconfirm >/dev/null" || die "Could not build metapackage: $pkgname"
-  arch-chroot "$MOUNT_POINT" bash -lc "compgen -G '$build_root/${pkgname}-*.pkg.tar.*' >/dev/null" || die "Could not locate built metapackage archive for $pkgname"
-  printf '%s\n' "$build_root/${pkgname}-"'*.pkg.tar.*'
-}
-
-install_nodesktop_metapackage() {
-  local pkgbuild="$NODESKTOP_METAPACKAGE_DIR/PKGBUILD"
-  local package_glob=""
-  local hookdir="/var/cache/kmos/empty-hooks"
-
-  [[ -r "$pkgbuild" ]] || return 0
-  package_glob="$(build_target_metapackage "$pkgbuild")"
-  arch-chroot "$MOUNT_POINT" mkdir -p "$hookdir"
-  arch-chroot "$MOUNT_POINT" bash -lc "pacman --hookdir '$hookdir' -U --noconfirm $package_glob"
-  success "kmos-nodesktop metapackage installed into target system."
-}
-
 prompt_default() {
   local prompt="$1"
   local default="$2"
@@ -397,7 +368,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot awk blkid cat cfdisk chmod chown cp dd df dirname find findmnt fsck.fat genfstab grep head install ln lspci lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir runuser sed sort timedatectl touch udevadm umount)
+  local tools=(arch-chroot awk blkid cat cfdisk chmod cp dd df dirname find findmnt fsck.fat genfstab grep head install ln lspci lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl touch udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -1111,7 +1082,6 @@ SUDOERS
   configure_wifi_after_boot
   configure_wired_network_after_boot
   create_swapfile
-  install_nodesktop_metapackage
   unset ROOT_PASSWORD PRIMARY_PASSWORD WIFI_PASSWORD
   EXTRA_PASSWORDS=()
   success "Target system basics configured."
