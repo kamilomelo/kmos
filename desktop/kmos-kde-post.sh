@@ -779,8 +779,10 @@ stage_aur_package_list() {
 
 run_target_pacman_without_packagekit_hook() {
   local pacman_cmd="$1"
+  local hookdir="/var/cache/kmos/empty-hooks"
 
-  arch-chroot "$MOUNT_POINT" bash -lc "hook='/usr/share/libalpm/hooks/packagekit-refresh.hook'; disabled=\"\${hook}.kmos-disabled\"; if [[ -f \"\$hook\" ]]; then mv \"\$hook\" \"\$disabled\"; trap '[[ -f \"\$disabled\" ]] && mv \"\$disabled\" \"\$hook\"' EXIT; fi; $pacman_cmd"
+  arch-chroot "$MOUNT_POINT" mkdir -p "$hookdir"
+  arch-chroot "$MOUNT_POINT" bash -lc "pacman --hookdir '$hookdir' $pacman_cmd"
 }
 
 write_aur_installer_script() {
@@ -791,6 +793,7 @@ write_aur_installer_script() {
 set -Eeuo pipefail
 
 list_file="/usr/share/kmos/aur/kde-packages.txt"
+pacman_wrapper="/usr/share/kmos/bin/kmos-pacman-nohooks"
 packages=()
 line=""
 
@@ -803,7 +806,17 @@ while IFS= read -r line; do
 done < "$list_file"
 
 [[ ${#packages[@]} -gt 0 ]] || exit 0
-paru -S --needed --noconfirm --skipreview "${packages[@]}"
+paru --pacman "$pacman_wrapper" -S --needed --noconfirm --skipreview "${packages[@]}"
+EOF
+}
+
+write_pacman_nohooks_wrapper() {
+  local target="$1"
+
+  install -Dm0755 /dev/stdin "$target" <<'EOF'
+#!/bin/bash
+set -Eeuo pipefail
+exec /usr/bin/pacman --hookdir /var/cache/kmos/empty-hooks "$@"
 EOF
 }
 
@@ -824,6 +837,7 @@ install_aur_packages() {
 
   stage_aur_package_list
   ensure_paru_installed
+  write_pacman_nohooks_wrapper "$MOUNT_POINT/usr/share/kmos/bin/kmos-pacman-nohooks"
   write_aur_installer_script "$installer_script"
 
   install -Dm0440 /dev/stdin "$sudoers_file" <<EOF

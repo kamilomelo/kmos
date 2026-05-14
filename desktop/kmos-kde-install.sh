@@ -301,8 +301,10 @@ install_kde_packages() {
 
 run_target_pacman_without_packagekit_hook() {
   local pacman_cmd="$1"
+  local hookdir="/var/cache/kmos/empty-hooks"
 
-  arch-chroot "$MOUNT_POINT" bash -lc "hook='/usr/share/libalpm/hooks/packagekit-refresh.hook'; disabled=\"\${hook}.kmos-disabled\"; if [[ -f \"\$hook\" ]]; then mv \"\$hook\" \"\$disabled\"; trap '[[ -f \"\$disabled\" ]] && mv \"\$disabled\" \"\$hook\"' EXIT; fi; $pacman_cmd"
+  arch-chroot "$MOUNT_POINT" mkdir -p "$hookdir"
+  arch-chroot "$MOUNT_POINT" bash -lc "pacman --hookdir '$hookdir' $pacman_cmd"
 }
 
 get_metapackage_builder_user() {
