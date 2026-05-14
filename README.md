@@ -4,6 +4,7 @@ kmos is a practical Arch Linux installation toolkit.
 It provides:
 - a lean base installer (`nodesktop`),
 - an optional KDE desktop layer with post-install customization,
+- an AUR package layer for KDE post-install,
 - helper scripts for Wi-Fi bootstrap and USB flashing.
 
 ## How To Use It
@@ -44,6 +45,16 @@ The main installer uses the default `full` profile. To run the KDE stage manuall
 ./desktop/kmos-kde-install.sh --target /mnt --profile noapps
 ```
 
+### AUR Packages
+The KDE post-install stage also installs `paru` and then applies the package list stored in:
+
+```text
+aur/kde-packages.txt
+```
+
+That list is the editable AUR layer for KDE systems.
+Packages from that list are installed system-wide into the target system, not only for one user.
+
 ### 4) If Ethernet Is NOT Available (Wi-Fi Path)
 Use the repository from external media, then run Wi-Fi setup first:
 
@@ -68,6 +79,7 @@ After Wi-Fi is connected, continue with:
 ├── desktop/                       # KDE installer stages
 │   ├── kmos-kde-install.sh        # KDE package install stage
 │   └── kmos-kde-post.sh           # KDE post-install defaults and tweaks
+├── aur/                           # AUR package lists consumed by KDE post-install
 ├── tools/                         # Helper scripts
 │   ├── kmos-wifi-connect.sh       # Wi-Fi bootstrap for Arch ISO/live session
 │   └── kmos-usb-flasher.sh        # Bootable USB flasher

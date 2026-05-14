@@ -114,7 +114,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot basename cat chmod find findmnt grep head install mkdir sed sort)
+  local tools=(arch-chroot basename cat chmod chown cp fakeroot find findmnt grep head install makepkg mkdir mktemp runuser sed sort)
   local tool=""
 
   for tool in "${tools[@]}"; do
@@ -299,12 +299,58 @@ install_kde_packages() {
   success "KDE packages installed."
 }
 
+build_local_metapackage() {
+  local pkgbuild="$1"
+  local pkgname=""
+  local workdir=""
+  local package_file=""
+
+  pkgname="$(source "$pkgbuild"; printf '%s\n' "$pkgname")"
+  [[ -n "$pkgname" ]] || die "Could not read pkgname from $pkgbuild"
+
+  workdir="$(mktemp -d "/tmp/${pkgname}.XXXXXX")"
+  install -Dm0644 "$pkgbuild" "$workdir/PKGBUILD"
+  chown -R nobody:nobody "$workdir"
+
+  (
+    cd "$workdir"
+    runuser -u nobody -- makepkg --nodeps --force --clean --cleanbuild --noconfirm >/dev/null
+  ) || die "Could not build metapackage: $pkgname"
+
+  package_file="$(find "$workdir" -maxdepth 1 -type f -name "${pkgname}-*.pkg.tar.*" | head -n 1)"
+  [[ -n "$package_file" && -f "$package_file" ]] || die "Could not locate built metapackage archive for $pkgname"
+  printf '%s\n' "$package_file"
+}
+
+install_kde_metapackages() {
+  local count="${#RESOLVED_METAPACKAGES[@]}"
+  local index=0
+  local metapackage=""
+  local relative_path=""
+  local pkgbuild=""
+  local package_file=""
+  local target_package=""
+
+  while ((count - index > 0)); do
+    metapackage="${RESOLVED_METAPACKAGES[$((count - index - 1))]}"
+    relative_path="$(metapackage_relative_path_for_name "$metapackage")" || die "Unknown kmos metapackage: $metapackage"
+    pkgbuild="$(get_metapackage_pkgbuild "$metapackage" "$relative_path")"
+    package_file="$(build_local_metapackage "$pkgbuild")"
+    target_package="$MOUNT_POINT/var/cache/kmos/metapackages/${package_file##*/}"
+    install -Dm0644 "$package_file" "$target_package"
+    arch-chroot "$MOUNT_POINT" pacman -U --noconfirm "/var/cache/kmos/metapackages/${package_file##*/}"
+    ((index += 1))
+  done
+
+  success "kmos metapackages installed into target system."
+}
+
 install_kde_assets() {
   local metapackage=""
   local pkgbuild=""
   local relative_path=""
 
-  for metapackage in "${SELECTED_METAPACKAGES[@]}"; do
+  for metapackage in "${RESOLVED_METAPACKAGES[@]}"; do
     relative_path="$(metapackage_relative_path_for_name "$metapackage")" || continue
     pkgbuild="$(get_metapackage_pkgbuild "$metapackage" "$relative_path")"
     install -Dm0644 "$pkgbuild" "$MOUNT_POINT/usr/share/kmos/metapackages/$relative_path"
@@ -537,6 +583,7 @@ main() {
   select_kde_metapackages
   load_kde_metapackages
   install_kde_packages
+  install_kde_metapackages
   remove_unwanted_packages
   install_kde_assets
   disable_kwallet

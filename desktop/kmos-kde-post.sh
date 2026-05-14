@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 KDE_PROFILE="${kmos_kde_profile:-full}"
+REPO_AUR_DIR="$REPO_ROOT/aur"
 ASSET_WALLPAPER="$REPO_ROOT/assets/kmos-wallpaper.png"
 ASSET_COLOR_SCHEME="$REPO_ROOT/assets/color-schemes/kmos.colors"
 ASSET_KONSOLE_COLOR_SCHEME="$REPO_ROOT/assets/konsole/kmos.colorscheme"
@@ -19,10 +20,12 @@ ASSET_KATE_THEME_AYU="$REPO_ROOT/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$REPO_ROOT/assets/kate/kmos-github.theme"
 ASSET_DASHBOARD_ICON="$REPO_ROOT/assets/kmos.ico"
 ASSET_MENU_HIDE_LIST="$REPO_ROOT/assets/to-delete-from-menu.txt"
+ASSET_AUR_PACKAGE_LIST="$REPO_AUR_DIR/kde-packages.txt"
 TARGET_WALLPAPER="/opt/kmos/assets/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
 TARGET_DASHBOARD_ICON="/opt/kmos/assets/kmos.ico"
+TARGET_AUR_PACKAGE_LIST="/opt/kmos/assets/aur/kde-packages.txt"
 
 UI_RESET=""
 UI_BOLD=""
@@ -721,6 +724,108 @@ $KDE_PROFILE
 EOF
 }
 
+read_package_list_file() {
+  local list_file="$1"
+  local line=""
+
+  while IFS= read -r line; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -n "$line" ]] || continue
+    printf '%s\n' "$line"
+  done < "$list_file"
+}
+
+get_aur_builder_user() {
+  local username=""
+  local uid=""
+  local home=""
+
+  while IFS=: read -r username _ uid _ _ home _; do
+    [[ "$uid" =~ ^[0-9]+$ ]] || continue
+    ((uid >= 1000)) || continue
+    [[ "$home" == /home/* ]] || continue
+    [[ -d "$MOUNT_POINT$home" ]] || continue
+    printf '%s\n' "$username"
+    return 0
+  done < "$MOUNT_POINT/etc/passwd"
+
+  return 1
+}
+
+ensure_paru_installed() {
+  if arch-chroot "$MOUNT_POINT" pacman -Q paru >/dev/null 2>&1; then
+    return 0
+  fi
+
+  arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm paru
+  success "paru installed."
+}
+
+stage_aur_package_list() {
+  [[ -r "$ASSET_AUR_PACKAGE_LIST" ]] || die "Missing AUR package list asset: $ASSET_AUR_PACKAGE_LIST"
+
+  install -Dm0644 "$ASSET_AUR_PACKAGE_LIST" "$MOUNT_POINT/usr/share/kmos/aur/kde-packages.txt"
+  install -Dm0644 "$ASSET_AUR_PACKAGE_LIST" "$MOUNT_POINT$TARGET_AUR_PACKAGE_LIST"
+}
+
+write_aur_installer_script() {
+  local target="$1"
+
+  install -Dm0755 /dev/stdin "$target" <<'EOF'
+#!/bin/bash
+set -Eeuo pipefail
+
+list_file="/usr/share/kmos/aur/kde-packages.txt"
+packages=()
+line=""
+
+while IFS= read -r line; do
+  line="${line%%#*}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  line="${line%"${line##*[![:space:]]}"}"
+  [[ -n "$line" ]] || continue
+  packages+=("$line")
+done < "$list_file"
+
+[[ ${#packages[@]} -gt 0 ]] || exit 0
+paru -S --needed --noconfirm --skipreview "${packages[@]}"
+EOF
+}
+
+install_aur_packages() {
+  local builder_user=""
+  local installer_script="$MOUNT_POINT/usr/share/kmos/bin/kmos-install-aur-packages.sh"
+  local sudoers_file="$MOUNT_POINT/etc/sudoers.d/10-kmos-paru"
+  local group_list=""
+  local -a packages=()
+
+  [[ -r "$ASSET_AUR_PACKAGE_LIST" ]] || return 0
+  mapfile -t packages < <(read_package_list_file "$ASSET_AUR_PACKAGE_LIST")
+  [[ ${#packages[@]} -gt 0 ]] || return 0
+
+  builder_user="$(get_aur_builder_user)" || die "Could not find a normal user for AUR package installation."
+  group_list="$(arch-chroot "$MOUNT_POINT" id -nG "$builder_user" 2>/dev/null || true)"
+  [[ " $group_list " == *" wheel "* ]] || die "User $builder_user must be in wheel for paru-based installation."
+
+  stage_aur_package_list
+  ensure_paru_installed
+  write_aur_installer_script "$installer_script"
+
+  install -Dm0440 /dev/stdin "$sudoers_file" <<EOF
+$builder_user ALL=(ALL:ALL) NOPASSWD: /usr/bin/pacman
+EOF
+
+  if ! arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- /usr/share/kmos/bin/kmos-install-aur-packages.sh; then
+    rm -f "$sudoers_file"
+    die "AUR package installation failed."
+  fi
+
+  rm -f "$sudoers_file"
+  success "AUR package set installed."
+}
+
 apply_post_tweaks() {
   apply_splash_defaults
   apply_sddm_defaults
@@ -734,6 +839,7 @@ apply_post_tweaks() {
   apply_dolphin_defaults
   apply_kate_defaults
   apply_menu_hides
+  install_aur_packages
   record_profile
   success "KDE post-install hook executed."
 }
