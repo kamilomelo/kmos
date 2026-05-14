@@ -222,7 +222,6 @@ metapackage_relative_path_for_name() {
     kmos-filesystems) printf 'desktop-shared/filesystems/PKGBUILD\n' ;;
     kmos-fonts) printf 'desktop-shared/fonts/PKGBUILD\n' ;;
     kmos-graphics) printf 'desktop-shared/graphics/PKGBUILD\n' ;;
-    kmos-kde-full) printf 'desktop-shared/full/PKGBUILD\n' ;;
     kmos-maintenance) printf 'desktop-shared/maintenance/PKGBUILD\n' ;;
     kmos-network) printf 'desktop-shared/network/PKGBUILD\n' ;;
     kmos-privacy) printf 'desktop-shared/privacy/PKGBUILD\n' ;;
