@@ -773,7 +773,7 @@ run_target_pacman_without_packagekit_hook() {
   local hookdir="/var/cache/kmos/empty-hooks"
 
   arch-chroot "$MOUNT_POINT" mkdir -p "$hookdir"
-  arch-chroot "$MOUNT_POINT" bash -lc "pacman --hookdir '$hookdir' $pacman_cmd"
+  arch-chroot "$MOUNT_POINT" bash -lc "pacman --disable-download-timeout --hookdir '$hookdir' $pacman_cmd"
 }
 
 write_aur_installer_script() {
@@ -807,7 +807,7 @@ write_pacman_nohooks_wrapper() {
   install -Dm0755 /dev/stdin "$target" <<'EOF'
 #!/bin/bash
 set -Eeuo pipefail
-exec /usr/bin/pacman --hookdir /var/cache/kmos/empty-hooks "$@"
+exec /usr/bin/pacman --disable-download-timeout --hookdir /var/cache/kmos/empty-hooks "$@"
 EOF
 }
 

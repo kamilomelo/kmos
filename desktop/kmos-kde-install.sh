@@ -13,6 +13,7 @@ METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main
 KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/desktop/kmos-kde-post.sh"
 KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
 PRUNE_LIST_FILE="$REPO_ROOT/assets/package-prune/kde-remove-packages.txt"
+PACMAN_RETRIES="${kmos_PACMAN_RETRIES:-4}"
 
 UI_RESET=""
 UI_BOLD=""
@@ -82,6 +83,27 @@ print_banner() {
   printf '\n' >&2
   printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "kmos KDE Install" "$UI_RESET" >&2
   log "Lean KDE Plasma desktop layer for an existing kmos minimal install."
+}
+
+run_with_retry() {
+  local attempts="$1"
+  shift
+  local try=1
+  local delay=4
+
+  while ((try <= attempts)); do
+    if "$@"; then
+      return 0
+    fi
+    if ((try == attempts)); then
+      break
+    fi
+    warn "Command failed (attempt $try/$attempts). Retrying in ${delay}s..."
+    sleep "$delay"
+    ((try += 1))
+  done
+
+  return 1
 }
 
 ask_yes_no() {
@@ -299,11 +321,11 @@ run_target_pacman_without_packagekit_hook() {
   local hookdir="/var/cache/kmos/empty-hooks"
 
   arch-chroot "$MOUNT_POINT" mkdir -p "$hookdir"
-  arch-chroot "$MOUNT_POINT" bash -lc "pacman --hookdir '$hookdir' $pacman_cmd"
+  arch-chroot "$MOUNT_POINT" bash -lc "pacman --disable-download-timeout --hookdir '$hookdir' $pacman_cmd"
 }
 
 install_kde_packages() {
-  run_target_pacman_without_packagekit_hook "-S --needed --noconfirm ${KDE_PACKAGES[*]}"
+  run_with_retry "$PACMAN_RETRIES" run_target_pacman_without_packagekit_hook "-S --needed --noconfirm ${KDE_PACKAGES[*]}" || die "KDE package install failed after ${PACMAN_RETRIES} attempts."
   success "KDE packages installed."
 }
 
