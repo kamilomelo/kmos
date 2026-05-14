@@ -724,6 +724,13 @@ $KDE_PROFILE
 EOF
 }
 
+stage_repo_assets() {
+  if [[ -d "$REPO_ROOT/assets" ]]; then
+    install -d -m 0755 "$MOUNT_POINT/opt/kmos/assets"
+    cp -a "$REPO_ROOT/assets/." "$MOUNT_POINT/opt/kmos/assets/"
+  fi
+}
+
 read_package_list_file() {
   local list_file="$1"
   local line=""
@@ -827,6 +834,7 @@ EOF
 }
 
 apply_post_tweaks() {
+  stage_repo_assets
   apply_splash_defaults
   apply_sddm_defaults
   apply_lockscreen_defaults

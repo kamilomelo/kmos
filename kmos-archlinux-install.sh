@@ -293,39 +293,30 @@ load_nodesktop_metapackage() {
   success "Nodesktop metapackage loaded."
 }
 
-build_local_metapackage() {
+build_target_metapackage() {
   local pkgbuild="$1"
   local pkgname=""
-  local workdir=""
-  local package_file=""
+  local build_root=""
 
   pkgname="$(source "$pkgbuild"; printf '%s\n' "$pkgname")"
   [[ -n "$pkgname" ]] || die "Could not read pkgname from $pkgbuild"
 
-  workdir="$(mktemp -d "/tmp/${pkgname}.XXXXXX")"
-  install -Dm0644 "$pkgbuild" "$workdir/PKGBUILD"
-  chown -R nobody:nobody "$workdir"
-
-  (
-    cd "$workdir"
-    runuser -u nobody -- makepkg --nodeps --force --clean --cleanbuild --noconfirm >/dev/null
-  ) || die "Could not build metapackage: $pkgname"
-
-  package_file="$(find "$workdir" -maxdepth 1 -type f -name "${pkgname}-*.pkg.tar.*" | head -n 1)"
-  [[ -n "$package_file" && -f "$package_file" ]] || die "Could not locate built metapackage archive for $pkgname"
-  printf '%s\n' "$package_file"
+  build_root="/var/cache/kmos/build/$pkgname"
+  install -Dm0644 "$pkgbuild" "$MOUNT_POINT$build_root/PKGBUILD"
+  arch-chroot "$MOUNT_POINT" mkdir -p "$build_root"
+  arch-chroot "$MOUNT_POINT" chown -R "$PRIMARY_USER:$PRIMARY_USER" "$build_root"
+  arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "cd '$build_root' && makepkg --nodeps --force --clean --cleanbuild --noconfirm >/dev/null" || die "Could not build metapackage: $pkgname"
+  arch-chroot "$MOUNT_POINT" bash -lc "compgen -G '$build_root/${pkgname}-*.pkg.tar.*' >/dev/null" || die "Could not locate built metapackage archive for $pkgname"
+  printf '%s\n' "$build_root/${pkgname}-"'*.pkg.tar.*'
 }
 
 install_nodesktop_metapackage() {
   local pkgbuild="$NODESKTOP_METAPACKAGE_DIR/PKGBUILD"
-  local package_file=""
-  local target_package=""
+  local package_glob=""
 
   [[ -r "$pkgbuild" ]] || return 0
-  package_file="$(build_local_metapackage "$pkgbuild")"
-  target_package="$MOUNT_POINT/var/cache/kmos/metapackages/${package_file##*/}"
-  install -Dm0644 "$package_file" "$target_package"
-  arch-chroot "$MOUNT_POINT" pacman -U --noconfirm "/var/cache/kmos/metapackages/${package_file##*/}"
+  package_glob="$(build_target_metapackage "$pkgbuild")"
+  arch-chroot "$MOUNT_POINT" bash -lc "pacman -U --noconfirm $package_glob"
   success "kmos-nodesktop metapackage installed into target system."
 }
 
@@ -404,7 +395,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot awk blkid cat cfdisk chmod chown cp dd df dirname fakeroot find findmnt fsck.fat genfstab grep head install ln lspci lsblk makepkg mkdir mkfs.fat mktemp mount pacstrap partprobe rm rmdir runuser sed sort timedatectl touch udevadm umount)
+  local tools=(arch-chroot awk blkid cat cfdisk chmod chown cp dd df dirname find findmnt fsck.fat genfstab grep head install ln lspci lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir runuser sed sort timedatectl touch udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -1187,6 +1178,11 @@ install_kmos_assets() {
 
   if [[ -r "$NODESKTOP_METAPACKAGE_DIR/PKGBUILD" ]]; then
     install -Dm0644 "$NODESKTOP_METAPACKAGE_DIR/PKGBUILD" "$MOUNT_POINT/usr/share/kmos/metapackages/nodesktop/PKGBUILD"
+  fi
+
+  if [[ -d "$SCRIPT_DIR/assets" ]]; then
+    install -d -m 0755 "$MOUNT_POINT/opt/kmos/assets"
+    cp -a "$SCRIPT_DIR/assets/." "$MOUNT_POINT/opt/kmos/assets/"
   fi
 
   if [[ -d "$STARSHIP_PRESET_DIR" ]]; then

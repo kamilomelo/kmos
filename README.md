@@ -54,6 +54,7 @@ aur/kde-packages.txt
 
 That list is the editable AUR layer for KDE systems.
 Packages from that list are installed system-wide into the target system, not only for one user.
+The full repository `assets/` tree is also mirrored into `/opt/kmos/assets/` during install.
 
 ### 4) If Ethernet Is NOT Available (Wi-Fi Path)
 Use the repository from external media, then run Wi-Fi setup first:
