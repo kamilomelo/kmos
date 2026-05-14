@@ -825,7 +825,7 @@ install_aur_packages() {
   builder_user="$(get_aur_builder_user)" || die "Could not find a normal user for AUR package installation."
   group_list="$(arch-chroot "$MOUNT_POINT" id -nG "$builder_user" 2>/dev/null || true)"
   [[ " $group_list " == *" wheel "* ]] || die "User $builder_user must be in wheel for paru-based installation."
-  arch-chroot "$MOUNT_POINT" command -v paru >/dev/null 2>&1 || die "paru is not installed in the base system."
+  arch-chroot "$MOUNT_POINT" bash -lc "command -v paru >/dev/null 2>&1" || die "paru is not installed in the base system."
 
   stage_aur_package_list
   write_pacman_nohooks_wrapper "$MOUNT_POINT/usr/share/kmos/bin/kmos-pacman-nohooks"

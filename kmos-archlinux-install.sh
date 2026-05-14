@@ -1151,7 +1151,7 @@ bootstrap_paru() {
   local sudoers_file="$MOUNT_POINT/etc/sudoers.d/10-kmos-paru-bootstrap"
   local build_root="/var/cache/kmos/aur"
 
-  if arch-chroot "$MOUNT_POINT" command -v paru >/dev/null 2>&1 && arch-chroot "$MOUNT_POINT" paru --version >/dev/null 2>&1; then
+  if arch-chroot "$MOUNT_POINT" bash -lc "command -v paru >/dev/null 2>&1 && paru --version >/dev/null 2>&1"; then
     return 0
   fi
 
@@ -1165,7 +1165,7 @@ EOF
 
   arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "git clone https://aur.archlinux.org/paru-bin.git '$build_root/paru-bin'" || die "Could not clone paru-bin from AUR."
   if arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "cd '$build_root/paru-bin' && makepkg -si --noconfirm --needed --clean --cleanbuild"; then
-    if arch-chroot "$MOUNT_POINT" command -v paru >/dev/null 2>&1 && arch-chroot "$MOUNT_POINT" paru --version >/dev/null 2>&1; then
+    if arch-chroot "$MOUNT_POINT" bash -lc "command -v paru >/dev/null 2>&1 && paru --version >/dev/null 2>&1"; then
       rm -f "$sudoers_file"
       success "paru-bin bootstrapped in the base system."
       return 0
