@@ -32,6 +32,18 @@ The root of the repository is intentionally small:
 - `desktop/` contains KDE-specific install stages,
 - `tools/` contains reusable helper scripts.
 
+### KDE Profiles
+The KDE installer supports two profiles:
+
+- `full`: default complete KDE desktop profile.
+- `noapps`: KDE desktop core without the extra shared application groups.
+
+The main installer uses the default `full` profile. To run the KDE stage manually with fewer applications:
+
+```bash
+./desktop/kmos-kde-install.sh --target /mnt --profile noapps
+```
+
 ### 4) If Ethernet Is NOT Available (Wi-Fi Path)
 Use the repository from external media, then run Wi-Fi setup first:
 

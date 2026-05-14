@@ -1,8 +1,8 @@
 # Maintainer: Kamilo Melo
-pkgname=kmos-kde-test
+pkgname=kmos-kde-noapps
 pkgver=2026.05.08
 pkgrel=1
-pkgdesc="kmos KDE test package set"
+pkgdesc="kmos KDE desktop package set without extra applications"
 arch=('any')
 url="https://github.com/kamilomelo/kmos"
 license=('MIT')

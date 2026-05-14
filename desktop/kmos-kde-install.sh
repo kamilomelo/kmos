@@ -154,9 +154,9 @@ verify_target() {
 
 select_kde_metapackages() {
   case "$KDE_PROFILE" in
-    test)
+    noapps)
       SELECTED_METAPACKAGES=(
-        kmos-kde-test
+        kmos-kde-noapps
       )
       ;;
     full)
@@ -229,7 +229,7 @@ metapackage_relative_path_for_name() {
     kmos-kde-base) printf 'kde/base/PKGBUILD\n' ;;
     kmos-kde-multimedia) printf 'kde/multimedia/PKGBUILD\n' ;;
     kmos-kde-plasma) printf 'kde/base/plasma/PKGBUILD\n' ;;
-    kmos-kde-test) printf 'kde/test/PKGBUILD\n' ;;
+    kmos-kde-noapps) printf 'kde/noapps/PKGBUILD\n' ;;
     kmos-kde-utils) printf 'kde/utils/PKGBUILD\n' ;;
     *)
       return 1

@@ -8,7 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
-KDE_PROFILE="${kmos_kde_profile:-test}"
+KDE_PROFILE="${kmos_kde_profile:-full}"
 ASSET_WALLPAPER="$REPO_ROOT/assets/kmos-wallpaper.png"
 ASSET_COLOR_SCHEME="$REPO_ROOT/assets/color-schemes/kmos.colors"
 ASSET_KONSOLE_COLOR_SCHEME="$REPO_ROOT/assets/konsole/kmos.colorscheme"
