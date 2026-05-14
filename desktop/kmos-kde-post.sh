@@ -776,6 +776,20 @@ run_target_pacman_without_packagekit_hook() {
   arch-chroot "$MOUNT_POINT" bash -lc "pacman --hookdir '$hookdir' $pacman_cmd"
 }
 
+disable_target_packagekit_hook() {
+  local hook="/usr/share/libalpm/hooks/packagekit-refresh.hook"
+  local disabled="${hook}.kmos-disabled"
+
+  arch-chroot "$MOUNT_POINT" bash -lc "[[ -f '$hook' ]] && mv '$hook' '$disabled' || true"
+}
+
+restore_target_packagekit_hook() {
+  local hook="/usr/share/libalpm/hooks/packagekit-refresh.hook"
+  local disabled="${hook}.kmos-disabled"
+
+  arch-chroot "$MOUNT_POINT" bash -lc "[[ -f '$disabled' ]] && mv '$disabled' '$hook' || true"
+}
+
 write_aur_installer_script() {
   local target="$1"
 
@@ -813,7 +827,7 @@ EOF
 
 bootstrap_paru_from_aur() {
   local builder_user="$1"
-  local build_root="/var/cache/kmos/aur/paru-bin"
+  local build_root="/var/cache/kmos/aur/paru"
 
   if arch-chroot "$MOUNT_POINT" command -v paru >/dev/null 2>&1; then
     return 0
@@ -823,8 +837,8 @@ bootstrap_paru_from_aur() {
   arch-chroot "$MOUNT_POINT" rm -rf "$build_root"
   arch-chroot "$MOUNT_POINT" mkdir -p "$(dirname "$build_root")"
   arch-chroot "$MOUNT_POINT" chown -R "$builder_user:$builder_user" "/var/cache/kmos"
-  arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "git clone https://aur.archlinux.org/paru-bin.git '$build_root'" || die "Could not clone paru-bin from AUR."
-  arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "cd '$build_root' && PACMAN=/usr/share/kmos/bin/kmos-pacman-nohooks makepkg -si --noconfirm --needed --clean --cleanbuild" || die "Could not build/install paru-bin."
+  arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "git clone https://aur.archlinux.org/paru.git '$build_root'" || die "Could not clone paru from AUR."
+  arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "cd '$build_root' && PACMAN=/usr/share/kmos/bin/kmos-pacman-nohooks makepkg -si --noconfirm --needed --clean --cleanbuild" || die "Could not build/install paru."
   success "paru bootstrapped from AUR."
 }
 
@@ -849,14 +863,17 @@ install_aur_packages() {
 $builder_user ALL=(ALL:ALL) NOPASSWD: /usr/bin/pacman, /usr/share/kmos/bin/kmos-pacman-nohooks
 EOF
 
+  disable_target_packagekit_hook
   bootstrap_paru_from_aur "$builder_user"
   write_aur_installer_script "$installer_script"
 
   if ! arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- /usr/share/kmos/bin/kmos-install-aur-packages.sh; then
+    restore_target_packagekit_hook
     rm -f "$sudoers_file"
     die "AUR package installation failed."
   fi
 
+  restore_target_packagekit_hook
   rm -f "$sudoers_file"
   success "AUR package set installed."
 }
