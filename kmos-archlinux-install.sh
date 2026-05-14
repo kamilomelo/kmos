@@ -978,11 +978,11 @@ install_base_system() {
     printf '\nDisableDownloadTimeout\n' >> "$pacman_conf"
   fi
   if grep -q '^ParallelDownloads = ' "$pacman_conf"; then
-    sed -i 's/^ParallelDownloads = .*/ParallelDownloads = 1/' "$pacman_conf"
+    sed -i 's/^ParallelDownloads = .*/ParallelDownloads = 9/' "$pacman_conf"
   elif grep -q '^#ParallelDownloads = ' "$pacman_conf"; then
-    sed -i 's/^#ParallelDownloads = .*/ParallelDownloads = 1/' "$pacman_conf"
+    sed -i 's/^#ParallelDownloads = .*/ParallelDownloads = 9/' "$pacman_conf"
   else
-    printf 'ParallelDownloads = 1\n' >> "$pacman_conf"
+    printf 'ParallelDownloads = 9\n' >> "$pacman_conf"
   fi
 
   run_with_retry "$PACMAN_RETRIES" pacstrap -C "$pacman_conf" -K "$MOUNT_POINT" "${BASE_PACKAGES[@]}" || die "pacstrap failed after ${PACMAN_RETRIES} attempts."
@@ -1149,14 +1149,13 @@ SSHD_CONFIG
 
 bootstrap_paru() {
   local sudoers_file="$MOUNT_POINT/etc/sudoers.d/10-kmos-paru-bootstrap"
-  local build_root="/var/cache/kmos/aur/paru"
+  local build_root="/var/cache/kmos/aur"
 
-  if arch-chroot "$MOUNT_POINT" command -v paru >/dev/null 2>&1; then
+  if arch-chroot "$MOUNT_POINT" command -v paru >/dev/null 2>&1 && arch-chroot "$MOUNT_POINT" paru --version >/dev/null 2>&1; then
     return 0
   fi
 
-  arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm rust cargo
-  arch-chroot "$MOUNT_POINT" rm -rf "$build_root"
+  arch-chroot "$MOUNT_POINT" rm -rf "$build_root/paru-bin" "$build_root/paru"
   arch-chroot "$MOUNT_POINT" mkdir -p "$(dirname "$build_root")"
   arch-chroot "$MOUNT_POINT" chown -R "$PRIMARY_USER:$PRIMARY_USER" "/var/cache/kmos"
 
@@ -1164,8 +1163,20 @@ bootstrap_paru() {
 $PRIMARY_USER ALL=(ALL:ALL) NOPASSWD: /usr/bin/pacman
 EOF
 
-  arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "git clone https://aur.archlinux.org/paru.git '$build_root'" || die "Could not clone paru from AUR."
-  if ! arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "cd '$build_root' && makepkg -si --noconfirm --needed --clean --cleanbuild"; then
+  arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "git clone https://aur.archlinux.org/paru-bin.git '$build_root/paru-bin'" || die "Could not clone paru-bin from AUR."
+  if arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "cd '$build_root/paru-bin' && makepkg -si --noconfirm --needed --clean --cleanbuild"; then
+    if arch-chroot "$MOUNT_POINT" command -v paru >/dev/null 2>&1 && arch-chroot "$MOUNT_POINT" paru --version >/dev/null 2>&1; then
+      rm -f "$sudoers_file"
+      success "paru-bin bootstrapped in the base system."
+      return 0
+    fi
+    warn "paru-bin installed but is not runnable on this target. Falling back to source build."
+    arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm paru-bin paru-bin-debug >/dev/null 2>&1 || true
+  fi
+
+  arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm rust cargo
+  arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "git clone https://aur.archlinux.org/paru.git '$build_root/paru'" || die "Could not clone paru from AUR."
+  if ! arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "cd '$build_root/paru' && makepkg -si --noconfirm --needed --clean --cleanbuild"; then
     rm -f "$sudoers_file"
     die "Could not build/install paru."
   fi
