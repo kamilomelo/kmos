@@ -810,9 +810,9 @@ install_extra_fonts() {
             [[ -f "$temp_dir/ABeeZee-Italic.ttf" ]] && install -m 0644 "$temp_dir/ABeeZee-Italic.ttf" "$fonts_dir/ABeeZee-Italic.ttf"
             ;;
           more_sugar.zip)
-            [[ -f "$temp_dir/MoreSugar-Regular.otf" ]] && install -m 0644 "$temp_dir/MoreSugar-Regular.otf" "$fonts_dir/MoreSugar-Regular.otf"
-            [[ -f "$temp_dir/MoreSugar-Thin.otf" ]] && install -m 0644 "$temp_dir/MoreSugar-Thin.otf" "$fonts_dir/MoreSugar-Thin.otf"
-            [[ -f "$temp_dir/MoreSugar-Extras.otf" ]] && install -m 0644 "$temp_dir/MoreSugar-Extras.otf" "$fonts_dir/MoreSugar-Extras.otf"
+            [[ -f "$temp_dir/MoreSugar-Thin.ttf" ]] && install -m 0644 "$temp_dir/MoreSugar-Thin.ttf" "$fonts_dir/MoreSugar-Thin.ttf"
+            [[ -f "$temp_dir/MoreSugar-Regular.ttf" ]] && install -m 0644 "$temp_dir/MoreSugar-Regular.ttf" "$fonts_dir/MoreSugar-Regular.ttf"
+            [[ -f "$temp_dir/MoreSugar-Extras.ttf" ]] && install -m 0644 "$temp_dir/MoreSugar-Extras.ttf" "$fonts_dir/MoreSugar-Extras.ttf"
             ;;
           *)
             find "$temp_dir" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -exec install -m 0644 {} "$fonts_dir/" \;
