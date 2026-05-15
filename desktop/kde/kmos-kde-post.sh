@@ -811,8 +811,6 @@ install_extra_fonts() {
             ;;
           more_sugar.zip)
             [[ -f "$temp_dir/MoreSugar-Thin.ttf" ]] && install -m 0644 "$temp_dir/MoreSugar-Thin.ttf" "$fonts_dir/MoreSugar-Thin.ttf"
-            [[ -f "$temp_dir/MoreSugar-Regular.ttf" ]] && install -m 0644 "$temp_dir/MoreSugar-Regular.ttf" "$fonts_dir/MoreSugar-Regular.ttf"
-            [[ -f "$temp_dir/MoreSugar-Extras.ttf" ]] && install -m 0644 "$temp_dir/MoreSugar-Extras.ttf" "$fonts_dir/MoreSugar-Extras.ttf"
             ;;
           *)
             find "$temp_dir" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -exec install -m 0644 {} "$fonts_dir/" \;
