@@ -1,3 +1,6 @@
+# kmos KDE AUR package list
+# One package per line. Lines starting with # are ignored.
+# Comment out a package to skip installing it.
 brother-ql1100nwb
 firefox-nightly-bin
 kchat-appimage

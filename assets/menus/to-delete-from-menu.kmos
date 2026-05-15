@@ -1,3 +1,6 @@
+# kmos KDE menu hide list
+# One desktop entry ID per line. Lines starting with # are ignored.
+# Matching launchers are hidden from the KDE application menu.
 assistant.desktop
 avahi-discover.desktop
 bssh.desktop
