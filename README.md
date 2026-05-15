@@ -25,6 +25,11 @@ cd kmos
 ```
 
 The installer handles partitioning, base setup, bootloader, and then asks whether to install a desktop.
+You can also select the KDE profile from the main installer entrypoint:
+
+```bash
+./kmos-archlinux-install.sh --profile noapps
+```
 
 The root of the repository is intentionally small:
 - `kmos-archlinux-install.sh` is the main entrypoint,
@@ -38,7 +43,8 @@ The KDE installer supports two profiles:
 - `full`: default complete KDE desktop profile.
 - `noapps`: KDE desktop core without the extra shared application groups.
 
-The main installer uses the default `full` profile. To run the KDE stage manually with fewer applications:
+The main installer uses the default `full` profile unless you pass `--profile noapps`.
+To run the KDE stage manually with fewer applications:
 
 ```bash
 ./desktop/kde/kmos-kde-install.sh --target /mnt --profile noapps
@@ -54,9 +60,23 @@ packages/aur/aur-packages.kmos
 ```
 
 If you use the `noapps` profile, `paru` and that AUR package list are skipped entirely.
+If you choose a headless install, the installer asks separately whether `paru` should be installed, with `yes` as the default.
 
 Packages from that list are installed system-wide into the target system, not only for one user.
 The full repository `assets/` tree is also mirrored into `/opt/kmos/assets/` during install.
+
+### Fonts
+The KDE post-install stage also installs local extra fonts from:
+
+```text
+assets/extra-fonts/
+```
+
+Current behavior:
+- installs `ABeeZee-Regular.ttf`
+- installs `ABeeZee-Italic.ttf`
+- installs only `MoreSugar-Thin.ttf`
+- force-removes `noto-fonts` and deletes remaining Noto font files after KDE install
 
 ### 4) If Ethernet Is NOT Available (Wi-Fi Path)
 Use the repository from external media, then run Wi-Fi setup first:
@@ -85,6 +105,7 @@ After Wi-Fi is connected, continue with:
 │   ├── kate/                      # Kate themes
 │   ├── konsole/                   # Konsole profiles and colors
 │   ├── menus/                     # Menu-hide lists
+│   ├── extra-fonts/               # Local font archives installed by KDE post-install
 │   ├── printers/                  # Printer drivers and PPDs
 │   ├── prune/                     # Package prune lists
 │   ├── starship-presets/          # Shell prompt presets
