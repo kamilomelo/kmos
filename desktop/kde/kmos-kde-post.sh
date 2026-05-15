@@ -785,6 +785,7 @@ run_target_pacman_without_packagekit_hook() {
 install_extra_fonts() {
   local fonts_dir="$MOUNT_POINT/usr/local/share/fonts/kmos"
   local asset=""
+  local temp_dir=""
 
   [[ -d "$ASSET_EXTRA_FONTS_DIR" ]] || return 0
   install -d "$fonts_dir"
@@ -793,14 +794,31 @@ install_extra_fonts() {
     [[ -e "$asset" ]] || continue
     case "$asset" in
       *.zip)
+        temp_dir="$(mktemp -d)"
         if command -v bsdtar >/dev/null 2>&1; then
-          bsdtar -xf "$asset" -C "$fonts_dir"
+          bsdtar -xf "$asset" -C "$temp_dir"
         elif command -v unzip >/dev/null 2>&1; then
-          unzip -oq "$asset" -d "$fonts_dir"
+          unzip -oq "$asset" -d "$temp_dir"
         else
           warn "Skipping extra font archive without extractor support: ${asset##*/}"
+          rm -rf "$temp_dir"
           continue
         fi
+        case "${asset##*/}" in
+          ABeeZee.zip)
+            [[ -f "$temp_dir/ABeeZee-Regular.ttf" ]] && install -m 0644 "$temp_dir/ABeeZee-Regular.ttf" "$fonts_dir/ABeeZee-Regular.ttf"
+            [[ -f "$temp_dir/ABeeZee-Italic.ttf" ]] && install -m 0644 "$temp_dir/ABeeZee-Italic.ttf" "$fonts_dir/ABeeZee-Italic.ttf"
+            ;;
+          more_sugar.zip)
+            [[ -f "$temp_dir/MoreSugar-Regular.otf" ]] && install -m 0644 "$temp_dir/MoreSugar-Regular.otf" "$fonts_dir/MoreSugar-Regular.otf"
+            [[ -f "$temp_dir/MoreSugar-Thin.otf" ]] && install -m 0644 "$temp_dir/MoreSugar-Thin.otf" "$fonts_dir/MoreSugar-Thin.otf"
+            [[ -f "$temp_dir/MoreSugar-Extras.otf" ]] && install -m 0644 "$temp_dir/MoreSugar-Extras.otf" "$fonts_dir/MoreSugar-Extras.otf"
+            ;;
+          *)
+            find "$temp_dir" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -exec install -m 0644 {} "$fonts_dir/" \;
+            ;;
+        esac
+        rm -rf "$temp_dir"
         ;;
       *.ttf|*.otf|*.ttc)
         install -m 0644 "$asset" "$fonts_dir/${asset##*/}"
