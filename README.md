@@ -25,23 +25,18 @@ cd kmos
 ```
 
 The installer handles partitioning, base setup, bootloader, and then asks whether to install a desktop.
-You can also select the KDE profile from the main installer entrypoint:
-
-```bash
-./kmos-archlinux-install.sh --profile noapps
-```
 
 The root of the repository is intentionally small:
 - `kmos-archlinux-install.sh` is the main entrypoint,
 - `desktop/` contains desktop-specific install stages,
-- `tools/` contains reusable helper scripts,
 - `packages/` contains package definitions and AUR package lists.
+- `tools/` contains reusable helper scripts,
 
 ### KDE Profiles
 The main installer supports two KDE profiles:
 
 - `full`: default complete KDE desktop profile
-- `noapps`: KDE desktop core without the extra shared application groups
+- `noapps`: KDE desktop core without the extra shared application groups (ideal for testing)
 
 Use `noapps` from the main entrypoint when you want the lighter KDE path:
 
