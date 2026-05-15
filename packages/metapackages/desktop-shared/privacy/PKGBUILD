@@ -1,0 +1,18 @@
+# Maintainer: Kamilo Melo
+pkgname=kmos-privacy
+pkgver=2026.05.08
+pkgrel=1
+pkgdesc="kmos privacy package set"
+arch=('any')
+url="https://github.com/kamilomelo/kmos"
+license=('MIT')
+depends=(
+  'pass'
+  'signal-desktop'
+  'torbrowser-launcher'
+  'torsocks'
+)
+
+package() {
+  :
+}

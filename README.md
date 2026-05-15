@@ -4,7 +4,7 @@ kmos is a practical Arch Linux installation toolkit.
 It provides:
 - a lean base installer (`nodesktop`),
 - an optional KDE desktop layer with post-install customization,
-- an AUR package layer for KDE post-install,
+- an optional AUR package layer for KDE,
 - helper scripts for Wi-Fi bootstrap and USB flashing.
 
 ## How To Use It
@@ -24,14 +24,13 @@ cd kmos
 ./kmos-archlinux-install.sh
 ```
 
-The installer handles partitioning, base setup, bootloader, and then asks for desktop mode:
-- `nodesktop` (headless/minimal), or
-- KDE desktop path (calls `desktop/kmos-kde-install.sh` + `desktop/kmos-kde-post.sh`).
+The installer handles partitioning, base setup, bootloader, and then asks whether to install a desktop.
 
 The root of the repository is intentionally small:
 - `kmos-archlinux-install.sh` is the main entrypoint,
-- `desktop/` contains KDE-specific install stages,
-- `tools/` contains reusable helper scripts.
+- `desktop/` contains desktop-specific install stages,
+- `tools/` contains reusable helper scripts,
+- `packages/` contains package definitions and AUR package lists.
 
 ### KDE Profiles
 The KDE installer supports two profiles:
@@ -42,17 +41,20 @@ The KDE installer supports two profiles:
 The main installer uses the default `full` profile. To run the KDE stage manually with fewer applications:
 
 ```bash
-./desktop/kmos-kde-install.sh --target /mnt --profile noapps
+./desktop/kde/kmos-kde-install.sh --target /mnt --profile noapps
 ```
 
 ### AUR Packages
-The KDE post-install stage also installs `paru` and then applies the package list stored in:
+For the `full` KDE profile, the main installer asks whether to install `paru` and the KDE AUR package set.
+
+The editable list lives in:
 
 ```text
-aur/kde-packages.txt
+packages/aur/kde-packages.txt
 ```
 
-That list is the editable AUR layer for KDE systems.
+If you use the `noapps` profile, `paru` and that AUR package list are skipped entirely.
+
 Packages from that list are installed system-wide into the target system, not only for one user.
 The full repository `assets/` tree is also mirrored into `/opt/kmos/assets/` during install.
 
@@ -77,15 +79,27 @@ After Wi-Fi is connected, continue with:
 ```text
 .
 ├── kmos-archlinux-install.sh      # Main Arch installer (base + optional desktop stage)
-├── desktop/                       # KDE installer stages
-│   ├── kmos-kde-install.sh        # KDE package install stage
-│   └── kmos-kde-post.sh           # KDE post-install defaults and tweaks
-├── aur/                           # AUR package lists consumed by KDE post-install
+├── assets/                        # Runtime assets mirrored into /opt/kmos/assets/
+│   ├── color-schemes/             # KDE color schemes
+│   ├── icons/                     # Custom launcher and desktop icons
+│   ├── kate/                      # Kate themes
+│   ├── konsole/                   # Konsole profiles and colors
+│   ├── menus/                     # Menu-hide lists
+│   ├── printers/                  # Printer drivers and PPDs
+│   ├── prune/                     # Package prune lists
+│   ├── starship-presets/          # Shell prompt presets
+│   ├── wallpapers/                # Wallpapers
+│   └── yakuake/                   # Yakuake skins
+├── packages/                      # Package definitions and package lists
+│   ├── aur/                       # AUR package lists
+│   └── metapackages/              # PKGBUILD bundle definitions
+├── desktop/                       # Desktop-specific installer logic
+│   └── kde/
+│       ├── kmos-kde-install.sh    # KDE package install stage
+│       └── kmos-kde-post.sh       # KDE post-install defaults and tweaks
 ├── tools/                         # Helper scripts
 │   ├── kmos-wifi-connect.sh       # Wi-Fi bootstrap for Arch ISO/live session
 │   └── kmos-usb-flasher.sh        # Bootable USB flasher
-├── metapackages/                  # PKGBUILD bundle definitions (nodesktop, kde, shared sets)
-├── assets/                        # Wallpaper, themes, Konsole/Kate presets, prune list
 └── LICENSE
 ```
 

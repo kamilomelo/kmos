@@ -8,8 +8,8 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 WIFI_HANDOFF_DIR="/run/kmos/wifi"
-NODESKTOP_METAPACKAGE_DIR="$SCRIPT_DIR/metapackages/nodesktop"
-KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/desktop/kmos-kde-install.sh"
+NODESKTOP_METAPACKAGE_DIR="$SCRIPT_DIR/packages/metapackages/nodesktop"
+KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/desktop/kde/kmos-kde-install.sh"
 STARSHIP_PRESET_DIR="$SCRIPT_DIR/assets/starship-presets"
 STARSHIP_PRESET_MODE="holow"
 STARSHIP_PRESET_THEME="light"
@@ -1468,7 +1468,7 @@ update_target_system() {
 }
 
 run_kde_installer() {
-  local local_installer="$SCRIPT_DIR/desktop/kmos-kde-install.sh"
+  local local_installer="$SCRIPT_DIR/desktop/kde/kmos-kde-install.sh"
   local fetched_installer="/tmp/kmos-kde-install.sh"
 
   if [[ -f "$local_installer" ]]; then
