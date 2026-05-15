@@ -50,7 +50,7 @@ For the `full` KDE profile, the main installer asks whether to install `paru` an
 The editable list lives in:
 
 ```text
-packages/aur/kde-packages.kmos
+packages/aur/aur-packages.kmos
 ```
 
 If you use the `noapps` profile, `paru` and that AUR package list are skipped entirely.
