@@ -12,6 +12,7 @@ METAPACKAGE_ROOT_DIR="$REPO_ROOT/metapackages"
 METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/metapackages"
 KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/desktop/kmos-kde-post.sh"
 KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
+INSTALL_AUR="${kmos_INSTALL_AUR:-yes}"
 PRUNE_LIST_FILE="$REPO_ROOT/assets/package-prune/kde-remove-packages.txt"
 PACMAN_RETRIES="${kmos_PACMAN_RETRIES:-4}"
 
@@ -177,6 +178,7 @@ verify_target() {
 select_kde_metapackages() {
   case "$KDE_PROFILE" in
     noapps)
+      INSTALL_AUR="no"
       SELECTED_METAPACKAGES=(
         kmos-kde-noapps
       )
@@ -218,6 +220,7 @@ load_kde_metapackages() {
   [[ ${#KDE_PACKAGES[@]} -gt 0 ]] || die "KDE metapackage has no dependencies."
 
   detail "Profile" "$KDE_PROFILE"
+  detail "AUR" "$INSTALL_AUR"
   detail "Metapackages" "${SELECTED_METAPACKAGES[*]}"
   detail "Packages" "${#KDE_PACKAGES[@]}"
 }
@@ -555,6 +558,8 @@ bootstrap_paru() {
   local sudoers_file="$MOUNT_POINT/etc/sudoers.d/10-kmos-paru-bootstrap"
   local aur_root=""
 
+  [[ "$INSTALL_AUR" == "yes" ]] || return 0
+
   builder_user="$(get_aur_builder_user)" || {
     warn "Could not find a normal user for AUR helper installation."
     return 1
@@ -614,7 +619,7 @@ run_kde_post_installer() {
   local fetched_installer="/tmp/kmos-kde-post.sh"
 
   if [[ -f "$local_installer" ]]; then
-    bash "$local_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
+    kmos_INSTALL_AUR="$INSTALL_AUR" bash "$local_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
     return 0
   fi
 
@@ -626,7 +631,7 @@ run_kde_post_installer() {
     die "KDE post installer not found locally and neither curl nor wget is available."
   fi
 
-  bash "$fetched_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
+  kmos_INSTALL_AUR="$INSTALL_AUR" bash "$fetched_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
 }
 
 main() {

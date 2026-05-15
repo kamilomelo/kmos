@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 KDE_PROFILE="${kmos_kde_profile:-full}"
+INSTALL_AUR="${kmos_INSTALL_AUR:-yes}"
 REPO_AUR_DIR="$REPO_ROOT/aur"
 ASSET_WALLPAPER="$REPO_ROOT/assets/kmos-wallpaper.png"
 ASSET_COLOR_SCHEME="$REPO_ROOT/assets/color-schemes/kmos.colors"
@@ -821,6 +822,8 @@ install_aur_packages() {
   local sudoers_file="$MOUNT_POINT/etc/sudoers.d/10-kmos-paru"
   local group_list=""
   local -a packages=()
+
+  [[ "$INSTALL_AUR" == "yes" ]] || return 0
 
   [[ -r "$ASSET_AUR_PACKAGE_LIST" ]] || return 0
   mapfile -t packages < <(read_package_list_file "$ASSET_AUR_PACKAGE_LIST")

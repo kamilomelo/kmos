@@ -40,6 +40,7 @@ HOSTNAME=""
 SWAPFILE_SIZE="4G"
 KRUB_ID="krub"
 ENABLE_OS_PROBER="no"
+INSTALL_KDE_AUR="yes"
 ENABLE_WIFI_AFTER_BOOT="no"
 WIFI_ADAPTER=""
 WIFI_MAC=""
@@ -1471,7 +1472,7 @@ run_kde_installer() {
   local fetched_installer="/tmp/kmos-kde-install.sh"
 
   if [[ -f "$local_installer" ]]; then
-    bash "$local_installer" --target "$MOUNT_POINT"
+    kmos_INSTALL_AUR="$INSTALL_KDE_AUR" bash "$local_installer" --target "$MOUNT_POINT"
     return 0
   fi
 
@@ -1483,13 +1484,24 @@ run_kde_installer() {
     die "KDE installer not found locally and neither curl nor wget is available."
   fi
 
-  bash "$fetched_installer" --target "$MOUNT_POINT"
+  kmos_INSTALL_AUR="$INSTALL_KDE_AUR" bash "$fetched_installer" --target "$MOUNT_POINT"
 }
 
 offer_kde_desktop() {
+  local kde_profile="${kmos_KDE_PROFILE:-full}"
+
   printf '\n' >&2
   info "Your base system is ready. Select no to keep it headless."
   if ask_yes_no "Do you want to install a desktop?" "yes"; then
+    if [[ "$kde_profile" == "noapps" ]]; then
+      INSTALL_KDE_AUR="no"
+    else
+      if ask_yes_no "Install paru and AUR desktop packages?" "yes"; then
+        INSTALL_KDE_AUR="yes"
+      else
+        INSTALL_KDE_AUR="no"
+      fi
+    fi
     run_kde_installer
   else
     bootstrap_paru
