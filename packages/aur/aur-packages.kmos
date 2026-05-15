@@ -8,6 +8,6 @@ kdrive-bin
 onlyoffice-bin
 paisa-bin
 rtl8821au-dkms-git
-simplescreenrecorder
-ssh-chat-git
+#simplescreenrecorder
+#ssh-chat-git
 ttf-comfortaa
