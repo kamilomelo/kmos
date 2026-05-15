@@ -813,6 +813,17 @@ install_extra_fonts() {
   success "Extra fonts installed from assets."
 }
 
+remove_noto_fonts() {
+  if arch-chroot "$MOUNT_POINT" pacman -Q noto-fonts >/dev/null 2>&1; then
+    run_target_pacman_without_packagekit_hook "-Rdd --noconfirm noto-fonts" || warn "Could not force-remove noto-fonts."
+  fi
+
+  rm -rf "$MOUNT_POINT/usr/share/fonts/noto"
+  find "$MOUNT_POINT/usr/share/fonts" -type f \( -iname 'Noto*.ttf' -o -iname 'Noto*.otf' -o -iname 'Noto*.ttc' \) -delete 2>/dev/null || true
+  arch-chroot "$MOUNT_POINT" fc-cache -r >/dev/null 2>&1 || warn "Could not refresh font cache after removing noto fonts."
+  success "Noto fonts removed from package database and filesystem."
+}
+
 write_aur_installer_script() {
   local target="$1"
 
@@ -908,6 +919,7 @@ apply_post_tweaks() {
   apply_kate_defaults
   apply_menu_hides
   install_extra_fonts
+  remove_noto_fonts
   install_aur_packages
   record_profile
   success "KDE post-install hook executed."

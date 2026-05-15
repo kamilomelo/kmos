@@ -1016,7 +1016,6 @@ cleanup_boot_artifacts() {
 
 configure_pacman() {
   local pacman_conf="$MOUNT_POINT/etc/pacman.conf"
-  local noto_noextract="NoExtract = usr/share/fonts/noto/* !*NotoMono-* !*NotoSansDisplay-* !*NotoSansLinearB-* !*NotoSansMono-* !*NotoSansSymbols* !*NotoSerif-* !*NotoSerifDisplay-*"
 
   if [[ ! -f "$pacman_conf" ]]; then
     warn "Could not find target pacman.conf."
@@ -1036,9 +1035,6 @@ configure_pacman() {
   if ! grep -q '^ILoveCandy$' "$pacman_conf"; then
     sed -i '/^ParallelDownloads = 6$/a ILoveCandy' "$pacman_conf"
   fi
-
-  sed -i '/^NoExtract = usr\/share\/fonts\/noto\/\*/d' "$pacman_conf"
-  printf '%s\n' "$noto_noextract" >> "$pacman_conf"
 
   success "Pacman configured."
 }
