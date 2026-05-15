@@ -20,13 +20,13 @@ ASSET_YAKUAKE_SKIN_DIR="$REPO_ROOT/assets/yakuake/monochrome"
 ASSET_KATE_THEME_AYU="$REPO_ROOT/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$REPO_ROOT/assets/kate/kmos-github.theme"
 ASSET_DASHBOARD_ICON="$REPO_ROOT/assets/icons/kmos.ico"
-ASSET_MENU_HIDE_LIST="$REPO_ROOT/assets/menus/to-delete-from-menu.txt"
-ASSET_AUR_PACKAGE_LIST="$REPO_AUR_DIR/kde-packages.txt"
+ASSET_MENU_HIDE_LIST="$REPO_ROOT/assets/menus/to-delete-from-menu.kmos"
+ASSET_AUR_PACKAGE_LIST="$REPO_AUR_DIR/kde-packages.kmos"
 TARGET_WALLPAPER="/opt/kmos/assets/wallpapers/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
 TARGET_DASHBOARD_ICON="/opt/kmos/assets/icons/kmos.ico"
-TARGET_AUR_PACKAGE_LIST="/opt/kmos/assets/aur/kde-packages.txt"
+TARGET_AUR_PACKAGE_LIST="/opt/kmos/assets/aur/kde-packages.kmos"
 
 UI_RESET=""
 UI_BOLD=""
@@ -769,7 +769,7 @@ get_aur_builder_user() {
 stage_aur_package_list() {
   [[ -r "$ASSET_AUR_PACKAGE_LIST" ]] || die "Missing AUR package list asset: $ASSET_AUR_PACKAGE_LIST"
 
-  install -Dm0644 "$ASSET_AUR_PACKAGE_LIST" "$MOUNT_POINT/usr/share/kmos/aur/kde-packages.txt"
+  install -Dm0644 "$ASSET_AUR_PACKAGE_LIST" "$MOUNT_POINT/usr/share/kmos/aur/kde-packages.kmos"
   install -Dm0644 "$ASSET_AUR_PACKAGE_LIST" "$MOUNT_POINT$TARGET_AUR_PACKAGE_LIST"
 }
 
@@ -788,7 +788,7 @@ write_aur_installer_script() {
 #!/bin/bash
 set -Eeuo pipefail
 
-list_file="/usr/share/kmos/aur/kde-packages.txt"
+list_file="/usr/share/kmos/aur/kde-packages.kmos"
 pacman_wrapper="/usr/share/kmos/bin/kmos-pacman-nohooks"
 packages=()
 line=""

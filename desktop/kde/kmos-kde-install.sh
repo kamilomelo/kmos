@@ -13,7 +13,7 @@ METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main
 KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/desktop/kde/kmos-kde-post.sh"
 KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
 INSTALL_AUR="${kmos_INSTALL_AUR:-yes}"
-PRUNE_LIST_FILE="$REPO_ROOT/assets/prune/kde-remove-packages.txt"
+PRUNE_LIST_FILE="$REPO_ROOT/assets/prune/kde-remove-packages.kmos"
 PACMAN_RETRIES="${kmos_PACMAN_RETRIES:-4}"
 
 UI_RESET=""
