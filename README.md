@@ -38,16 +38,15 @@ The root of the repository is intentionally small:
 - `packages/` contains package definitions and AUR package lists.
 
 ### KDE Profiles
-The KDE installer supports two profiles:
+The main installer supports two KDE profiles:
 
-- `full`: default complete KDE desktop profile.
-- `noapps`: KDE desktop core without the extra shared application groups.
+- `full`: default complete KDE desktop profile
+- `noapps`: KDE desktop core without the extra shared application groups
 
-The main installer uses the default `full` profile unless you pass `--profile noapps`.
-To run the KDE stage manually with fewer applications:
+Use `noapps` from the main entrypoint when you want the lighter KDE path:
 
 ```bash
-./desktop/kde/kmos-kde-install.sh --target /mnt --profile noapps
+./kmos-archlinux-install.sh --profile noapps
 ```
 
 ### AUR Packages
