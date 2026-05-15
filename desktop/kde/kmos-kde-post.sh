@@ -22,6 +22,7 @@ ASSET_KATE_THEME_GITHUB="$REPO_ROOT/assets/kate/kmos-github.theme"
 ASSET_DASHBOARD_ICON="$REPO_ROOT/assets/icons/kmos.ico"
 ASSET_MENU_HIDE_LIST="$REPO_ROOT/assets/menus/to-delete-from-menu.kmos"
 ASSET_AUR_PACKAGE_LIST="$REPO_AUR_DIR/aur-packages.kmos"
+ASSET_EXTRA_FONTS_DIR="$REPO_ROOT/assets/extra-fonts"
 TARGET_WALLPAPER="/opt/kmos/assets/wallpapers/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
@@ -781,6 +782,45 @@ run_target_pacman_without_packagekit_hook() {
   arch-chroot "$MOUNT_POINT" bash -lc "pacman --disable-download-timeout --hookdir '$hookdir' $pacman_cmd"
 }
 
+install_extra_fonts() {
+  local fonts_dir="$MOUNT_POINT/usr/local/share/fonts/kmos"
+  local asset=""
+
+  [[ -d "$ASSET_EXTRA_FONTS_DIR" ]] || return 0
+  install -d "$fonts_dir"
+
+  for asset in "$ASSET_EXTRA_FONTS_DIR"/*; do
+    [[ -e "$asset" ]] || continue
+    case "$asset" in
+      *.zip)
+        if command -v bsdtar >/dev/null 2>&1; then
+          bsdtar -xf "$asset" -C "$fonts_dir"
+        elif command -v unzip >/dev/null 2>&1; then
+          unzip -oq "$asset" -d "$fonts_dir"
+        else
+          warn "Skipping extra font archive without extractor support: ${asset##*/}"
+          continue
+        fi
+        ;;
+      *.ttf|*.otf|*.ttc)
+        install -m 0644 "$asset" "$fonts_dir/${asset##*/}"
+        ;;
+    esac
+  done
+
+  find "$fonts_dir" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -exec chmod 0644 {} +
+  arch-chroot "$MOUNT_POINT" fc-cache -r >/dev/null 2>&1 || warn "Could not refresh font cache after installing extra fonts."
+  success "Extra fonts installed from assets."
+}
+
+remove_noto_fonts() {
+  if arch-chroot "$MOUNT_POINT" pacman -Q noto-fonts >/dev/null 2>&1; then
+    run_target_pacman_without_packagekit_hook "-Rdd --noconfirm noto-fonts" || warn "Could not force-remove noto-fonts."
+    arch-chroot "$MOUNT_POINT" fc-cache -r >/dev/null 2>&1 || warn "Could not refresh font cache after removing noto-fonts."
+    success "noto-fonts force-removed."
+  fi
+}
+
 write_aur_installer_script() {
   local target="$1"
 
@@ -875,6 +915,8 @@ apply_post_tweaks() {
   apply_dolphin_defaults
   apply_kate_defaults
   apply_menu_hides
+  install_extra_fonts
+  remove_noto_fonts
   install_aur_packages
   record_profile
   success "KDE post-install hook executed."
