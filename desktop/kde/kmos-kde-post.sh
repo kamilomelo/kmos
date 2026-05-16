@@ -508,7 +508,7 @@ for (var i = 0; i < panels.length; ++i) {
     }
 
     configureDigitalClock(bogotaClock, "America/Bogota", false, "isoDate", "FullText");
-    configureDigitalClock(localClock, "Local", false, "isoDate", 1);
+    configureDigitalClock(localClock, "Local", false, "isoDate", "FullText");
     configureDigitalClock(shanghaiClock, "Asia/Shanghai", false, "isoDate", "FullText");
 }
 EOF
