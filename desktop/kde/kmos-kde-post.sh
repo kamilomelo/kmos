@@ -472,8 +472,15 @@ function firstWidgetByTypes(panel, types) {
     return null;
 }
 
+function sortWidgetsByIndex(widgets) {
+    widgets.sort(function(a, b) {
+        return a.index - b.index;
+    });
+    return widgets;
+}
+
 function ensureWidgets(panel, type, count) {
-    var widgets = panel.widgets(type).slice();
+    var widgets = sortWidgetsByIndex(panel.widgets(type).slice());
 
     while (widgets.length < count) {
         var widget = panel.addWidget(type);
@@ -483,7 +490,7 @@ function ensureWidgets(panel, type, count) {
         widgets.push(widget);
     }
 
-    return widgets;
+    return sortWidgetsByIndex(widgets);
 }
 
 var panels = panelIds;
@@ -497,29 +504,36 @@ for (var i = 0; i < panels.length; ++i) {
         widget.remove();
     });
 
+    var existingClocks = sortWidgetsByIndex(panel.widgets("org.kde.plasma.digitalclock").slice());
     var clocks = ensureWidgets(panel, "org.kde.plasma.digitalclock", 3);
     var systemMonitors = ensureWidgets(panel, "org.kde.plasma.systemmonitor", 3);
     var networkWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.net", 1);
-    var systemTray = firstWidgetByTypes(panel, ["org.kde.plasma.systemtray"]);
     var peekWidget = firstWidgetByTypes(panel, ["org.kde.plasma.minimizeall", "org.kde.plasma.showdesktop"]);
 
-    if (!peekWidget || !systemTray || clocks.length < 3 || systemMonitors.length < 3 || networkWidgets.length < 1) {
+    if (!peekWidget || clocks.length < 3 || systemMonitors.length < 3 || networkWidgets.length < 1) {
         continue;
     }
 
-    configureDigitalClock(clocks[0], "Asia/Shanghai", false, "isoDate", "FullText");
-    configureDigitalClock(clocks[1], "Local", false, "isoDate", "FullText");
-    configureDigitalClock(clocks[2], "America/Bogota", false, "isoDate", "FullText");
+    var primaryClock = existingClocks.length > 0 ? existingClocks[0] : clocks[0];
+    var extraClocks = clocks.filter(function(widget) {
+        return widget !== primaryClock;
+    });
+    sortWidgetsByIndex(extraClocks);
 
-    var anchorIndex = systemTray.index + 1;
-    systemMonitors[0].index = anchorIndex;
-    systemMonitors[1].index = anchorIndex + 1;
-    systemMonitors[2].index = anchorIndex + 2;
-    networkWidgets[0].index = anchorIndex + 3;
-    clocks[0].index = anchorIndex + 4;
-    clocks[1].index = anchorIndex + 5;
-    clocks[2].index = anchorIndex + 6;
-    peekWidget.index = anchorIndex + 7;
+    var orderedClocks = [primaryClock, extraClocks[0], extraClocks[1]];
+    configureDigitalClock(orderedClocks[0], "Asia/Shanghai", false, "isoDate", "FullText");
+    configureDigitalClock(orderedClocks[1], "Local", false, "isoDate", "FullText");
+    configureDigitalClock(orderedClocks[2], "America/Bogota", false, "isoDate", "FullText");
+
+    var clockAnchorIndex = Math.min(primaryClock.index, peekWidget.index - 1);
+    systemMonitors[0].index = clockAnchorIndex - 4;
+    systemMonitors[1].index = clockAnchorIndex - 3;
+    systemMonitors[2].index = clockAnchorIndex - 2;
+    networkWidgets[0].index = clockAnchorIndex - 1;
+    orderedClocks[0].index = clockAnchorIndex;
+    orderedClocks[1].index = clockAnchorIndex + 1;
+    orderedClocks[2].index = clockAnchorIndex + 2;
+    peekWidget.index = clockAnchorIndex + 3;
 }
 EOF
 
