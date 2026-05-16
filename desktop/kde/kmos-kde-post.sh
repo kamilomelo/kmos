@@ -445,6 +445,12 @@ EOF
 }
 
 apply_panel_widget_defaults() {
+  local layout_template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
+
+  if [[ -f "$layout_template" ]]; then
+    perl -0pi -e 's/panel\.addWidget\("org\.kde\.plasma\.systemtray"\)\npanel\.addWidget\("org\.kde\.plasma\.digitalclock"\)\npanel\.addWidget\("org\.kde\.plasma\.showdesktop"\)/panel.addWidget("org.kde.plasma.systemtray")\npanel.addWidget("org.kde.plasma.systemmonitor")\npanel.addWidget("org.kde.plasma.systemmonitor")\npanel.addWidget("org.kde.plasma.systemmonitor")\npanel.addWidget("org.kde.plasma.systemmonitor.net")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.showdesktop")/' "$layout_template"
+  fi
+
   install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-panel-widgets.js" <<'EOF'
 function configureDigitalClock(widget, timezone, showDate, dateFormat, timezoneFormat) {
     if (!widget) {
@@ -461,36 +467,12 @@ function configureDigitalClock(widget, timezone, showDate, dateFormat, timezoneF
     widget.reloadConfig();
 }
 
-function firstWidgetByTypes(panel, types) {
+function removeWidgetsByTypes(panel, types) {
     for (var i = 0; i < types.length; ++i) {
-        var widgets = panel.widgets(types[i]);
-        if (widgets.length > 0) {
-            return widgets[0];
-        }
+        panel.widgets(types[i]).forEach(function(widget) {
+            panel.removeWidget(widget);
+        });
     }
-
-    return null;
-}
-
-function sortWidgetsByIndex(widgets) {
-    widgets.sort(function(a, b) {
-        return a.index - b.index;
-    });
-    return widgets;
-}
-
-function ensureWidgets(panel, type, count) {
-    var widgets = sortWidgetsByIndex(panel.widgets(type).slice());
-
-    while (widgets.length < count) {
-        var widget = panel.addWidget(type);
-        if (!widget) {
-            break;
-        }
-        widgets.push(widget);
-    }
-
-    return sortWidgetsByIndex(widgets);
 }
 
 var panels = panelIds;
@@ -500,40 +482,31 @@ for (var i = 0; i < panels.length; ++i) {
         continue;
     }
 
-    panel.widgets("org.kde.plasma.networkmonitor").forEach(function(widget) {
-        widget.remove();
-    });
+    removeWidgetsByTypes(panel, [
+        "org.kde.plasma.networkmonitor",
+        "org.kde.plasma.systemmonitor",
+        "org.kde.plasma.systemmonitor.net",
+        "org.kde.plasma.digitalclock",
+        "org.kde.plasma.minimizeall",
+        "org.kde.plasma.showdesktop"
+    ]);
 
-    var existingClocks = sortWidgetsByIndex(panel.widgets("org.kde.plasma.digitalclock").slice());
-    var clocks = ensureWidgets(panel, "org.kde.plasma.digitalclock", 3);
-    var systemMonitors = ensureWidgets(panel, "org.kde.plasma.systemmonitor", 3);
-    var networkWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.net", 1);
-    var peekWidget = firstWidgetByTypes(panel, ["org.kde.plasma.minimizeall", "org.kde.plasma.showdesktop"]);
+    var systemMonitorOne = panel.addWidget("org.kde.plasma.systemmonitor");
+    var systemMonitorTwo = panel.addWidget("org.kde.plasma.systemmonitor");
+    var systemMonitorThree = panel.addWidget("org.kde.plasma.systemmonitor");
+    var networkSpeed = panel.addWidget("org.kde.plasma.systemmonitor.net");
+    var shanghaiClock = panel.addWidget("org.kde.plasma.digitalclock");
+    var localClock = panel.addWidget("org.kde.plasma.digitalclock");
+    var bogotaClock = panel.addWidget("org.kde.plasma.digitalclock");
+    var peekWidget = panel.addWidget("org.kde.plasma.showdesktop");
 
-    if (!peekWidget || clocks.length < 3 || systemMonitors.length < 3 || networkWidgets.length < 1) {
+    if (!systemMonitorOne || !systemMonitorTwo || !systemMonitorThree || !networkSpeed || !shanghaiClock || !localClock || !bogotaClock || !peekWidget) {
         continue;
     }
 
-    var primaryClock = existingClocks.length > 0 ? existingClocks[0] : clocks[0];
-    var extraClocks = clocks.filter(function(widget) {
-        return widget !== primaryClock;
-    });
-    sortWidgetsByIndex(extraClocks);
-
-    var orderedClocks = [primaryClock, extraClocks[0], extraClocks[1]];
-    configureDigitalClock(orderedClocks[0], "Asia/Shanghai", false, "isoDate", "FullText");
-    configureDigitalClock(orderedClocks[1], "Local", false, "isoDate", "FullText");
-    configureDigitalClock(orderedClocks[2], "America/Bogota", false, "isoDate", "FullText");
-
-    var clockAnchorIndex = Math.min(primaryClock.index, peekWidget.index - 1);
-    systemMonitors[0].index = clockAnchorIndex - 4;
-    systemMonitors[1].index = clockAnchorIndex - 3;
-    systemMonitors[2].index = clockAnchorIndex - 2;
-    networkWidgets[0].index = clockAnchorIndex - 1;
-    orderedClocks[0].index = clockAnchorIndex;
-    orderedClocks[1].index = clockAnchorIndex + 1;
-    orderedClocks[2].index = clockAnchorIndex + 2;
-    peekWidget.index = clockAnchorIndex + 3;
+    configureDigitalClock(shanghaiClock, "Asia/Shanghai", false, "isoDate", "FullText");
+    configureDigitalClock(localClock, "Local", false, "isoDate", "FullText");
+    configureDigitalClock(bogotaClock, "America/Bogota", false, "isoDate", "FullText");
 }
 EOF
 
