@@ -495,18 +495,18 @@ for (var i = 0; i < panels.length; ++i) {
     var systemMonitorTwo = panel.addWidget("org.kde.plasma.systemmonitor");
     var systemMonitorThree = panel.addWidget("org.kde.plasma.systemmonitor");
     var networkSpeed = panel.addWidget("org.kde.plasma.systemmonitor.net");
-    var shanghaiClock = panel.addWidget("org.kde.plasma.digitalclock");
-    var localClock = panel.addWidget("org.kde.plasma.digitalclock");
     var bogotaClock = panel.addWidget("org.kde.plasma.digitalclock");
+    var localClock = panel.addWidget("org.kde.plasma.digitalclock");
+    var shanghaiClock = panel.addWidget("org.kde.plasma.digitalclock");
     var peekWidget = panel.addWidget("org.kde.plasma.showdesktop");
 
-    if (!systemMonitorOne || !systemMonitorTwo || !systemMonitorThree || !networkSpeed || !shanghaiClock || !localClock || !bogotaClock || !peekWidget) {
+    if (!systemMonitorOne || !systemMonitorTwo || !systemMonitorThree || !networkSpeed || !bogotaClock || !localClock || !shanghaiClock || !peekWidget) {
         continue;
     }
 
-    configureDigitalClock(shanghaiClock, "Asia/Shanghai", false, "isoDate", "FullText");
-    configureDigitalClock(localClock, "Local", false, "isoDate", "FullText");
     configureDigitalClock(bogotaClock, "America/Bogota", false, "isoDate", "FullText");
+    configureDigitalClock(localClock, "Local", false, "isoDate", "FullText");
+    configureDigitalClock(shanghaiClock, "Asia/Shanghai", false, "isoDate", "FullText");
 }
 EOF
 
