@@ -20,7 +20,6 @@ ASSET_YAKUAKE_SKIN_DIR="$REPO_ROOT/assets/yakuake/monochrome"
 ASSET_KATE_THEME_AYU="$REPO_ROOT/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$REPO_ROOT/assets/kate/kmos-github.theme"
 ASSET_DASHBOARD_ICON="$REPO_ROOT/assets/icons/kmos.ico"
-ASSET_MENU_HIDE_LIST="$REPO_ROOT/assets/menus/to-delete-from-menu.kmos"
 ASSET_AUR_PACKAGE_LIST="$REPO_AUR_DIR/aur-packages.kmos"
 ASSET_EXTRA_FONTS_DIR="$REPO_ROOT/assets/extra-fonts"
 TARGET_WALLPAPER="/opt/kmos/assets/wallpapers/kmos-wallpaper.png"
@@ -286,144 +285,6 @@ Schema=kmos-github
 EOF
 }
 
-hide_desktop_entry() {
-  local source="$1"
-  local rel_path="${source#"$MOUNT_POINT/usr/share/applications/"}"
-  local target="$MOUNT_POINT/usr/local/share/applications/$rel_path"
-
-  install -Dm0644 "$source" "$target"
-  if grep -q '^[[:space:]]*NoDisplay=' "$target"; then
-    sed -i 's/^[[:space:]]*NoDisplay=.*/NoDisplay=true/' "$target"
-  else
-    printf '\nNoDisplay=true\n' >> "$target"
-  fi
-
-  if grep -q '^[[:space:]]*Hidden=' "$target"; then
-    sed -i 's/^[[:space:]]*Hidden=.*/Hidden=true/' "$target"
-  else
-    printf 'Hidden=true\n' >> "$target"
-  fi
-}
-
-hide_desktop_entry_in_home() {
-  local source="$1"
-  local home_dir="$2"
-  local rel_path="${source#"$MOUNT_POINT/usr/share/applications/"}"
-  local target="$home_dir/.local/share/applications/$rel_path"
-
-  install -Dm0644 "$source" "$target"
-  if grep -q '^[[:space:]]*NoDisplay=' "$target"; then
-    sed -i 's/^[[:space:]]*NoDisplay=.*/NoDisplay=true/' "$target"
-  else
-    printf '\nNoDisplay=true\n' >> "$target"
-  fi
-
-  if grep -q '^[[:space:]]*Hidden=' "$target"; then
-    sed -i 's/^[[:space:]]*Hidden=.*/Hidden=true/' "$target"
-  else
-    printf 'Hidden=true\n' >> "$target"
-  fi
-}
-
-write_kmenuedit_menu_overlay() {
-  local target="$1"
-  local name=""
-
-  install -d "$(dirname "$target")"
-  {
-    printf '%s\n' '<!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"'
-    printf '%s\n' ' "http://www.freedesktop.org/standards/menu-spec/1.0/menu.dtd">'
-    printf '%s\n' '<Menu>'
-    printf '%s\n' '  <Name>Applications</Name>'
-    printf '%s\n' '  <Exclude>'
-    while IFS= read -r name; do
-      name="${name%%#*}"
-      name="${name#"${name%%[![:space:]]*}"}"
-      name="${name%"${name##*[![:space:]]}"}"
-      [[ -n "$name" ]] || continue
-      case "$name" in
-        *.desktop) printf '    <Filename>%s</Filename>\n' "$name" ;;
-        *) printf '    <Filename>%s.desktop</Filename>\n' "$name" ;;
-      esac
-    done < "$ASSET_MENU_HIDE_LIST"
-    printf '%s\n' '  </Exclude>'
-    printf '%s\n' '</Menu>'
-  } | install -Dm0644 /dev/stdin "$target"
-}
-
-refresh_menu_cache() {
-  arch-chroot "$MOUNT_POINT" kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
-  if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database "$MOUNT_POINT/usr/local/share/applications" >/dev/null 2>&1 || true
-    update-desktop-database "$MOUNT_POINT/usr/share/applications" >/dev/null 2>&1 || true
-  fi
-}
-
-apply_menu_hides() {
-  local app_dir="$MOUNT_POINT/usr/share/applications"
-  local desktop=""
-  local home_dir=""
-  local matched=0
-  local pattern=""
-  local name=""
-  local username=""
-  local -a patterns=()
-
-  [[ -d "$app_dir" ]] || return 0
-  [[ -r "$ASSET_MENU_HIDE_LIST" ]] || die "Missing menu hide list asset: $ASSET_MENU_HIDE_LIST"
-
-  write_kmenuedit_menu_overlay "$MOUNT_POINT/etc/xdg/menus/applications-kmenuedit.menu"
-
-  while IFS= read -r name; do
-    name="${name%%#*}"
-    name="${name#"${name%%[![:space:]]*}"}"
-    name="${name%"${name##*[![:space:]]}"}"
-    [[ -n "$name" ]] || continue
-    case "$name" in
-      *.desktop) patterns+=("$name") ;;
-      *)
-        patterns+=("$name.desktop")
-        patterns+=("*$name*.desktop")
-        ;;
-    esac
-  done < "$ASSET_MENU_HIDE_LIST"
-
-  for pattern in "${patterns[@]}"; do
-    for desktop in "$app_dir"/$pattern; do
-      [[ -f "$desktop" ]] || continue
-      hide_desktop_entry "$desktop"
-      hide_desktop_entry_in_home "$desktop" "$MOUNT_POINT/etc/skel"
-      hide_desktop_entry_in_home "$desktop" "$MOUNT_POINT/root"
-      if [[ -d "$MOUNT_POINT/home" ]]; then
-        while IFS= read -r -d '' home_dir; do
-          username="$(basename "$home_dir")"
-          hide_desktop_entry_in_home "$desktop" "$home_dir"
-          arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.local" 2>/dev/null || true
-        done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
-      fi
-      matched=1
-    done
-  done
-
-  write_kmenuedit_menu_overlay "$MOUNT_POINT/etc/skel/.config/menus/applications-kmenuedit.menu"
-  write_kmenuedit_menu_overlay "$MOUNT_POINT/root/.config/menus/applications-kmenuedit.menu"
-  if [[ -d "$MOUNT_POINT/home" ]]; then
-    while IFS= read -r -d '' home_dir; do
-      username="$(basename "$home_dir")"
-      write_kmenuedit_menu_overlay "$home_dir/.config/menus/applications-kmenuedit.menu"
-      arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.config/menus" 2>/dev/null || true
-    done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
-  fi
-
-  if ((matched == 1)); then
-    success "Configured menu hides from asset list."
-  else
-    success "No matching desktop entries found for menu hide asset list."
-  fi
-
-  refresh_menu_cache
-}
-
 apply_splash_defaults() {
   local home_dir=""
   local username=""
@@ -636,8 +497,6 @@ apply_color_scheme_defaults() {
   if [[ -d "$MOUNT_POINT/home" ]]; then
     while IFS= read -r -d '' home_dir; do
       username="$(basename "$home_dir")"
-      write_kmenuedit_menu_overlay "$home_dir/.config/menus/applications-kmenuedit.menu"
-      arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.config/menus" 2>/dev/null || true
       install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/KMOS.colors"
       sed -i 's/^ColorScheme=kmos$/ColorScheme=KMOS/; s/^Name=kmos$/Name=KMOS/' "$home_dir/.local/share/color-schemes/KMOS.colors"
       write_kdeglobals_defaults "$home_dir/.config/kdeglobals"
@@ -975,7 +834,6 @@ apply_post_tweaks() {
   apply_yakuake_defaults
   apply_dolphin_defaults
   apply_kate_defaults
-  apply_menu_hides
   install_extra_fonts
   remove_noto_fonts
   install_aur_packages
