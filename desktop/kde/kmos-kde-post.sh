@@ -467,12 +467,29 @@ function configureDigitalClock(widget, timezone, showDate, dateFormat, timezoneF
     widget.reloadConfig();
 }
 
-function removeWidgetsByTypes(panel, types) {
+function firstWidgetByTypes(panel, types) {
     for (var i = 0; i < types.length; ++i) {
-        panel.widgets(types[i]).forEach(function(widget) {
-            panel.removeWidget(widget);
-        });
+        var widgets = panel.widgets(types[i]);
+        if (widgets.length > 0) {
+            return widgets[0];
+        }
     }
+
+    return null;
+}
+
+function ensureWidgets(panel, type, count) {
+    var widgets = panel.widgets(type).slice();
+
+    while (widgets.length < count) {
+        var widget = panel.addWidget(type);
+        if (!widget) {
+            break;
+        }
+        widgets.push(widget);
+    }
+
+    return widgets;
 }
 
 var panels = panelIds;
@@ -482,34 +499,38 @@ for (var i = 0; i < panels.length; ++i) {
         continue;
     }
 
-    removeWidgetsByTypes(panel, [
-        "org.kde.plasma.networkmonitor",
-        "org.kde.plasma.systemmonitor",
-        "org.kde.plasma.systemmonitor.kmos-cpu-gpu",
-        "org.kde.plasma.systemmonitor.kmos-mem",
-        "org.kde.plasma.systemmonitor.kmos-disk",
-        "org.kde.plasma.systemmonitor.net",
-        "org.kde.plasma.digitalclock",
-        "org.kde.plasma.minimizeall",
-        "org.kde.plasma.showdesktop"
-    ]);
+    panel.widgets("org.kde.plasma.networkmonitor").forEach(function(widget) {
+        widget.remove();
+    });
+    panel.widgets("org.kde.plasma.systemmonitor").forEach(function(widget) {
+        widget.remove();
+    });
 
-    var systemMonitorOne = panel.addWidget("org.kde.plasma.systemmonitor.kmos-cpu-gpu");
-    var systemMonitorTwo = panel.addWidget("org.kde.plasma.systemmonitor.kmos-mem");
-    var systemMonitorThree = panel.addWidget("org.kde.plasma.systemmonitor.kmos-disk");
-    var networkSpeed = panel.addWidget("org.kde.plasma.systemmonitor.net");
-    var bogotaClock = panel.addWidget("org.kde.plasma.digitalclock");
-    var localClock = panel.addWidget("org.kde.plasma.digitalclock");
-    var shanghaiClock = panel.addWidget("org.kde.plasma.digitalclock");
-    var peekWidget = panel.addWidget("org.kde.plasma.showdesktop");
+    var clocks = ensureWidgets(panel, "org.kde.plasma.digitalclock", 3);
+    var cpuGpuWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.kmos-cpu-gpu", 1);
+    var memWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.kmos-mem", 1);
+    var diskWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.kmos-disk", 1);
+    var networkWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.net", 1);
+    var systemTray = firstWidgetByTypes(panel, ["org.kde.plasma.systemtray"]);
+    var peekWidget = firstWidgetByTypes(panel, ["org.kde.plasma.minimizeall", "org.kde.plasma.showdesktop"]);
 
-    if (!systemMonitorOne || !systemMonitorTwo || !systemMonitorThree || !networkSpeed || !bogotaClock || !localClock || !shanghaiClock || !peekWidget) {
+    if (!peekWidget || !systemTray || clocks.length < 3 || cpuGpuWidgets.length < 1 || memWidgets.length < 1 || diskWidgets.length < 1 || networkWidgets.length < 1) {
         continue;
     }
 
-    configureDigitalClock(bogotaClock, "America/Bogota", false, "isoDate", "FullText");
-    configureDigitalClock(localClock, "Local", false, "isoDate", "FullText");
-    configureDigitalClock(shanghaiClock, "Asia/Shanghai", false, "isoDate", "FullText");
+    configureDigitalClock(clocks[0], "America/Bogota", false, "isoDate", "FullText");
+    configureDigitalClock(clocks[1], "Local", false, "isoDate", "FullText");
+    configureDigitalClock(clocks[2], "Asia/Shanghai", false, "isoDate", "FullText");
+
+    var anchorIndex = systemTray.index + 1;
+    cpuGpuWidgets[0].index = anchorIndex;
+    memWidgets[0].index = anchorIndex + 1;
+    diskWidgets[0].index = anchorIndex + 2;
+    networkWidgets[0].index = anchorIndex + 3;
+    clocks[0].index = anchorIndex + 4;
+    clocks[1].index = anchorIndex + 5;
+    clocks[2].index = anchorIndex + 6;
+    peekWidget.index = anchorIndex + 7;
 }
 EOF
 
