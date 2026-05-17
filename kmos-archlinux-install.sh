@@ -270,6 +270,13 @@ parse_args() {
     esac
     shift
   done
+
+  case "$KDE_PROFILE" in
+    full|noapps) ;;
+    *)
+      die "Unknown KDE profile: $KDE_PROFILE (allowed: full, noapps)"
+      ;;
+  esac
 }
 
 add_package() {
