@@ -160,6 +160,101 @@ NoDisplay=true
 EOF
 }
 
+write_panel_clock_autostart() {
+  local target_script="$1"
+  local target_desktop="$2"
+
+  install -Dm0755 /dev/stdin "$target_script" <<'EOF'
+#!/bin/sh
+set -eu
+
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/plasma-org.kde.plasma.desktop-appletsrc"
+
+[ -f "$cfg" ] || exit 0
+command -v kwriteconfig6 >/dev/null 2>&1 || exit 0
+
+match="$(awk '
+  match($0, /^\[Containments\]\[([0-9]+)\]\[Applets\]\[([0-9]+)\]$/, m) {
+    containment = m[1]
+    applet = m[2]
+    next
+  }
+  $0 == "plugin=org.kde.plasma.digitalclock" {
+    clocks[containment] = clocks[containment] " " applet
+    count[containment]++
+    next
+  }
+  $0 == "plugin=org.kde.plasma.showdesktop" || $0 == "plugin=org.kde.plasma.minimizeall" {
+    hasPeek[containment] = 1
+  }
+  END {
+    for (containment in count) {
+      if (count[containment] >= 3 && hasPeek[containment]) {
+        print containment "|" clocks[containment]
+        exit
+      }
+    }
+  }
+' "$cfg")"
+
+[ -n "$match" ] || exit 0
+
+containment="${match%%|*}"
+applets="${match#*|}"
+set -- $(printf '%s\n' $applets | sort -n)
+[ "$#" -ge 3 ] || exit 0
+
+bogota="$1"
+local_clock="$2"
+shanghai="$3"
+
+write_clock_common() {
+  local applet="$1"
+  local popup_height="$2"
+  local popup_width="$3"
+
+  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --key immutability 1
+  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --key plugin org.kde.plasma.digitalclock
+  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --key popupHeight "$popup_height"
+  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --key popupWidth "$popup_width"
+  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --group ConfigDialog --key DialogHeight 630
+  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --group ConfigDialog --key DialogWidth 810
+  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --group Appearance --key fontWeight 400
+}
+
+write_clock_common "$bogota" 451 525
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key dateFormat isoDate
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key displayTimezoneFormat FullText
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key lastSelectedTimezone America/Bogota
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key selectedTimeZones America/Bogota,Local
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key showDate false
+
+write_clock_common "$local_clock" 375 525
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$local_clock" --group Configuration --group Appearance --key dateFormat isoDate
+
+write_clock_common "$shanghai" 375 525
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key dateFormat isoDate
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key displayTimezoneFormat FullText
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key lastSelectedTimezone Asia/Shanghai
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key selectedTimeZones Local,Asia/Shanghai
+kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key showDate false
+
+if command -v qdbus >/dev/null 2>&1; then
+  qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.reloadConfig >/dev/null 2>&1 || true
+fi
+EOF
+
+  install -Dm0644 /dev/stdin "$target_desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=kmos panel clock config
+Exec=$target_script
+OnlyShowIn=KDE;
+X-GNOME-Autostart-enabled=false
+NoDisplay=true
+EOF
+}
+
 install_lookandfeel_defaults() {
   local target_theme_dir="$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.kmos.desktop"
 
@@ -446,10 +541,14 @@ EOF
 
 apply_panel_widget_defaults() {
   local layout_template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
+  local autostart_script="$MOUNT_POINT/usr/share/kmos/bin/kmos-apply-panel-clocks.sh"
+  local autostart_desktop="$MOUNT_POINT/etc/xdg/autostart/kmos-apply-panel-clocks.desktop"
 
   if [[ -f "$layout_template" ]]; then
     perl -0pi -e 's/panel\.addWidget\("org\.kde\.plasma\.systemtray"\)\npanel\.addWidget\("org\.kde\.plasma\.digitalclock"\)\npanel\.addWidget\("org\.kde\.plasma\.showdesktop"\)/panel.addWidget("org.kde.plasma.systemtray")\npanel.addWidget("org.kde.plasma.systemmonitor.kmos-cpu-gpu")\npanel.addWidget("org.kde.plasma.systemmonitor.kmos-mem")\npanel.addWidget("org.kde.plasma.systemmonitor.kmos-disk")\npanel.addWidget("org.kde.plasma.systemmonitor.net")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.showdesktop")/' "$layout_template"
   fi
+
+  write_panel_clock_autostart "$autostart_script" "$autostart_desktop"
 
   install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-panel-widgets.js" <<'EOF'
 function configureDigitalClock(widget, timezone, showDate, dateFormat, timezoneFormat) {
