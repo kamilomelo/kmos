@@ -285,6 +285,27 @@ Schema=kmos-github
 EOF
 }
 
+set_kwinrc_value() {
+  local target="$1"
+  local group="$2"
+  local key="$3"
+  local value="$4"
+
+  install -d "$(dirname "$target")"
+  arch-chroot "$MOUNT_POINT" kwriteconfig6 --file "$target" --group "$group" --key "$key" "$value"
+}
+
+set_kwinrc_value_for_user() {
+  local username="$1"
+  local target="$2"
+  local group="$3"
+  local key="$4"
+  local value="$5"
+
+  arch-chroot "$MOUNT_POINT" install -d -m 0755 "/home/$username/.config"
+  arch-chroot "$MOUNT_POINT" runuser -u "$username" -- kwriteconfig6 --file "$target" --group "$group" --key "$key" "$value"
+}
+
 apply_splash_defaults() {
   local home_dir=""
   local username=""
@@ -717,6 +738,34 @@ apply_kate_defaults() {
   success "Kate themes installed and kmos-github set as default."
 }
 
+apply_virtual_desktop_defaults() {
+  local home_dir=""
+  local username=""
+
+  set_kwinrc_value "/etc/xdg/kwinrc" "Desktops" "Number" "2"
+  set_kwinrc_value "/etc/xdg/kwinrc" "Desktops" "Rows" "2"
+  set_kwinrc_value "/etc/xdg/kwinrc" "Windows" "RollOverDesktops" "true"
+
+  set_kwinrc_value "/etc/skel/.config/kwinrc" "Desktops" "Number" "2"
+  set_kwinrc_value "/etc/skel/.config/kwinrc" "Desktops" "Rows" "2"
+  set_kwinrc_value "/etc/skel/.config/kwinrc" "Windows" "RollOverDesktops" "true"
+
+  set_kwinrc_value "/root/.config/kwinrc" "Desktops" "Number" "2"
+  set_kwinrc_value "/root/.config/kwinrc" "Desktops" "Rows" "2"
+  set_kwinrc_value "/root/.config/kwinrc" "Windows" "RollOverDesktops" "true"
+
+  if [[ -d "$MOUNT_POINT/home" ]]; then
+    while IFS= read -r -d '' home_dir; do
+      username="$(basename "$home_dir")"
+      set_kwinrc_value_for_user "$username" "/home/$username/.config/kwinrc" "Desktops" "Number" "2"
+      set_kwinrc_value_for_user "$username" "/home/$username/.config/kwinrc" "Desktops" "Rows" "2"
+      set_kwinrc_value_for_user "$username" "/home/$username/.config/kwinrc" "Windows" "RollOverDesktops" "true"
+    done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
+  fi
+
+  success "Virtual desktop defaults configured."
+}
+
 record_profile() {
   install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/kmos/kde-profile" <<EOF
 $KDE_PROFILE
@@ -933,6 +982,7 @@ apply_post_tweaks() {
   apply_yakuake_defaults
   apply_dolphin_defaults
   apply_kate_defaults
+  apply_virtual_desktop_defaults
   install_extra_fonts
   remove_noto_fonts
   install_aur_packages
