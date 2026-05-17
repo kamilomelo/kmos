@@ -160,150 +160,6 @@ NoDisplay=true
 EOF
 }
 
-write_panel_clock_autostart() {
-  local target_script="$1"
-  local target_desktop="$2"
-
-  install -Dm0755 /dev/stdin "$target_script" <<'EOF'
-#!/bin/sh
-set -eu
-
-cfg="${XDG_CONFIG_HOME:-$HOME/.config}/plasma-org.kde.plasma.desktop-appletsrc"
-marker="${XDG_CONFIG_HOME:-$HOME/.config}/.kmos-panel-clocks-applied"
-
-wait_for_clock_layout() {
-  i=0
-  while [ "$i" -lt 30 ]; do
-    [ -f "$cfg" ] && awk '
-      match($0, /^\[Containments\]\[([0-9]+)\]\[Applets\]\[([0-9]+)\]$/, m) {
-        containment = m[1]
-        applet = m[2]
-        next
-      }
-      $0 == "plugin=org.kde.plasma.digitalclock" {
-        clocks[containment] = clocks[containment] " " applet
-        count[containment]++
-        next
-      }
-      $0 == "plugin=org.kde.plasma.showdesktop" || $0 == "plugin=org.kde.plasma.minimizeall" {
-        hasPeek[containment] = 1
-      }
-      END {
-        for (containment in count) {
-          if (count[containment] >= 3 && hasPeek[containment]) {
-            print containment "|" clocks[containment]
-            exit
-          }
-        }
-        exit 1
-      }
-    ' "$cfg" && return 0
-    sleep 1
-    i=$((i + 1))
-  done
-  return 1
-}
-
-append_clock_block() {
-  applet="$1"
-  popup_height="$2"
-  popup_width="$3"
-  shift 3
-
-  {
-    printf '[Containments][%s][Applets][%s]\n' "$containment" "$applet"
-    printf 'immutability=1\n'
-    printf 'plugin=org.kde.plasma.digitalclock\n'
-    printf '[Containments][%s][Applets][%s][Configuration]\n' "$containment" "$applet"
-    printf 'popupHeight=%s\n' "$popup_height"
-    printf 'popupWidth=%s\n' "$popup_width"
-    printf '[Containments][%s][Applets][%s][Configuration][Appearance]\n' "$containment" "$applet"
-    while [ "$#" -gt 0 ]; do
-      printf '%s\n' "$1"
-      shift
-    done
-    printf '[Containments][%s][Applets][%s][Configuration][ConfigDialog]\n' "$containment" "$applet"
-    printf 'DialogHeight=630\n'
-    printf 'DialogWidth=810\n'
-  } >> "$cfg"
-}
-
-[ -f "$marker" ] && exit 0
-
-match="$(wait_for_clock_layout || true)"
-[ -n "$match" ] || exit 0
-
-match="$(awk '
-  match($0, /^\[Containments\]\[([0-9]+)\]\[Applets\]\[([0-9]+)\]$/, m) {
-    containment = m[1]
-    applet = m[2]
-    next
-  }
-  $0 == "plugin=org.kde.plasma.digitalclock" {
-    clocks[containment] = clocks[containment] " " applet
-    count[containment]++
-    next
-  }
-  $0 == "plugin=org.kde.plasma.showdesktop" || $0 == "plugin=org.kde.plasma.minimizeall" {
-    hasPeek[containment] = 1
-  }
-  END {
-    for (containment in count) {
-      if (count[containment] >= 3 && hasPeek[containment]) {
-        print containment "|" clocks[containment]
-        exit
-      }
-    }
-  }
-' "$cfg")"
-
-[ -n "$match" ] || exit 0
-
-containment="${match%%|*}"
-applets="${match#*|}"
-set -- $(printf '%s\n' $applets | sort -n)
-[ "$#" -ge 3 ] || exit 0
-
-bogota="$1"
-local_clock="$2"
-shanghai="$3"
-
-append_clock_block "$bogota" 451 525 \
-  "displayTimezoneFormat=FullText" \
-  "fontWeight=400" \
-  "lastSelectedTimezone=America/Bogota" \
-  "selectedTimeZones=America/Bogota,Local" \
-  "showDate=false"
-
-append_clock_block "$local_clock" 375 525 \
-  "dateFormat=isoDate" \
-  "fontWeight=400"
-
-append_clock_block "$shanghai" 375 525 \
-  "displayTimezoneFormat=FullText" \
-  "fontWeight=400" \
-  "lastSelectedTimezone=Asia/Shanghai" \
-  "selectedTimeZones=Local,Asia/Shanghai" \
-  "showDate=false"
-
-touch "$marker"
-
-if command -v qdbus >/dev/null 2>&1; then
-  qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.reloadConfig >/dev/null 2>&1 || true
-fi
-EOF
-
-  install -Dm0644 /dev/stdin "$target_desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=kmos panel clock config
-Exec=$target_script
-OnlyShowIn=KDE;
-X-GNOME-Autostart-enabled=false
-NoDisplay=true
-EOF
-}
-
 install_lookandfeel_defaults() {
   local target_theme_dir="$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.kmos.desktop"
 
@@ -590,14 +446,10 @@ EOF
 
 apply_panel_widget_defaults() {
   local layout_template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
-  local autostart_script="$MOUNT_POINT/usr/share/kmos/bin/kmos-apply-panel-clocks.sh"
-  local autostart_desktop="$MOUNT_POINT/etc/xdg/autostart/kmos-apply-panel-clocks.desktop"
 
   if [[ -f "$layout_template" ]]; then
     perl -0pi -e 's/panel\.addWidget\("org\.kde\.plasma\.systemtray"\)\npanel\.addWidget\("org\.kde\.plasma\.digitalclock"\)\npanel\.addWidget\("org\.kde\.plasma\.showdesktop"\)/panel.addWidget("org.kde.plasma.systemtray")\npanel.addWidget("org.kde.plasma.systemmonitor.kmos-cpu-gpu")\npanel.addWidget("org.kde.plasma.systemmonitor.kmos-mem")\npanel.addWidget("org.kde.plasma.systemmonitor.kmos-disk")\npanel.addWidget("org.kde.plasma.systemmonitor.net")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.showdesktop")/' "$layout_template"
   fi
-
-  write_panel_clock_autostart "$autostart_script" "$autostart_desktop"
 
   install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-panel-widgets.js" <<'EOF'
 function configureDigitalClock(widget, timezone, showDate, dateFormat, timezoneFormat) {
