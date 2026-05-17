@@ -519,7 +519,7 @@ for (var i = 0; i < panels.length; ++i) {
     }
 
     configureDigitalClock(clocks[0], "America/Bogota", false, "isoDate", "FullText");
-    configureDigitalClock(clocks[1], "Local", false, "isoDate", "FullText");
+    configureDigitalClock(clocks[1], "Local", true, "isoDate", "FullText");
     configureDigitalClock(clocks[2], "Asia/Shanghai", false, "isoDate", "FullText");
 
     var anchorIndex = systemTray.index + 1;
