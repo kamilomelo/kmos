@@ -380,7 +380,7 @@ save_wifi_handoff() {
 }
 
 verify_internet() {
-  read -r -p "Press Enter to ping and wait"
+  info "Verifying internet connectivity"
   ping -c 3 km-robota.com || return 1
   sleep 1
   success "Internet connection verified."
