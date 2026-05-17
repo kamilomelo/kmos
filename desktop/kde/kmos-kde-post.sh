@@ -169,9 +169,69 @@ write_panel_clock_autostart() {
 set -eu
 
 cfg="${XDG_CONFIG_HOME:-$HOME/.config}/plasma-org.kde.plasma.desktop-appletsrc"
+marker="${XDG_CONFIG_HOME:-$HOME/.config}/.kmos-panel-clocks-applied"
 
-[ -f "$cfg" ] || exit 0
-command -v kwriteconfig6 >/dev/null 2>&1 || exit 0
+wait_for_clock_layout() {
+  i=0
+  while [ "$i" -lt 30 ]; do
+    [ -f "$cfg" ] && awk '
+      match($0, /^\[Containments\]\[([0-9]+)\]\[Applets\]\[([0-9]+)\]$/, m) {
+        containment = m[1]
+        applet = m[2]
+        next
+      }
+      $0 == "plugin=org.kde.plasma.digitalclock" {
+        clocks[containment] = clocks[containment] " " applet
+        count[containment]++
+        next
+      }
+      $0 == "plugin=org.kde.plasma.showdesktop" || $0 == "plugin=org.kde.plasma.minimizeall" {
+        hasPeek[containment] = 1
+      }
+      END {
+        for (containment in count) {
+          if (count[containment] >= 3 && hasPeek[containment]) {
+            print containment "|" clocks[containment]
+            exit
+          }
+        }
+        exit 1
+      }
+    ' "$cfg" && return 0
+    sleep 1
+    i=$((i + 1))
+  done
+  return 1
+}
+
+append_clock_block() {
+  applet="$1"
+  popup_height="$2"
+  popup_width="$3"
+  shift 3
+
+  {
+    printf '[Containments][%s][Applets][%s]\n' "$containment" "$applet"
+    printf 'immutability=1\n'
+    printf 'plugin=org.kde.plasma.digitalclock\n'
+    printf '[Containments][%s][Applets][%s][Configuration]\n' "$containment" "$applet"
+    printf 'popupHeight=%s\n' "$popup_height"
+    printf 'popupWidth=%s\n' "$popup_width"
+    printf '[Containments][%s][Applets][%s][Configuration][Appearance]\n' "$containment" "$applet"
+    while [ "$#" -gt 0 ]; do
+      printf '%s\n' "$1"
+      shift
+    done
+    printf '[Containments][%s][Applets][%s][Configuration][ConfigDialog]\n' "$containment" "$applet"
+    printf 'DialogHeight=630\n'
+    printf 'DialogWidth=810\n'
+  } >> "$cfg"
+}
+
+[ -f "$marker" ] && exit 0
+
+match="$(wait_for_clock_layout || true)"
+[ -n "$match" ] || exit 0
 
 match="$(awk '
   match($0, /^\[Containments\]\[([0-9]+)\]\[Applets\]\[([0-9]+)\]$/, m) {
@@ -208,36 +268,25 @@ bogota="$1"
 local_clock="$2"
 shanghai="$3"
 
-write_clock_common() {
-  local applet="$1"
-  local popup_height="$2"
-  local popup_width="$3"
+append_clock_block "$bogota" 451 525 \
+  "displayTimezoneFormat=FullText" \
+  "fontWeight=400" \
+  "lastSelectedTimezone=America/Bogota" \
+  "selectedTimeZones=America/Bogota,Local" \
+  "showDate=false"
 
-  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --key immutability 1
-  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --key plugin org.kde.plasma.digitalclock
-  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --key popupHeight "$popup_height"
-  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --key popupWidth "$popup_width"
-  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --group ConfigDialog --key DialogHeight 630
-  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --group ConfigDialog --key DialogWidth 810
-  kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$applet" --group Configuration --group Appearance --key fontWeight 400
-}
+append_clock_block "$local_clock" 375 525 \
+  "dateFormat=isoDate" \
+  "fontWeight=400"
 
-write_clock_common "$bogota" 451 525
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key dateFormat isoDate
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key displayTimezoneFormat FullText
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key lastSelectedTimezone America/Bogota
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key selectedTimeZones America/Bogota,Local
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$bogota" --group Configuration --group Appearance --key showDate false
+append_clock_block "$shanghai" 375 525 \
+  "displayTimezoneFormat=FullText" \
+  "fontWeight=400" \
+  "lastSelectedTimezone=Asia/Shanghai" \
+  "selectedTimeZones=Local,Asia/Shanghai" \
+  "showDate=false"
 
-write_clock_common "$local_clock" 375 525
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$local_clock" --group Configuration --group Appearance --key dateFormat isoDate
-
-write_clock_common "$shanghai" 375 525
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key dateFormat isoDate
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key displayTimezoneFormat FullText
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key lastSelectedTimezone Asia/Shanghai
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key selectedTimeZones Local,Asia/Shanghai
-kwriteconfig6 --file "$cfg" --group Containments --group "$containment" --group Applets --group "$shanghai" --group Configuration --group Appearance --key showDate false
+touch "$marker"
 
 if command -v qdbus >/dev/null 2>&1; then
   qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.reloadConfig >/dev/null 2>&1 || true
