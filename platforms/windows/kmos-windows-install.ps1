@@ -166,7 +166,11 @@ function Invoke-WithRetry {
             & $Action
             return
         } catch {
-            Write-Warn ("{0} failed: {1}" -f $Description, $_.Exception.Message)
+            $message = $_.Exception.Message
+            if ($message -like 'PERMANENT:*') {
+                throw ($message -replace '^PERMANENT:\s*', '')
+            }
+            Write-Warn ("{0} failed: {1}" -f $Description, $message)
             Write-Info ("Retrying {0} in {1} seconds. Press Ctrl+C to abort." -f $Description, $DelaySeconds)
             Start-Sleep -Seconds $DelaySeconds
         }
@@ -241,9 +245,15 @@ function Invoke-WingetInstall {
     }
 
     Invoke-WithRetry -Description "winget install $Id" -Action {
-        & $WingetPath @arguments
+        $output = & $WingetPath @arguments 2>&1
+        $outputText = ($output | Out-String)
         if ($LASTEXITCODE -ne 0) {
-            throw "winget install failed for $Id"
+            if ($outputText -match 'No package found matching input criteria' -or
+                $outputText -match 'No package found among the working sources' -or
+                $outputText -match 'No available package found') {
+                throw "PERMANENT: winget install failed for ${Id}: $($outputText.Trim())"
+            }
+            throw "winget install failed for ${Id}: $($outputText.Trim())"
         }
     }
 }
