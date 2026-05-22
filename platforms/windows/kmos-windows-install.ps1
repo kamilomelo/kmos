@@ -151,7 +151,12 @@ function Set-RegistryValue {
         New-Item -Path $Path -Force | Out-Null
     }
 
-    New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    $existing = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+    if ($null -ne $existing) {
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force | Out-Null
+    } else {
+        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    }
 }
 
 function Invoke-WithRetry {
@@ -751,8 +756,15 @@ function Configure-LockScreenAndPolicies {
     Write-Step 'Applying lock screen and Windows personalization policies'
 
     if (Test-Path -LiteralPath $LockScreenWallpaper) {
+        $lockScreenFileUrl = 'file:///' + (($LockScreenWallpaper -replace '\\', '/') -replace ' ', '%20')
         Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'LockScreenImage' -Value $LockScreenWallpaper
         Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'NoLockScreenSlideshow' -Value 1 -Type DWord
+        Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $LockScreenWallpaper
+        Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $lockScreenFileUrl
+        Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
+        Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'DesktopImagePath' -Value $LockScreenWallpaper
+        Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'DesktopImageUrl' -Value $lockScreenFileUrl
+        Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'DesktopImageStatus' -Value 1 -Type DWord
     }
 
     Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' -Name 'AllowNewsAndInterests' -Value 0 -Type DWord
@@ -765,7 +777,7 @@ function Register-ActiveSetup {
 
     $keyPath = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\kmos.windows'
     $stub = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\kmos\scripts\Apply-KmosWindowsUser.ps1" -AssetRoot "C:\ProgramData\kmos\assets"'
-    Set-RegistryValue -Path $keyPath -Name 'Version' -Value '1,0,0,0'
+    Set-RegistryValue -Path $keyPath -Name 'Version' -Value '1,0,1,0'
     Set-RegistryValue -Path $keyPath -Name 'IsInstalled' -Value 1 -Type DWord
     Set-RegistryValue -Path $keyPath -Name 'StubPath' -Value $stub
 }

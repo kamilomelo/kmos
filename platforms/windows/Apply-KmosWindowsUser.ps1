@@ -38,7 +38,12 @@ function Set-RegistryValue {
         New-Item -Path $Path -Force | Out-Null
     }
 
-    New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    $existing = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+    if ($null -ne $existing) {
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force | Out-Null
+    } else {
+        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    }
 }
 
 function Ensure-PowerShellProfile {
