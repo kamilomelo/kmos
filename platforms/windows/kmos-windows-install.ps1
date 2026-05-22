@@ -158,19 +158,28 @@ function Invoke-WithRetry {
     param(
         [Parameter(Mandatory)][scriptblock]$Action,
         [Parameter(Mandatory)][string]$Description,
-        [int]$DelaySeconds = 15
+        [int]$DelaySeconds = 15,
+        [int]$PromptAfterAttempts = 3
     )
 
+    $attempt = 0
     while ($true) {
         try {
             & $Action
             return
         } catch {
+            $attempt += 1
             $message = $_.Exception.Message
             if ($message -like 'PERMANENT:*') {
                 throw ($message -replace '^PERMANENT:\s*', '')
             }
             Write-Warn ("{0} failed: {1}" -f $Description, $message)
+            if ($attempt -ge $PromptAfterAttempts) {
+                if (Prompt-YesNo -Prompt ("Skip {0} after {1} failed attempts?" -f $Description, $attempt) -Default $false) {
+                    Write-Warn ("Skipping {0} by user request." -f $Description)
+                    return
+                }
+            }
             Write-Info ("Retrying {0} in {1} seconds. Press Ctrl+C to abort." -f $Description, $DelaySeconds)
             Start-Sleep -Seconds $DelaySeconds
         }
