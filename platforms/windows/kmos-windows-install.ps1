@@ -34,6 +34,7 @@ $GeForceExperienceExe = 'C:\Program Files\NVIDIA Corporation\NVIDIA GeForce Expe
 $KateExe = 'C:\Program Files\Kate\bin\kate.exe'
 $LockScreenWallpaper = Join-Path $AssetTargetRoot 'wallpapers\kmos-wallpaper.png'
 $NvidiaAppPage = 'https://www.nvidia.com/en-us/software/nvidia-app/'
+$HackNerdFontZipUrl = 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.zip'
 
 function Write-Step {
     param([Parameter(Mandatory)][string]$Message)
@@ -720,7 +721,35 @@ function Install-FontFile {
     $fontFileName = Split-Path -Leaf $SourcePath
     $destination = Join-Path $fontsPath $fontFileName
     Copy-Item -LiteralPath $SourcePath -Destination $destination -Force
-    New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts' -Name $RegistryName -Value $fontFileName -PropertyType String -Force | Out-Null
+    Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts' -Name $RegistryName -Value $fontFileName
+}
+
+function Install-HackNerdFont {
+    param([Parameter(Mandatory)][string]$WorkRoot)
+
+    $fontRegistry = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+    $regularInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'Hack Nerd Font Mono (TrueType)' -ErrorAction SilentlyContinue) -ne $null
+    $boldInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'Hack Nerd Font Mono Bold (TrueType)' -ErrorAction SilentlyContinue) -ne $null
+    $italicInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'Hack Nerd Font Mono Italic (TrueType)' -ErrorAction SilentlyContinue) -ne $null
+    $boldItalicInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'Hack Nerd Font Mono Bold Italic (TrueType)' -ErrorAction SilentlyContinue) -ne $null
+    if ($regularInstalled -and $boldInstalled -and $italicInstalled -and $boldItalicInstalled) {
+        Write-Info 'Hack Nerd Font Mono already installed. Skipping.'
+        return
+    }
+
+    $hackZip = Join-Path $WorkRoot 'Hack.zip'
+    $hackDir = Join-Path $WorkRoot 'HackNerdFont'
+    Ensure-Directory -Path $hackDir
+
+    Invoke-WithRetry -Description 'downloading Hack Nerd Font' -Action {
+        Invoke-WebRequest -Uri $HackNerdFontZipUrl -OutFile $hackZip
+    }
+    Expand-Archive -LiteralPath $hackZip -DestinationPath $hackDir -Force
+
+    Install-FontFile -SourcePath (Join-Path $hackDir 'HackNerdFontMono-Regular.ttf') -RegistryName 'Hack Nerd Font Mono (TrueType)'
+    Install-FontFile -SourcePath (Join-Path $hackDir 'HackNerdFontMono-Bold.ttf') -RegistryName 'Hack Nerd Font Mono Bold (TrueType)'
+    Install-FontFile -SourcePath (Join-Path $hackDir 'HackNerdFontMono-Italic.ttf') -RegistryName 'Hack Nerd Font Mono Italic (TrueType)'
+    Install-FontFile -SourcePath (Join-Path $hackDir 'HackNerdFontMono-BoldItalic.ttf') -RegistryName 'Hack Nerd Font Mono Bold Italic (TrueType)'
 }
 
 function Install-ExtraFonts {
@@ -730,7 +759,8 @@ function Install-ExtraFonts {
     $abeezeeInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'ABeeZee (TrueType)' -ErrorAction SilentlyContinue) -ne $null
     $abeezeeItalicInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'ABeeZee Italic (TrueType)' -ErrorAction SilentlyContinue) -ne $null
     $moreSugarInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'More Sugar Thin (TrueType)' -ErrorAction SilentlyContinue) -ne $null
-    if ($abeezeeInstalled -and $abeezeeItalicInstalled -and $moreSugarInstalled) {
+    $hackInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'Hack Nerd Font Mono (TrueType)' -ErrorAction SilentlyContinue) -ne $null
+    if ($abeezeeInstalled -and $abeezeeItalicInstalled -and $moreSugarInstalled -and $hackInstalled) {
         Write-Info 'kmos custom fonts already installed. Skipping.'
         return
     }
@@ -745,6 +775,7 @@ function Install-ExtraFonts {
 
     Expand-Archive -LiteralPath (Join-Path $AssetTargetRoot 'extra-fonts\ABeeZee.zip') -DestinationPath $abeezeeDir -Force
     Expand-Archive -LiteralPath (Join-Path $AssetTargetRoot 'extra-fonts\more_sugar.zip') -DestinationPath $moreSugarDir -Force
+    Install-HackNerdFont -WorkRoot $workRoot
 
     Install-FontFile -SourcePath (Join-Path $abeezeeDir 'ABeeZee-Regular.ttf') -RegistryName 'ABeeZee (TrueType)'
     Install-FontFile -SourcePath (Join-Path $abeezeeDir 'ABeeZee-Italic.ttf') -RegistryName 'ABeeZee Italic (TrueType)'
