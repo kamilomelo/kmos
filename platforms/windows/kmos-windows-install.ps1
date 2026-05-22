@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$AssetSourceRoot = (Join-Path $PSScriptRoot '..\archlinux\assets'),
+    [string]$AssetSourceRoot = '',
     [switch]$SkipTitus
 )
 
@@ -8,10 +8,24 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+$ScriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+    $PSScriptRoot
+} elseif (-not [string]::IsNullOrWhiteSpace($PSCommandPath)) {
+    Split-Path -Parent $PSCommandPath
+} elseif ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+} else {
+    (Get-Location).Path
+}
+
+if ([string]::IsNullOrWhiteSpace($AssetSourceRoot)) {
+    $AssetSourceRoot = Join-Path $ScriptRoot '..\archlinux\assets'
+}
+
 $ProgramDataRoot = Join-Path $env:ProgramData 'kmos'
 $AssetTargetRoot = Join-Path $ProgramDataRoot 'assets'
 $ScriptTargetRoot = Join-Path $ProgramDataRoot 'scripts'
-$ApplyUserScriptSource = Join-Path $PSScriptRoot 'Apply-KmosWindowsUser.ps1'
+$ApplyUserScriptSource = Join-Path $ScriptRoot 'Apply-KmosWindowsUser.ps1'
 $ApplyUserScriptTarget = Join-Path $ScriptTargetRoot 'Apply-KmosWindowsUser.ps1'
 $FirefoxDeveloperEditionExe = 'C:\Program Files\Firefox Developer Edition\firefox.exe'
 $LockScreenWallpaper = Join-Path $AssetTargetRoot 'wallpapers\kmos-wallpaper.png'
