@@ -176,8 +176,7 @@ function Invoke-WithRetry {
             Write-Warn ("{0} failed: {1}" -f $Description, $message)
             if ($attempt -ge $PromptAfterAttempts) {
                 if (Prompt-YesNo -Prompt ("Skip {0} after {1} failed attempts?" -f $Description, $attempt) -Default $false) {
-                    Write-Warn ("Skipping {0} by user request." -f $Description)
-                    return
+                    throw "SKIPPED: $Description"
                 }
             }
             Write-Info ("Retrying {0} in {1} seconds. Press Ctrl+C to abort." -f $Description, $DelaySeconds)
@@ -284,8 +283,16 @@ function Invoke-WingetInstall {
             throw "PERMANENT: winget install failed for ${Id}: $($outputText.Trim())"
         }
 
-        Invoke-WithRetry -Description "winget install $Id" -Action {
-            throw "winget install failed for ${Id}: $($outputText.Trim())"
+        try {
+            Invoke-WithRetry -Description "winget install $Id" -Action {
+                throw "winget install failed for ${Id}: $($outputText.Trim())"
+            }
+        } catch {
+            if ($_.Exception.Message -like 'SKIPPED:*') {
+                Write-Warn ("Skipping winget install for {0} by user request." -f $Id)
+                return
+            }
+            throw
         }
     }
 }
