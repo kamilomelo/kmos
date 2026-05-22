@@ -422,14 +422,16 @@ function Install-LenovoVantage {
             return
         }
 
+        Write-Step ("Installing {0}" -f $candidate.Name)
         try {
-            Write-Step ("Installing {0}" -f $candidate.Name)
             Invoke-WingetInstall -WingetPath $WingetPath -Id $candidate.Id -Source $candidate.Source
             return
         } catch {
             Write-Warn ("Failed to install {0}: {1}" -f $candidate.Name, $_.Exception.Message)
         }
     }
+
+    Write-Warn 'Skipping Lenovo Vantage after bounded install attempts. Continuing with the rest of the installer.'
 }
 
 function Install-FirefoxDeveloperEdition {
