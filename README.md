@@ -125,6 +125,7 @@ Use:
 │   │       ├── kmos-wifi-connect.sh
 │   │       └── kmos-usb-flasher.sh
 │   └── windows/
+│       ├── assets/                         # Windows-specific runtime assets
 │       ├── kmos-windows-install.ps1        # Main Windows post-install provisioner
 │       └── Apply-KmosWindowsUser.ps1       # Per-user Windows defaults hook
 ├── LICENSE
@@ -135,7 +136,7 @@ Use:
 
 - The Arch platform still uses the established internal `kmos` package and asset names.
 - Platform-specific assets are mirrored into `/opt/kmos/assets/` during installation.
-- Windows stages its reusable assets under `C:\ProgramData\kmos\assets`.
+- Windows stages its reusable assets from `platforms/windows/assets/` into `C:\ProgramData\kmos\assets`.
 - Future Rocky Linux support should live beside Arch and Windows under `platforms/`.
 
 ## License

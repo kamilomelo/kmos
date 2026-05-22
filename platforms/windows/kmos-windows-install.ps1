@@ -19,7 +19,7 @@ $ScriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($AssetSourceRoot)) {
-    $AssetSourceRoot = Join-Path $ScriptRoot '..\archlinux\assets'
+    $AssetSourceRoot = Join-Path $ScriptRoot 'assets'
 }
 
 $ProgramDataRoot = Join-Path $env:ProgramData 'kmos'
@@ -29,6 +29,7 @@ $ApplyUserScriptSource = Join-Path $ScriptRoot 'Apply-KmosWindowsUser.ps1'
 $ApplyUserScriptTarget = Join-Path $ScriptTargetRoot 'Apply-KmosWindowsUser.ps1'
 $FirefoxDeveloperEditionExe = 'C:\Program Files\Firefox Developer Edition\firefox.exe'
 $LockScreenWallpaper = Join-Path $AssetTargetRoot 'wallpapers\kmos-wallpaper.png'
+$NvidiaAppPage = 'https://www.nvidia.com/en-us/software/nvidia-app/'
 
 function Write-Step {
     param([Parameter(Mandatory)][string]$Message)
@@ -73,10 +74,16 @@ function Prompt-YesNo {
     while ($true) {
         $suffix = if ($Default) { '[Y/n]' } else { '[y/N]' }
         $answer = Read-Host "$Prompt $suffix"
-        if ([string]::IsNullOrWhiteSpace($answer)) {
+        if ($null -eq $answer) {
             return $Default
         }
-        switch -Regex ($answer.Trim()) {
+
+        $answer = $answer.Trim()
+        if ($answer.Length -eq 0) {
+            return $Default
+        }
+
+        switch -Regex ($answer.ToLowerInvariant()) {
             '^(y|yes)$' { return $true }
             '^(n|no)$' { return $false }
         }
@@ -94,6 +101,35 @@ function Prompt-Choice {
         $answer = Read-Host "$Prompt [$joined]"
         if ($Choices -contains $answer) {
             return $answer
+        }
+    }
+}
+
+function Prompt-ConfirmedText {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [string]$ConfirmLabel = 'Is this correct?'
+    )
+
+    while ($true) {
+        $value = ''
+        while ([string]::IsNullOrWhiteSpace($value)) {
+            $value = (Read-Host $Prompt).Trim()
+        }
+
+        if (Prompt-YesNo -Prompt ("{0}: {1}. {2}" -f $Prompt, $value, $ConfirmLabel) -Default $true) {
+            return $value
+        }
+    }
+}
+
+function Prompt-ConfirmedPassword {
+    param([Parameter(Mandatory)][string]$Prompt)
+
+    while ($true) {
+        $password = Read-Host $Prompt -AsSecureString
+        if (Prompt-YesNo -Prompt 'Password entered. Is this correct?' -Default $true) {
+            return $password
         }
     }
 }
@@ -364,6 +400,16 @@ function Import-FirefoxDefaultAssociations {
     }
 }
 
+function Get-NvidiaAppInstallerUrl {
+    $response = Invoke-WebRequest -Uri $NvidiaAppPage
+    $matches = [regex]::Matches($response.Content, 'https://us\.download\.nvidia\.com/[^"''<>\s]+NVIDIA_app[^"''<>\s]+\.exe')
+    if ($matches.Count -gt 0) {
+        return $matches[0].Value
+    }
+
+    return $null
+}
+
 function Install-NvidiaSupport {
     param([Parameter(Mandatory)][string]$WingetPath)
 
@@ -374,19 +420,31 @@ function Install-NvidiaSupport {
     }
 
     Write-Step 'Installing NVIDIA management software'
-    $candidates = @(
-        @{ Id = 'NVIDIACorporation.NVIDIAapp'; Source = 'winget' },
-        @{ Id = 'Nvidia.GeForceExperience'; Source = 'winget' }
-    )
+    try {
+        $installerUrl = Get-NvidiaAppInstallerUrl
+        if ($installerUrl) {
+            $downloadRoot = Join-Path $ProgramDataRoot 'downloads'
+            Ensure-Directory -Path $downloadRoot
+            $installerPath = Join-Path $downloadRoot 'NVIDIA_app.exe'
+            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
 
-    foreach ($candidate in $candidates) {
-        try {
-            Invoke-WingetInstall -WingetPath $WingetPath -Id $candidate.Id -Source $candidate.Source
-            Write-Info ('Installed {0}. Use it to complete or verify the driver update if Windows does not apply the latest NVIDIA package itself.' -f $candidate.Id)
-            return
-        } catch {
-            Write-Warn ("Failed to install {0}: {1}" -f $candidate.Id, $_.Exception.Message)
+            $process = Start-Process -FilePath $installerPath -ArgumentList '/s' -PassThru -Wait
+            if ($process.ExitCode -eq 0) {
+                Write-Info 'Installed NVIDIA App from the official NVIDIA download page.'
+                return
+            }
+            Write-Warn ("NVIDIA App installer exited with code {0}." -f $process.ExitCode)
         }
+    } catch {
+        Write-Warn ("Failed to install NVIDIA App from NVIDIA.com: {0}" -f $_.Exception.Message)
+    }
+
+    try {
+        Invoke-WingetInstall -WingetPath $WingetPath -Id 'Nvidia.GeForceExperience' -Source 'winget'
+        Write-Info 'Installed NVIDIA GeForce Experience as a fallback. Use it to complete or verify the driver update.'
+        return
+    } catch {
+        Write-Warn ("Failed to install Nvidia.GeForceExperience: {0}" -f $_.Exception.Message)
     }
 }
 
@@ -402,6 +460,29 @@ function Install-EditorsAndStarship {
         Invoke-WingetInstall -WingetPath $WingetPath -Id 'GNU.Nano'
     }
     Invoke-WingetInstall -WingetPath $WingetPath -Id 'Starship.Starship'
+
+    $starshipDir = 'C:\Program Files\starship\bin'
+    if (Test-Path -LiteralPath $starshipDir) {
+        $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+        if ($machinePath -notlike "*$starshipDir*") {
+            [Environment]::SetEnvironmentVariable('Path', ($machinePath.TrimEnd(';') + ';' + $starshipDir), 'Machine')
+        }
+    }
+}
+
+function Configure-ComputerName {
+    $currentName = $env:COMPUTERNAME
+    Write-Step 'Configuring the computer name'
+    Write-Info "Current computer name: $currentName"
+
+    $newName = Prompt-ConfirmedText -Prompt 'Enter the desired computer name'
+    if ($newName -eq $currentName) {
+        Write-Info 'Computer name already matches the requested name.'
+        return
+    }
+
+    Rename-Computer -NewName $newName -Force
+    Write-Warn "Computer renamed to $newName. A reboot will be required for the new name to take effect."
 }
 
 function Install-OpenSsh {
@@ -415,8 +496,19 @@ function Install-OpenSsh {
     Start-Service -Name ssh-agent
     Start-Service -Name sshd
 
-    if (-not (Get-NetFirewallRule -DisplayName 'OpenSSH Server (SSH)' -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (SSH)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow | Out-Null
+    $existingRule = Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue
+    if (-not $existingRule) {
+        $existingRule = Get-NetFirewallRule -DisplayName 'OpenSSH Server (SSH)' -ErrorAction SilentlyContinue | Select-Object -First 1
+    }
+
+    if ($existingRule) {
+        Set-NetFirewallRule -InputObject $existingRule -Enabled True -Direction Inbound -Action Allow | Out-Null
+    } else {
+        try {
+            New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (SSH)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow | Out-Null
+        } catch {
+            Write-Warn ("Could not create the OpenSSH firewall rule: {0}" -f $_.Exception.Message)
+        }
     }
 }
 
@@ -429,6 +521,7 @@ function Copy-KmosAssets {
 
     Ensure-Directory -Path $ScriptTargetRoot
     Copy-Item -LiteralPath $ApplyUserScriptSource -Destination $ApplyUserScriptTarget -Force
+    Write-Info 'Starship presets are available under C:\ProgramData\kmos\assets\starship-presets\'
 }
 
 function Install-FontFile {
@@ -497,21 +590,22 @@ function Prompt-NewAdministrator {
         return
     }
 
-    $username = ''
-    while ([string]::IsNullOrWhiteSpace($username)) {
-        $username = Read-Host 'New username'
-    }
+    while ($true) {
+        $username = Prompt-ConfirmedText -Prompt 'New username'
+        $password = Prompt-ConfirmedPassword -Prompt 'New password'
+        $existing = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
+        if ($existing) {
+            Write-Warn "User $username already exists. Skipping creation."
+        } else {
+            New-LocalUser -Name $username -Password $password -PasswordNeverExpires -AccountNeverExpires | Out-Null
+            Add-LocalGroupMember -Group 'Administrators' -Member $username
+            Write-Info "Created administrator account $username. Active Setup will apply kmos user settings on first logon."
+        }
 
-    $password = Read-Host 'New password' -AsSecureString
-    $existing = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
-    if ($existing) {
-        Write-Warn "User $username already exists. Skipping creation."
-        return
+        if (-not (Prompt-YesNo -Prompt 'Add another local administrator user?' -Default $false)) {
+            break
+        }
     }
-
-    New-LocalUser -Name $username -Password $password -PasswordNeverExpires -AccountNeverExpires | Out-Null
-    Add-LocalGroupMember -Group 'Administrators' -Member $username
-    Write-Info "Created administrator account $username. Active Setup will apply kmos user settings on first logon."
 }
 
 function Invoke-ChrisTitusUtility {
@@ -535,6 +629,7 @@ function main {
     Import-FirefoxDefaultAssociations
     Install-NvidiaSupport -WingetPath $winget
     Install-EditorsAndStarship -WingetPath $winget
+    Configure-ComputerName
     Install-OpenSsh
     Install-ExtraFonts
     Configure-LockScreenAndPolicies

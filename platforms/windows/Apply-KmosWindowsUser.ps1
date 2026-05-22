@@ -8,6 +8,11 @@ $ErrorActionPreference = 'Stop'
 
 $WallpaperPath = Join-Path $AssetRoot 'wallpapers\kmos-wallpaper.png'
 $StarshipPreset = Join-Path $AssetRoot 'starship-presets\holow-light.toml'
+$StarshipCandidates = @(
+    'C:\Program Files\starship\bin\starship.exe',
+    'C:\Program Files (x86)\starship\bin\starship.exe',
+    (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\starship.exe')
+)
 $FirefoxCandidates = @(
     'C:\Program Files\Firefox Developer Edition\firefox.exe',
     'C:\Program Files (x86)\Firefox Developer Edition\firefox.exe'
@@ -45,8 +50,14 @@ function Ensure-PowerShellProfile {
     $content = @(
         $marker
         '$env:STARSHIP_CONFIG = ''C:\ProgramData\kmos\assets\starship-presets\holow-light.toml'''
-        'if (Get-Command starship -ErrorAction SilentlyContinue) {'
-        '  Invoke-Expression (& starship init powershell)'
+        '$kmosStarship = @('
+        '  ''C:\Program Files\starship\bin\starship.exe'''
+        '  ''C:\Program Files (x86)\starship\bin\starship.exe'''
+        '  (Join-Path $env:LOCALAPPDATA ''Microsoft\WinGet\Links\starship.exe'')'
+        '  ''starship'''
+        ') | Where-Object { $_ -eq ''starship'' -or (Test-Path -LiteralPath $_) } | Select-Object -First 1'
+        'if ($kmosStarship) {'
+        '  Invoke-Expression (& $kmosStarship init powershell)'
         '}'
     ) -join [Environment]::NewLine
 
@@ -59,6 +70,15 @@ function Ensure-PowerShellProfile {
     } else {
         Set-Content -LiteralPath $ProfilePath -Value ($content + [Environment]::NewLine) -Encoding UTF8
     }
+}
+
+function Get-StarshipCommand {
+    $command = Get-Command starship -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    return $StarshipCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 }
 
 function Apply-VisualDefaults {
