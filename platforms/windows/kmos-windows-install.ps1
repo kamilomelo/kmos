@@ -28,6 +28,10 @@ $ScriptTargetRoot = Join-Path $ProgramDataRoot 'scripts'
 $ApplyUserScriptSource = Join-Path $ScriptRoot 'Apply-KmosWindowsUser.ps1'
 $ApplyUserScriptTarget = Join-Path $ScriptTargetRoot 'Apply-KmosWindowsUser.ps1'
 $FirefoxDeveloperEditionExe = 'C:\Program Files\Firefox Developer Edition\firefox.exe'
+$PowerShellPreviewExe = 'C:\Program Files\PowerShell\7-preview\pwsh.exe'
+$NvidiaAppExe = 'C:\Program Files\NVIDIA Corporation\NVIDIA app\NVIDIA app.exe'
+$GeForceExperienceExe = 'C:\Program Files\NVIDIA Corporation\NVIDIA GeForce Experience\NVIDIA GeForce Experience.exe'
+$KateExe = 'C:\Program Files\Kate\bin\kate.exe'
 $LockScreenWallpaper = Join-Path $AssetTargetRoot 'wallpapers\kmos-wallpaper.png'
 $NvidiaAppPage = 'https://www.nvidia.com/en-us/software/nvidia-app/'
 
@@ -169,6 +173,28 @@ function Invoke-WithRetry {
     }
 }
 
+function Test-WingetInstalled {
+    param(
+        [Parameter(Mandatory)][string]$WingetPath,
+        [Parameter(Mandatory)][string]$Id
+    )
+
+    $output = & $WingetPath list --id $Id --exact --accept-source-agreements --disable-interactivity 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $false
+    }
+
+    $text = ($output | Out-String)
+    return ($text -notmatch 'No installed package found')
+}
+
+function Test-WindowsCapabilityInstalled {
+    param([Parameter(Mandatory)][string]$Name)
+
+    $capability = Get-WindowsCapability -Online -Name $Name -ErrorAction SilentlyContinue
+    return ($capability -and $capability.State -eq 'Installed')
+}
+
 function Resolve-Winget {
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($winget) {
@@ -224,6 +250,11 @@ function Invoke-WingetInstall {
 
 function Install-PowerShellPreview {
     Write-Step 'Installing latest PowerShell preview'
+
+    if (Test-Path -LiteralPath $PowerShellPreviewExe) {
+        Write-Info 'PowerShell preview already installed. Skipping.'
+        return
+    }
 
     $release = $null
     Invoke-WithRetry -Description 'fetching PowerShell preview release metadata' -Action {
@@ -353,6 +384,11 @@ function Install-LenovoVantage {
     }
 
     foreach ($candidate in $candidates) {
+        if (Test-WingetInstalled -WingetPath $WingetPath -Id $candidate.Id) {
+            Write-Info ("{0} already installed. Skipping." -f $candidate.Name)
+            return
+        }
+
         try {
             Write-Step ("Installing {0}" -f $candidate.Name)
             Invoke-WingetInstall -WingetPath $WingetPath -Id $candidate.Id -Source $candidate.Source
@@ -367,7 +403,11 @@ function Install-FirefoxDeveloperEdition {
     param([Parameter(Mandatory)][string]$WingetPath)
 
     Write-Step 'Installing Firefox Developer Edition'
-    Invoke-WingetInstall -WingetPath $WingetPath -Id 'Mozilla.Firefox.DeveloperEdition' -ExtraArgs @('--scope','machine')
+    if (-not (Test-Path -LiteralPath $FirefoxDeveloperEditionExe)) {
+        Invoke-WingetInstall -WingetPath $WingetPath -Id 'Mozilla.Firefox.DeveloperEdition' -ExtraArgs @('--scope','machine')
+    } else {
+        Write-Info 'Firefox Developer Edition already installed. Skipping install.'
+    }
 
     if (Test-Path -LiteralPath $FirefoxDeveloperEditionExe) {
         try {
@@ -448,6 +488,11 @@ function Install-NvidiaSupport {
         return
     }
 
+    if ((Test-Path -LiteralPath $NvidiaAppExe) -or (Test-Path -LiteralPath $GeForceExperienceExe)) {
+        Write-Info 'NVIDIA management software already installed. Skipping.'
+        return
+    }
+
     Write-Step 'Installing NVIDIA management software'
     try {
         $installerUrl = Get-NvidiaAppInstallerUrl
@@ -483,14 +528,26 @@ function Install-EditorsAndStarship {
     param([Parameter(Mandatory)][string]$WingetPath)
 
     Write-Step 'Installing nano, Kate, and Starship'
-    Invoke-WingetInstall -WingetPath $WingetPath -Id 'KDE.Kate'
-    try {
-        Invoke-WingetInstall -WingetPath $WingetPath -Id 'okibcn.nano'
-    } catch {
-        Write-Warn 'Falling back from okibcn.nano to GNU.Nano.'
-        Invoke-WingetInstall -WingetPath $WingetPath -Id 'GNU.Nano'
+    if (-not (Test-Path -LiteralPath $KateExe) -and -not (Test-WingetInstalled -WingetPath $WingetPath -Id 'KDE.Kate')) {
+        Invoke-WingetInstall -WingetPath $WingetPath -Id 'KDE.Kate'
+    } else {
+        Write-Info 'Kate already installed. Skipping install.'
     }
-    Invoke-WingetInstall -WingetPath $WingetPath -Id 'Starship.Starship'
+    if (-not (Get-Command nano -ErrorAction SilentlyContinue) -and -not (Test-WingetInstalled -WingetPath $WingetPath -Id 'okibcn.nano') -and -not (Test-WingetInstalled -WingetPath $WingetPath -Id 'GNU.Nano')) {
+        try {
+            Invoke-WingetInstall -WingetPath $WingetPath -Id 'okibcn.nano'
+        } catch {
+            Write-Warn 'Falling back from okibcn.nano to GNU.Nano.'
+            Invoke-WingetInstall -WingetPath $WingetPath -Id 'GNU.Nano'
+        }
+    } else {
+        Write-Info 'nano already installed. Skipping install.'
+    }
+    if (-not (Get-Command starship -ErrorAction SilentlyContinue) -and -not (Test-Path -LiteralPath 'C:\Program Files\starship\bin\starship.exe') -and -not (Test-WingetInstalled -WingetPath $WingetPath -Id 'Starship.Starship')) {
+        Invoke-WingetInstall -WingetPath $WingetPath -Id 'Starship.Starship'
+    } else {
+        Write-Info 'Starship already installed. Skipping install.'
+    }
 
     $starshipDir = 'C:\Program Files\starship\bin'
     if (Test-Path -LiteralPath $starshipDir) {
@@ -519,11 +576,19 @@ function Configure-ComputerName {
 function Install-OpenSsh {
     Write-Step 'Installing and enabling OpenSSH client/server'
 
-    Invoke-WithRetry -Description 'installing OpenSSH client capability' -Action {
-        Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
+    if (-not (Test-WindowsCapabilityInstalled -Name 'OpenSSH.Client~~~~0.0.1.0')) {
+        Invoke-WithRetry -Description 'installing OpenSSH client capability' -Action {
+            Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
+        }
+    } else {
+        Write-Info 'OpenSSH client already installed. Skipping capability install.'
     }
-    Invoke-WithRetry -Description 'installing OpenSSH server capability' -Action {
-        Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
+    if (-not (Test-WindowsCapabilityInstalled -Name 'OpenSSH.Server~~~~0.0.1.0')) {
+        Invoke-WithRetry -Description 'installing OpenSSH server capability' -Action {
+            Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
+        }
+    } else {
+        Write-Info 'OpenSSH server already installed. Skipping capability install.'
     }
     Set-Service -Name sshd -StartupType Automatic
     Start-Service -Name sshd
@@ -571,6 +636,15 @@ function Install-FontFile {
 
 function Install-ExtraFonts {
     Write-Step 'Installing kmos custom fonts'
+
+    $fontRegistry = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+    $abeezeeInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'ABeeZee (TrueType)' -ErrorAction SilentlyContinue) -ne $null
+    $abeezeeItalicInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'ABeeZee Italic (TrueType)' -ErrorAction SilentlyContinue) -ne $null
+    $moreSugarInstalled = (Get-ItemProperty -Path $fontRegistry -Name 'More Sugar Thin (TrueType)' -ErrorAction SilentlyContinue) -ne $null
+    if ($abeezeeInstalled -and $abeezeeItalicInstalled -and $moreSugarInstalled) {
+        Write-Info 'kmos custom fonts already installed. Skipping.'
+        return
+    }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
 
     $workRoot = Join-Path $ProgramDataRoot 'font-staging'
