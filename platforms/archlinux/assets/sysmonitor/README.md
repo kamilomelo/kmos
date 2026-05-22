@@ -10,4 +10,4 @@ target system and uses them in the default panel layout:
 - `org.kde.plasma.systemmonitor.kmos-disk`
 
 Do not delete this folder unless you also remove or replace the matching panel
-widget setup in `desktop/kde/kmos-kde-post.sh`.
+widget setup in `platforms/archlinux/desktop/kde/kmos-kde-post.sh`.
