@@ -158,7 +158,7 @@ function Invoke-WithRetry {
     param(
         [Parameter(Mandatory)][scriptblock]$Action,
         [Parameter(Mandatory)][string]$Description,
-        [int]$DelaySeconds = 15,
+        [int]$DelaySeconds = 5,
         [int]$PromptAfterAttempts = 3
     )
 
