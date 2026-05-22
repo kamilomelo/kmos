@@ -490,10 +490,7 @@ function Install-OpenSsh {
 
     Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
     Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
-
-    Set-Service -Name ssh-agent -StartupType Automatic
     Set-Service -Name sshd -StartupType Automatic
-    Start-Service -Name ssh-agent
     Start-Service -Name sshd
 
     $existingRule = Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue
