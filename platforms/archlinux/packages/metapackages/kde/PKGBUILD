@@ -2,9 +2,9 @@
 pkgname=kmos-kde
 pkgver=2026.05.03
 pkgrel=1
-pkgdesc="KMOS lean KDE Plasma package set"
+pkgdesc="kmos lean KDE Plasma package set"
 arch=('any')
-url="https://github.com/kamilomelo/KMOS"
+url="https://github.com/kamilomelo/kmos"
 license=('MIT')
 depends=(
   'plasma-desktop'
