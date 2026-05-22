@@ -150,6 +150,25 @@ function Set-RegistryValue {
     New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
 }
 
+function Invoke-WithRetry {
+    param(
+        [Parameter(Mandatory)][scriptblock]$Action,
+        [Parameter(Mandatory)][string]$Description,
+        [int]$DelaySeconds = 15
+    )
+
+    while ($true) {
+        try {
+            & $Action
+            return
+        } catch {
+            Write-Warn ("{0} failed: {1}" -f $Description, $_.Exception.Message)
+            Write-Info ("Retrying {0} in {1} seconds. Press Ctrl+C to abort." -f $Description, $DelaySeconds)
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+}
+
 function Resolve-Winget {
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($winget) {
@@ -195,16 +214,21 @@ function Invoke-WingetInstall {
         $arguments += $ExtraArgs
     }
 
-    & $WingetPath @arguments
-    if ($LASTEXITCODE -ne 0) {
-        Fail "winget install failed for $Id"
+    Invoke-WithRetry -Description "winget install $Id" -Action {
+        & $WingetPath @arguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "winget install failed for $Id"
+        }
     }
 }
 
 function Install-PowerShellPreview {
     Write-Step 'Installing latest PowerShell preview'
 
-    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases' -Headers @{ 'User-Agent' = 'kmos-windows-install' }
+    $release = $null
+    Invoke-WithRetry -Description 'fetching PowerShell preview release metadata' -Action {
+        $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases' -Headers @{ 'User-Agent' = 'kmos-windows-install' }
+    }
     $preview = $release | Where-Object { $_.prerelease -and -not $_.draft } | Select-Object -First 1
     if (-not $preview) {
         Fail 'Could not determine the latest PowerShell preview release.'
@@ -222,7 +246,9 @@ function Install-PowerShellPreview {
     $extractRoot = Join-Path $env:ProgramFiles 'PowerShell'
     $installPath = Join-Path $extractRoot '7-preview'
 
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $downloadPath
+    Invoke-WithRetry -Description 'downloading PowerShell preview' -Action {
+        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $downloadPath
+    }
     Ensure-Directory -Path $extractRoot
 
     if (Test-Path -LiteralPath $installPath) {
@@ -401,7 +427,10 @@ function Import-FirefoxDefaultAssociations {
 }
 
 function Get-NvidiaAppInstallerUrl {
-    $response = Invoke-WebRequest -Uri $NvidiaAppPage
+    $response = $null
+    Invoke-WithRetry -Description 'fetching NVIDIA App download page' -Action {
+        $response = Invoke-WebRequest -Uri $NvidiaAppPage
+    }
     $matches = [regex]::Matches($response.Content, 'https://us\.download\.nvidia\.com/[^"''<>\s]+NVIDIA_app[^"''<>\s]+\.exe')
     if ($matches.Count -gt 0) {
         return $matches[0].Value
@@ -426,7 +455,9 @@ function Install-NvidiaSupport {
             $downloadRoot = Join-Path $ProgramDataRoot 'downloads'
             Ensure-Directory -Path $downloadRoot
             $installerPath = Join-Path $downloadRoot 'NVIDIA_app.exe'
-            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+            Invoke-WithRetry -Description 'downloading NVIDIA App installer' -Action {
+                Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+            }
 
             $process = Start-Process -FilePath $installerPath -ArgumentList '/s' -PassThru -Wait
             if ($process.ExitCode -eq 0) {
@@ -488,8 +519,12 @@ function Configure-ComputerName {
 function Install-OpenSsh {
     Write-Step 'Installing and enabling OpenSSH client/server'
 
-    Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
-    Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
+    Invoke-WithRetry -Description 'installing OpenSSH client capability' -Action {
+        Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
+    }
+    Invoke-WithRetry -Description 'installing OpenSSH server capability' -Action {
+        Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
+    }
     Set-Service -Name sshd -StartupType Automatic
     Start-Service -Name sshd
 
@@ -611,7 +646,9 @@ function Invoke-ChrisTitusUtility {
     }
 
     Write-Step 'Launching Chris Titus Windows utility'
-    Invoke-Expression ((Invoke-RestMethod 'https://christitus.com/win').ToString())
+    Invoke-WithRetry -Description 'fetching Chris Titus Windows utility' -Action {
+        Invoke-Expression ((Invoke-RestMethod 'https://christitus.com/win').ToString())
+    }
 }
 
 function main {
