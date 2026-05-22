@@ -185,6 +185,43 @@ function Invoke-WithRetry {
     }
 }
 
+function Invoke-ProcessWithTimeout {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [Parameter(Mandatory)][string[]]$ArgumentList,
+        [Parameter(Mandatory)][string]$Description,
+        [int]$TimeoutSeconds = 180
+    )
+
+    $attempt = 0
+    while ($true) {
+        $attempt += 1
+        $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -PassThru -WindowStyle Hidden
+        if ($process.WaitForExit($TimeoutSeconds * 1000)) {
+            if ($process.ExitCode -eq 0) {
+                return
+            }
+            Write-Warn ("{0} failed with exit code {1}." -f $Description, $process.ExitCode)
+        } else {
+            try {
+                $process.Kill()
+            } catch {
+            }
+            Write-Warn ("{0} timed out after {1} seconds." -f $Description, $TimeoutSeconds)
+        }
+
+        if ($attempt -ge 3) {
+            if (Prompt-YesNo -Prompt ("Skip {0} after {1} failed attempts?" -f $Description, $attempt) -Default $false) {
+                Write-Warn ("Skipping {0} by user request." -f $Description)
+                return
+            }
+        }
+
+        Write-Info ("Retrying {0} in 5 seconds. Press Ctrl+C to abort." -f $Description)
+        Start-Sleep -Seconds 5
+    }
+}
+
 function Test-WingetInstalled {
     param(
         [Parameter(Mandatory)][string]$WingetPath,
@@ -429,7 +466,11 @@ function Install-LenovoVantage {
 
     Write-Step ("Installing {0}" -f $candidate.Name)
     try {
-        Invoke-WingetInstall -WingetPath $WingetPath -Id $candidate.Id -Source $candidate.Source
+        $output = & $WingetPath install --id $candidate.Id --exact --source $candidate.Source --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1
+        $outputText = ($output | Out-String)
+        if ($LASTEXITCODE -ne 0) {
+            throw ($outputText.Trim())
+        }
     } catch {
         Write-Warn ("Failed to install {0}: {1}" -f $candidate.Name, $_.Exception.Message)
         Write-Warn 'Skipping Lenovo Commercial Vantage and continuing with the rest of the installer.'
@@ -614,16 +655,22 @@ function Install-OpenSsh {
     Write-Step 'Installing and enabling OpenSSH client/server'
 
     if (-not (Test-WindowsCapabilityInstalled -Name 'OpenSSH.Client~~~~0.0.1.0')) {
-        Invoke-WithRetry -Description 'installing OpenSSH client capability' -Action {
-            Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
-        }
+        Invoke-ProcessWithTimeout -FilePath 'powershell.exe' -ArgumentList @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-Command',
+            "Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null"
+        ) -Description 'installing OpenSSH client capability'
     } else {
         Write-Info 'OpenSSH client already installed. Skipping capability install.'
     }
     if (-not (Test-WindowsCapabilityInstalled -Name 'OpenSSH.Server~~~~0.0.1.0')) {
-        Invoke-WithRetry -Description 'installing OpenSSH server capability' -Action {
-            Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
-        }
+        Invoke-ProcessWithTimeout -FilePath 'powershell.exe' -ArgumentList @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-Command',
+            "Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null"
+        ) -Description 'installing OpenSSH server capability'
     } else {
         Write-Info 'OpenSSH server already installed. Skipping capability install.'
     }
