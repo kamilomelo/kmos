@@ -404,34 +404,20 @@ function Install-LenovoVantage {
         return
     }
 
-    $edition = (Get-ComputerInfo).WindowsProductName
-    $candidates = if ($edition -match 'Home') {
-        @(
-            @{ Id = '9WZDNCRFJ4MV'; Source = 'msstore'; Name = 'Lenovo Vantage' }
-        )
-    } else {
-        @(
-            @{ Id = '9NR5B8GVVM13'; Source = 'msstore'; Name = 'Lenovo Commercial Vantage' },
-            @{ Id = '9WZDNCRFJ4MV'; Source = 'msstore'; Name = 'Lenovo Vantage' }
-        )
+    $candidate = @{ Id = '9NR5B8GVVM13'; Source = 'msstore'; Name = 'Lenovo Commercial Vantage' }
+
+    if (Test-WingetInstalled -WingetPath $WingetPath -Id $candidate.Id) {
+        Write-Info ("{0} already installed. Skipping." -f $candidate.Name)
+        return
     }
 
-    foreach ($candidate in $candidates) {
-        if (Test-WingetInstalled -WingetPath $WingetPath -Id $candidate.Id) {
-            Write-Info ("{0} already installed. Skipping." -f $candidate.Name)
-            return
-        }
-
-        Write-Step ("Installing {0}" -f $candidate.Name)
-        try {
-            Invoke-WingetInstall -WingetPath $WingetPath -Id $candidate.Id -Source $candidate.Source
-            return
-        } catch {
-            Write-Warn ("Failed to install {0}: {1}" -f $candidate.Name, $_.Exception.Message)
-        }
+    Write-Step ("Installing {0}" -f $candidate.Name)
+    try {
+        Invoke-WingetInstall -WingetPath $WingetPath -Id $candidate.Id -Source $candidate.Source
+    } catch {
+        Write-Warn ("Failed to install {0}: {1}" -f $candidate.Name, $_.Exception.Message)
+        Write-Warn 'Skipping Lenovo Commercial Vantage and continuing with the rest of the installer.'
     }
-
-    Write-Warn 'Skipping Lenovo Vantage after bounded install attempts. Continuing with the rest of the installer.'
 }
 
 function Install-FirefoxDeveloperEdition {
