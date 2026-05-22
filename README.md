@@ -4,10 +4,10 @@ kmos is a practical operating-system provisioning toolkit.
 
 Today the implemented platform is:
 - `archlinux`
+- `windows`
 
 The project is now structured so additional platforms can be added later, such as:
 - `rocky`
-- `windows`
 
 ## How To Use It
 
@@ -30,6 +30,23 @@ The Arch installer also supports:
 ```bash
 ./kmos-install.sh --profile noapps
 ```
+
+### Windows Flow
+
+On a fresh Windows 11 install, open an elevated PowerShell session and run:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\platforms\windows\kmos-windows-install.ps1
+```
+
+This script is intended to be run after Windows is already installed and online. It handles:
+- PowerShell preview bootstrap
+- optional disk shrink for Linux coexistence
+- Windows app installs
+- OpenSSH client/server setup
+- shared kmos assets, wallpaper, fonts, and Starship defaults
+- optional local administrator creation
+- final Chris Titus utility launch
 
 ### Arch Linux Flow
 
@@ -94,19 +111,22 @@ Use:
 .
 ├── kmos-install.sh                         # Root platform dispatcher
 ├── platforms/
-│   └── archlinux/
-│       ├── kmos-archlinux-install.sh       # Main Arch installer
-│       ├── assets/                         # Arch-specific runtime assets
-│       ├── desktop/
-│       │   └── kde/
-│       │       ├── kmos-kde-install.sh     # KDE package install stage
-│       │       └── kmos-kde-post.sh        # KDE post-install defaults and tweaks
-│       ├── packages/                       # Arch package definitions and AUR lists
-│       │   ├── aur/
-│       │   └── metapackages/
-│       └── tools/                          # Arch helper scripts
-│           ├── kmos-wifi-connect.sh
-│           └── kmos-usb-flasher.sh
+│   ├── archlinux/
+│   │   ├── kmos-archlinux-install.sh       # Main Arch installer
+│   │   ├── assets/                         # Arch-specific runtime assets
+│   │   ├── desktop/
+│   │   │   └── kde/
+│   │   │       ├── kmos-kde-install.sh     # KDE package install stage
+│   │   │       └── kmos-kde-post.sh        # KDE post-install defaults and tweaks
+│   │   ├── packages/                       # Arch package definitions and AUR lists
+│   │   │   ├── aur/
+│   │   │   └── metapackages/
+│   │   └── tools/                          # Arch helper scripts
+│   │       ├── kmos-wifi-connect.sh
+│   │       └── kmos-usb-flasher.sh
+│   └── windows/
+│       ├── kmos-windows-install.ps1        # Main Windows post-install provisioner
+│       └── Apply-KmosWindowsUser.ps1       # Per-user Windows defaults hook
 ├── LICENSE
 └── README.md
 ```
@@ -115,7 +135,8 @@ Use:
 
 - The Arch platform still uses the established internal `kmos` package and asset names.
 - Platform-specific assets are mirrored into `/opt/kmos/assets/` during installation.
-- Future Rocky Linux and Windows support should live beside Arch under `platforms/`.
+- Windows stages its reusable assets under `C:\ProgramData\kmos\assets`.
+- Future Rocky Linux support should live beside Arch and Windows under `platforms/`.
 
 ## License
 
