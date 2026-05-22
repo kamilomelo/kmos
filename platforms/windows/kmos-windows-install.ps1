@@ -219,6 +219,14 @@ function Resolve-Winget {
     return $winget.Source
 }
 
+function Repair-WingetSources {
+    param([Parameter(Mandatory)][string]$WingetPath)
+
+    Write-Warn 'Repairing winget sources.'
+    & $WingetPath source reset --force --disable-interactivity --accept-source-agreements 2>$null | Out-Null
+    & $WingetPath source update --accept-source-agreements 2>$null | Out-Null
+}
+
 function Invoke-WingetInstall {
     param(
         [Parameter(Mandatory)][string]$WingetPath,
@@ -244,10 +252,19 @@ function Invoke-WingetInstall {
         $arguments += $ExtraArgs
     }
 
+    $sourcesRepaired = $false
     Invoke-WithRetry -Description "winget install $Id" -Action {
         $output = & $WingetPath @arguments 2>&1
         $outputText = ($output | Out-String)
         if ($LASTEXITCODE -ne 0) {
+            if (($outputText -match 'source reset' -or
+                 $outputText -match 'source.*reset' -or
+                 $outputText -match 'Data required by the source is missing' -or
+                 $outputText -match 'An unexpected error occurred while executing the command') -and -not $sourcesRepaired) {
+                $sourcesRepaired = $true
+                Repair-WingetSources -WingetPath $WingetPath
+                throw "winget sources repaired; retrying install for $Id"
+            }
             if ($outputText -match 'No package found matching input criteria' -or
                 $outputText -match 'No package found among the working sources' -or
                 $outputText -match 'No available package found') {
