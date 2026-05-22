@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
-    [string]$AssetRoot = "$env:ProgramData\kmos\assets"
+    [string]$AssetRoot = "$env:ProgramData\kmos\assets",
+    [string]$RegistryRoot = 'HKCU:',
+    [string]$HomePath = $HOME,
+    [switch]$SkipBrowserDefault
 )
 
 Set-StrictMode -Version Latest
@@ -23,6 +26,15 @@ function Ensure-Directory {
     if (-not (Test-Path -LiteralPath $Path)) {
         New-Item -ItemType Directory -Path $Path -Force | Out-Null
     }
+}
+
+function Join-RegistryPath {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$Child
+    )
+
+    return ($Root.TrimEnd('\') + '\' + $Child.TrimStart('\'))
 }
 
 function Set-RegistryValue {
@@ -89,32 +101,34 @@ function Get-StarshipCommand {
 }
 
 function Apply-VisualDefaults {
-    Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Type DWord
-    Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Type DWord
-    Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'ColorPrevalence' -Value 0 -Type DWord
-    Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'EnableTransparency' -Value 0 -Type DWord
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') -Name 'AppsUseLightTheme' -Value 0 -Type DWord
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') -Name 'SystemUsesLightTheme' -Value 0 -Type DWord
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') -Name 'ColorPrevalence' -Value 0 -Type DWord
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') -Name 'EnableTransparency' -Value 0 -Type DWord
 
-    Set-RegistryValue -Path 'HKCU:\Control Panel\Colors' -Name 'Background' -Value '0 0 0'
-    Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '6'
-    Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'TileWallpaper' -Value '0'
-    Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColor' -Value 4285887861 -Type DWord
-    Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColorInactive' -Value 4282400832 -Type DWord
-    Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Name 'AccentColorMenu' -Value 4285887861 -Type DWord
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Control Panel\Colors') -Name 'Background' -Value '0 0 0'
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Control Panel\Desktop') -Name 'WallpaperStyle' -Value '6'
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Control Panel\Desktop') -Name 'TileWallpaper' -Value '0'
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Software\Microsoft\Windows\DWM') -Name 'AccentColor' -Value 4285887861 -Type DWord
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Software\Microsoft\Windows\DWM') -Name 'AccentColorInactive' -Value 4282400832 -Type DWord
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent') -Name 'AccentColorMenu' -Value 4285887861 -Type DWord
 
     if (Test-Path -LiteralPath $WallpaperPath) {
-        Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -Value $WallpaperPath
-        Add-Type -TypeDefinition @"
+        Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Control Panel\Desktop') -Name 'WallPaper' -Value $WallpaperPath
+        if ($RegistryRoot -eq 'HKCU:') {
+            Add-Type -TypeDefinition @"
 using System.Runtime.InteropServices;
 public class KmosWallpaper {
   [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)]
   public static extern int SystemParametersInfo(int uiAction, int uiParam, string pvParam, int fWinIni);
 }
 "@ -ErrorAction SilentlyContinue | Out-Null
-        [void][KmosWallpaper]::SystemParametersInfo(20, 0, $WallpaperPath, 3)
+            [void][KmosWallpaper]::SystemParametersInfo(20, 0, $WallpaperPath, 3)
+        }
     }
 
-    Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'TaskbarDa' -Value 0 -Type DWord
-    Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Dsh' -Name 'IsPrelaunchEnabled' -Value 0 -Type DWord
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced') -Name 'TaskbarDa' -Value 0 -Type DWord
+    Set-RegistryValue -Path (Join-RegistryPath $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Dsh') -Name 'IsPrelaunchEnabled' -Value 0 -Type DWord
 }
 
 function Set-FirefoxDeveloperEditionDefault {
@@ -130,7 +144,9 @@ function Set-FirefoxDeveloperEditionDefault {
     }
 }
 
-Ensure-PowerShellProfile -ProfilePath (Join-Path $HOME 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1')
-Ensure-PowerShellProfile -ProfilePath (Join-Path $HOME 'Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
+Ensure-PowerShellProfile -ProfilePath (Join-Path $HomePath 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1')
+Ensure-PowerShellProfile -ProfilePath (Join-Path $HomePath 'Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
 Apply-VisualDefaults
-Set-FirefoxDeveloperEditionDefault
+if (-not $SkipBrowserDefault) {
+    Set-FirefoxDeveloperEditionDefault
+}

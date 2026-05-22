@@ -612,7 +612,7 @@ function Install-EditorsAndStarship {
 
     Write-Step 'Installing nano, Kate, and Starship'
     if (-not (Test-Path -LiteralPath $KateExe) -and -not (Test-WingetInstalled -WingetPath $WingetPath -Id 'KDE.Kate')) {
-        Invoke-WingetInstall -WingetPath $WingetPath -Id 'KDE.Kate'
+        Invoke-WingetInstall -WingetPath $WingetPath -Id 'KDE.Kate' -ExtraArgs @('--scope','machine')
     } else {
         Write-Info 'Kate already installed. Skipping install.'
     }
@@ -627,7 +627,7 @@ function Install-EditorsAndStarship {
         Write-Info 'nano already installed. Skipping install.'
     }
     if (-not (Get-Command starship -ErrorAction SilentlyContinue) -and -not (Test-Path -LiteralPath 'C:\Program Files\starship\bin\starship.exe') -and -not (Test-WingetInstalled -WingetPath $WingetPath -Id 'Starship.Starship')) {
-        Invoke-WingetInstall -WingetPath $WingetPath -Id 'Starship.Starship'
+        Invoke-WingetInstall -WingetPath $WingetPath -Id 'Starship.Starship' -ExtraArgs @('--scope','machine')
     } else {
         Write-Info 'Starship already installed. Skipping install.'
     }
@@ -777,7 +777,7 @@ function Register-ActiveSetup {
 
     $keyPath = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\kmos.windows'
     $stub = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\kmos\scripts\Apply-KmosWindowsUser.ps1" -AssetRoot "C:\ProgramData\kmos\assets"'
-    Set-RegistryValue -Path $keyPath -Name 'Version' -Value '1,0,1,0'
+    Set-RegistryValue -Path $keyPath -Name 'Version' -Value '1,0,2,0'
     Set-RegistryValue -Path $keyPath -Name 'IsInstalled' -Value 1 -Type DWord
     Set-RegistryValue -Path $keyPath -Name 'StubPath' -Value $stub
 }
@@ -785,6 +785,37 @@ function Register-ActiveSetup {
 function Apply-CurrentUserDefaults {
     Write-Step 'Applying current-user defaults'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ApplyUserScriptTarget -AssetRoot $AssetTargetRoot
+}
+
+function Apply-DefaultUserDefaults {
+    Write-Step 'Applying default-user defaults'
+
+    $defaultProfileRoot = Join-Path $env:SystemDrive 'Users\Default'
+    $defaultNtUser = Join-Path $defaultProfileRoot 'NTUSER.DAT'
+    if (-not (Test-Path -LiteralPath $defaultNtUser)) {
+        Write-Warn 'Default user hive was not found. Skipping default-user customization.'
+        return
+    }
+
+    $loaded = $false
+    try {
+        & reg.exe load HKU\kmosDefault $defaultNtUser | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn 'Could not load the default user hive. Skipping default-user customization.'
+            return
+        }
+        $loaded = $true
+
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ApplyUserScriptTarget `
+            -AssetRoot $AssetTargetRoot `
+            -RegistryRoot 'Registry::HKEY_USERS\kmosDefault' `
+            -HomePath $defaultProfileRoot `
+            -SkipBrowserDefault
+    } finally {
+        if ($loaded) {
+            & reg.exe unload HKU\kmosDefault | Out-Null
+        }
+    }
 }
 
 function Prompt-NewAdministrator {
@@ -838,6 +869,7 @@ function main {
     Install-ExtraFonts
     Configure-LockScreenAndPolicies
     Register-ActiveSetup
+    Apply-DefaultUserDefaults
     Apply-CurrentUserDefaults
     Prompt-NewAdministrator
     Invoke-ChrisTitusUtility
