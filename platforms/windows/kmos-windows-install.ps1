@@ -890,19 +890,19 @@ function main {
     Install-PowerShellPreview
     Resize-SystemPartitionIfRequested
     Copy-KmosAssets
-    Install-LenovoVantage -WingetPath $winget
-    Install-FirefoxDeveloperEdition -WingetPath $winget
-    Import-FirefoxDefaultAssociations
-    Install-NvidiaSupport -WingetPath $winget
-    Install-EditorsAndStarship -WingetPath $winget
     Configure-ComputerName
     Install-OpenSsh
+    Install-FirefoxDeveloperEdition -WingetPath $winget
+    Import-FirefoxDefaultAssociations
+    Install-EditorsAndStarship -WingetPath $winget
     Install-ExtraFonts
     Configure-LockScreenAndPolicies
     Register-ActiveSetup
     Apply-DefaultUserDefaults
     Apply-CurrentUserDefaults
     Prompt-NewAdministrator
+    Install-LenovoVantage -WingetPath $winget
+    Install-NvidiaSupport -WingetPath $winget
     Invoke-ChrisTitusUtility
 
     Write-Host 'kmos Windows provisioning completed.' -ForegroundColor Green
