@@ -903,6 +903,8 @@ function main {
     }
 
     if ($OnlyPhase -eq 'all' -or $OnlyPhase -eq 'defaults') {
+        Install-PowerShellPreview
+        Copy-KmosAssets
         Install-FirefoxDeveloperEdition -WingetPath $winget
         Import-FirefoxDefaultAssociations
         Install-EditorsAndStarship -WingetPath $winget
