@@ -85,9 +85,16 @@ if (-not $json.profiles.defaults) {
 if (-not $json.profiles.defaults.font) {
     $json.profiles.defaults | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
 }
-
-$json.profiles.defaults.font.face = 'Hack Nerd Font Mono'
-$json.profiles.defaults.font.size = 12
+if (-not $json.profiles.defaults.font.PSObject.Properties['face']) {
+    $json.profiles.defaults.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono'
+} else {
+    $json.profiles.defaults.font.face = 'Hack Nerd Font Mono'
+}
+if (-not $json.profiles.defaults.font.PSObject.Properties['size']) {
+    $json.profiles.defaults.font | Add-Member -NotePropertyName size -NotePropertyValue 12
+} else {
+    $json.profiles.defaults.font.size = 12
+}
 
 $json | ConvertTo-Json -Depth 100 | Set-Content -Path $settings -Encoding UTF8
 ```
@@ -107,15 +114,20 @@ Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/p
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/filled-light.toml' -OutFile (Join-Path $starshipDir 'filled-light.toml')
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/filled-dark.toml' -OutFile (Join-Path $starshipDir 'filled-dark.toml')
 
-$profileDir = Join-Path $HOME 'Documents\PowerShell'
-New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-$profilePath = Join-Path $profileDir 'Microsoft.PowerShell_profile.ps1'
-
-@'
+$profileContent = @'
 $env:STARSHIP_CONFIG = 'C:\ProgramData\kmos\starship-presets\holow-light.toml'
 Invoke-Expression (& starship init powershell)
-'@ | Set-Content -Path $profilePath -Encoding ASCII
+'@
+
+$profilePaths = @(
+    (Join-Path $HOME 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'),
+    (Join-Path $HOME 'Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
+)
+
+foreach ($profilePath in $profilePaths) {
+    New-Item -ItemType Directory -Path (Split-Path -Parent $profilePath) -Force | Out-Null
+    Set-Content -Path $profilePath -Value $profileContent -Encoding ASCII
+}
 ```
 
-This installs Starship system-wide, downloads all 4 `kmos` presets, and activates `holow-light.toml` for the current PowerShell user.
-
+This installs Starship system-wide, downloads all 4 `kmos` presets, and activates `holow-light.toml` for both PowerShell profile locations used by Windows.
