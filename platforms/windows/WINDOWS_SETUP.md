@@ -16,14 +16,6 @@ winget install --id KDE.Kate --exact --source winget --scope machine
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
 ```
-
-If `winget` scope causes trouble for PowerShell Preview, use the MSI alternative:
-
-```powershell
-Invoke-WebRequest -Uri "https://github.com/PowerShell/PowerShell/releases/download/v7.7.1-preview.4/PowerShell-7.7.1-preview.4-win-x64.msi" -OutFile "$env:TEMP\ps77preview.msi"
-msiexec /i "$env:TEMP\ps77preview.msi" /quiet ALLUSERS=1
-```
-
 Lenovo Commercial Vantage is Store-backed. If you want to run it manually, the winget Store ID is `9NR5B8GVVM13`.
 
 ### Install and Enable OpenSSH
@@ -44,3 +36,38 @@ ssh localhost
 ```
 
 If `ssh localhost` works, the SSH server is up on the local machine. External access still depends on network, hostname, and firewall conditions outside this guide.
+
+### Install Fonts
+
+```powershell
+function Install-FontFile {
+    param([string]$Path)
+    $dest = Join-Path $env:WINDIR 'Fonts' ([IO.Path]::GetFileName($Path))
+    Copy-Item -LiteralPath $Path -Destination $dest -Force
+}
+
+$fontWork = Join-Path $env:TEMP 'kmos-fonts'
+New-Item -ItemType Directory -Path $fontWork -Force | Out-Null
+
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/extra-fonts/ABeeZee.zip' -OutFile (Join-Path $fontWork 'ABeeZee.zip')
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/extra-fonts/more_sugar.zip' -OutFile (Join-Path $fontWork 'more_sugar.zip')
+Invoke-WebRequest -Uri 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.zip' -OutFile (Join-Path $fontWork 'Hack.zip')
+Invoke-WebRequest -Uri 'https://github.com/google/fonts/raw/main/ofl/comfortaa/Comfortaa%5Bwght%5D.ttf' -OutFile (Join-Path $fontWork 'Comfortaa-wght.ttf')
+
+Expand-Archive -LiteralPath (Join-Path $fontWork 'ABeeZee.zip') -DestinationPath (Join-Path $fontWork 'ABeeZee') -Force
+Expand-Archive -LiteralPath (Join-Path $fontWork 'more_sugar.zip') -DestinationPath (Join-Path $fontWork 'MoreSugar') -Force
+Expand-Archive -LiteralPath (Join-Path $fontWork 'Hack.zip') -DestinationPath (Join-Path $fontWork 'Hack') -Force
+
+Install-FontFile (Join-Path $fontWork 'ABeeZee\ABeeZee-Regular.ttf')
+Install-FontFile (Join-Path $fontWork 'MoreSugar\MoreSugar-Thin.ttf')
+Install-FontFile (Join-Path $fontWork 'Hack\HackNerdFontMono-Regular.ttf')
+Install-FontFile (Join-Path $fontWork 'Comfortaa-wght.ttf')
+```
+
+This is the minimal manual set for Windows:
+- ABeeZee Regular
+- Hack Nerd Regular
+- More Sugar Thin
+- Comfortaa
+
+The first two font archives are reused from the `kmos` repo via raw URLs, so you do not need to clone the repo on the Windows machine.
