@@ -70,6 +70,30 @@ Then install these manually with `Install for all users`:
 
 The first two font archives are reused from the `kmos` repo via raw URLs, so you do not need to clone the repo on the Windows machine.
 
+### Set Windows Terminal Font
+
+```powershell
+$settings = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
+$json = Get-Content -Raw -Path $settings | ConvertFrom-Json
+
+if (-not $json.profiles) {
+    $json | Add-Member -NotePropertyName profiles -NotePropertyValue ([pscustomobject]@{})
+}
+if (-not $json.profiles.defaults) {
+    $json.profiles | Add-Member -NotePropertyName defaults -NotePropertyValue ([pscustomobject]@{})
+}
+if (-not $json.profiles.defaults.font) {
+    $json.profiles.defaults | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
+}
+
+$json.profiles.defaults.font.face = 'Hack Nerd Font Mono'
+$json.profiles.defaults.font.size = 12
+
+$json | ConvertTo-Json -Depth 100 | Set-Content -Path $settings -Encoding UTF8
+```
+
+Close and reopen Windows Terminal after running that block. PowerShell sessions inside Windows Terminal will then use `Hack Nerd Font Mono`.
+
 ### Install and Configure Starship
 
 ```powershell
@@ -94,3 +118,4 @@ Invoke-Expression (& starship init powershell)
 ```
 
 This installs Starship system-wide, downloads all 4 `kmos` presets, and activates `holow-light.toml` for the current PowerShell user.
+
