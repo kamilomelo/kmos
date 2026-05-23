@@ -354,14 +354,22 @@ function Install-PowerShellPreview {
     Invoke-WithRetry -Description 'fetching PowerShell preview release metadata' -Action {
         $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases' -Headers @{ 'User-Agent' = 'kmos-windows-install' }
     }
-    $preview = $release | Where-Object { $_.prerelease -and -not $_.draft } | Select-Object -First 1
+    $releases = @($release)
+    $preview = $releases | Where-Object {
+        $item = $_
+        $hasPrerelease = $item.PSObject.Properties.Match('prerelease').Count -gt 0
+        $hasDraft = $item.PSObject.Properties.Match('draft').Count -gt 0
+        $hasPrerelease -and $item.prerelease -and (-not ($hasDraft -and $item.draft))
+    } | Select-Object -First 1
     if (-not $preview) {
         Fail 'Could not determine the latest PowerShell preview release.'
     }
 
     $architecture = if ([Environment]::Is64BitOperatingSystem -and $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
     $pattern = "PowerShell-*-win-$architecture.zip"
-    $asset = $preview.assets | Where-Object { $_.name -like $pattern } | Select-Object -First 1
+    $asset = @($preview.assets) | Where-Object {
+        $_.PSObject.Properties.Match('name').Count -gt 0 -and $_.name -like $pattern
+    } | Select-Object -First 1
     if (-not $asset) {
         Fail "Could not find a PowerShell preview ZIP for architecture $architecture."
     }
