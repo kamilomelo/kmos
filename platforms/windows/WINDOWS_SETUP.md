@@ -110,17 +110,14 @@ if (-not $json.profiles.defaults) {
 
 Set-TerminalFont -Target $json.profiles.defaults
 
-foreach ($profileName in @('PowerShell', 'PowerShell Preview')) {
-    $profile = $json.profiles.list | Where-Object { $_.name -eq $profileName } | Select-Object -First 1
-    if ($profile) {
-        Set-TerminalFont -Target $profile
-    }
+foreach ($profile in ($json.profiles.list | Where-Object { $_.name -match 'PowerShell' })) {
+    Set-TerminalFont -Target $profile
 }
 
 $json | ConvertTo-Json -Depth 100 | Set-Content -Path $settings -Encoding UTF8
 ```
 
-Close and reopen Windows Terminal after running that block. The default Terminal font and the `PowerShell` / `PowerShell Preview` profiles will use `Hack Nerd Font Mono`.
+Close and reopen Windows Terminal after running that block. The default Terminal font and any Terminal profile whose name contains `PowerShell`, including elevated/admin variants, will use `Hack Nerd Font Mono`.
 
 ### Install and Configure Starship
 
