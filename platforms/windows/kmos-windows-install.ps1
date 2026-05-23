@@ -350,52 +350,9 @@ function Install-PowerShellPreview {
         return
     }
 
-    $release = $null
-    Invoke-WithRetry -Description 'fetching PowerShell preview release metadata' -Action {
-        $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases' -Headers @{ 'User-Agent' = 'kmos-windows-install' }
-    }
-    $releases = @($release)
-    $preview = $releases | Where-Object {
-        $item = $_
-        $hasPrerelease = $item.PSObject.Properties.Match('prerelease').Count -gt 0
-        $hasDraft = $item.PSObject.Properties.Match('draft').Count -gt 0
-        $hasPrerelease -and $item.prerelease -and (-not ($hasDraft -and $item.draft))
-    } | Select-Object -First 1
-    if (-not $preview) {
-        Fail 'Could not determine the latest PowerShell preview release.'
-    }
-
-    $architecture = if ([Environment]::Is64BitOperatingSystem -and $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
-    $pattern = "PowerShell-*-win-$architecture.zip"
-    $asset = @($preview.assets) | Where-Object {
-        $_.PSObject.Properties.Match('name').Count -gt 0 -and $_.name -like $pattern
-    } | Select-Object -First 1
-    if (-not $asset) {
-        Fail "Could not find a PowerShell preview ZIP for architecture $architecture."
-    }
-
-    Ensure-Directory -Path $ProgramDataRoot
-    $downloadPath = Join-Path $ProgramDataRoot $asset.name
-    $extractRoot = Join-Path $env:ProgramFiles 'PowerShell'
-    $installPath = Join-Path $extractRoot '7-preview'
-
-    Invoke-WithRetry -Description 'downloading PowerShell preview' -Action {
-        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $downloadPath
-    }
-    Ensure-Directory -Path $extractRoot
-
-    if (Test-Path -LiteralPath $installPath) {
-        Remove-Item -LiteralPath $installPath -Recurse -Force
-    }
-
-    Expand-Archive -LiteralPath $downloadPath -DestinationPath $installPath -Force
-
-    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    if ($machinePath -notlike "*$installPath*") {
-        [Environment]::SetEnvironmentVariable('Path', ($machinePath.TrimEnd(';') + ';' + $installPath), 'Machine')
-    }
-
-    Write-Info "PowerShell preview staged in $installPath"
+    $winget = Resolve-Winget
+    Invoke-WingetInstall -WingetPath $winget -Id 'Microsoft.PowerShell.Preview' -Source 'winget' -ExtraArgs @('--scope','machine')
+    Write-Info 'PowerShell preview installation requested through winget.'
 }
 
 function Show-PartitionSizes {
