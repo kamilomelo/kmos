@@ -663,27 +663,21 @@ function Install-OpenSsh {
     Write-Step 'Installing and enabling OpenSSH client/server'
 
     if (-not (Test-WindowsCapabilityInstalled -Name 'OpenSSH.Client~~~~0.0.1.0')) {
-        Invoke-ProcessWithTimeout -FilePath 'powershell.exe' -ArgumentList @(
-            '-NoProfile',
-            '-ExecutionPolicy', 'Bypass',
-            '-Command',
-            "Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null"
-        ) -Description 'installing OpenSSH client capability'
+        Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
     } else {
         Write-Info 'OpenSSH client already installed. Skipping capability install.'
     }
+
     if (-not (Test-WindowsCapabilityInstalled -Name 'OpenSSH.Server~~~~0.0.1.0')) {
-        Invoke-ProcessWithTimeout -FilePath 'powershell.exe' -ArgumentList @(
-            '-NoProfile',
-            '-ExecutionPolicy', 'Bypass',
-            '-Command',
-            "Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null"
-        ) -Description 'installing OpenSSH server capability'
+        Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
     } else {
         Write-Info 'OpenSSH server already installed. Skipping capability install.'
     }
+
     Set-Service -Name sshd -StartupType Automatic
-    Start-Service -Name sshd
+    if ((Get-Service -Name sshd).Status -ne 'Running') {
+        Start-Service -Name sshd
+    }
 
     $existingRule = Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue
     if (-not $existingRule) {
