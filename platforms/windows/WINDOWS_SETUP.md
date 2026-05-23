@@ -192,7 +192,7 @@ Apply-VisualDefaults -Root 'HKCU:'
 
 reg load HKU\kmosDefault 'C:\Users\Default\NTUSER.DAT'
 try {
-    Apply-VisualDefaults -Root 'HKU:\kmosDefault'
+    Apply-VisualDefaults -Root 'Registry::HKEY_USERS\kmosDefault'
 } finally {
     reg unload HKU\kmosDefault
 }
