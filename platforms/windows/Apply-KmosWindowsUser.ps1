@@ -50,11 +50,14 @@ function Set-RegistryValue {
         New-Item -Path $Path -Force | Out-Null
     }
 
-    $existing = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
-    if ($null -ne $existing) {
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force | Out-Null
-    } else {
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    try {
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
+    } catch {
+        if ($_.Exception.Message -match 'does not exist' -or $_.FullyQualifiedErrorId -match 'System.Management.Automation.PSArgumentException') {
+            New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+        } else {
+            throw
+        }
     }
 }
 
