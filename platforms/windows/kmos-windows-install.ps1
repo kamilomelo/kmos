@@ -662,20 +662,27 @@ function Configure-ComputerName {
 function Install-OpenSsh {
     Write-Step 'Installing and enabling OpenSSH client/server'
 
-    if (-not (Test-WindowsCapabilityInstalled -Name 'OpenSSH.Client~~~~0.0.1.0')) {
+    $sshClient = Get-Command ssh.exe -ErrorAction SilentlyContinue
+    if (-not $sshClient) {
         Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
     } else {
         Write-Info 'OpenSSH client already installed. Skipping capability install.'
     }
 
-    if (-not (Test-WindowsCapabilityInstalled -Name 'OpenSSH.Server~~~~0.0.1.0')) {
+    $sshdService = Get-Service -Name sshd -ErrorAction SilentlyContinue
+    if (-not $sshdService) {
         Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
+        $sshdService = Get-Service -Name sshd -ErrorAction SilentlyContinue
     } else {
         Write-Info 'OpenSSH server already installed. Skipping capability install.'
     }
 
+    if (-not $sshdService) {
+        Fail 'OpenSSH server installation did not create the sshd service.'
+    }
+
     Set-Service -Name sshd -StartupType Automatic
-    if ((Get-Service -Name sshd).Status -ne 'Running') {
+    if ($sshdService.Status -ne 'Running') {
         Start-Service -Name sshd
     }
 
