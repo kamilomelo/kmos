@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$AssetSourceRoot = '',
+    [ValidateSet('all','preflight','access','defaults','users','hardware')]
+    [string]$OnlyPhase = 'all',
     [switch]$SkipTitus
 )
 
@@ -886,24 +888,39 @@ function Invoke-ChrisTitusUtility {
 function main {
     Assert-Administrator
     $winget = Resolve-Winget
+    Write-Info "Selected Windows installer phase: $OnlyPhase"
 
-    Install-PowerShellPreview
-    Resize-SystemPartitionIfRequested
-    Copy-KmosAssets
-    Configure-ComputerName
-    Install-OpenSsh
-    Install-FirefoxDeveloperEdition -WingetPath $winget
-    Import-FirefoxDefaultAssociations
-    Install-EditorsAndStarship -WingetPath $winget
-    Install-ExtraFonts
-    Configure-LockScreenAndPolicies
-    Register-ActiveSetup
-    Apply-DefaultUserDefaults
-    Apply-CurrentUserDefaults
-    Prompt-NewAdministrator
-    Install-LenovoVantage -WingetPath $winget
-    Install-NvidiaSupport -WingetPath $winget
-    Invoke-ChrisTitusUtility
+    if ($OnlyPhase -eq 'all' -or $OnlyPhase -eq 'preflight') {
+        Install-PowerShellPreview
+        Resize-SystemPartitionIfRequested
+        Copy-KmosAssets
+    }
+
+    if ($OnlyPhase -eq 'all' -or $OnlyPhase -eq 'access') {
+        Configure-ComputerName
+        Install-OpenSsh
+    }
+
+    if ($OnlyPhase -eq 'all' -or $OnlyPhase -eq 'defaults') {
+        Install-FirefoxDeveloperEdition -WingetPath $winget
+        Import-FirefoxDefaultAssociations
+        Install-EditorsAndStarship -WingetPath $winget
+        Install-ExtraFonts
+        Configure-LockScreenAndPolicies
+        Register-ActiveSetup
+        Apply-DefaultUserDefaults
+        Apply-CurrentUserDefaults
+    }
+
+    if ($OnlyPhase -eq 'all' -or $OnlyPhase -eq 'users') {
+        Prompt-NewAdministrator
+    }
+
+    if ($OnlyPhase -eq 'all' -or $OnlyPhase -eq 'hardware') {
+        Install-LenovoVantage -WingetPath $winget
+        Install-NvidiaSupport -WingetPath $winget
+        Invoke-ChrisTitusUtility
+    }
 
     Write-Host 'kmos Windows provisioning completed.' -ForegroundColor Green
 }
