@@ -70,36 +70,33 @@ Then install these manually with `Install for all users`:
 
 The first two font archives are reused from the `kmos` repo via raw URLs, so you do not need to clone the repo on the Windows machine.
 
-### Set Windows Terminal Font
+### Set PowerShell Preview Font
 
 ```powershell
 $settings = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
 $json = Get-Content -Raw -Path $settings | ConvertFrom-Json
-
-if (-not $json.profiles) {
-    $json | Add-Member -NotePropertyName profiles -NotePropertyValue ([pscustomobject]@{})
+$previewProfile = $json.profiles.list | Where-Object { $_.name -eq 'PowerShell Preview' } | Select-Object -First 1
+if (-not $previewProfile) {
+    throw 'PowerShell Preview profile not found in Windows Terminal settings.'
 }
-if (-not $json.profiles.defaults) {
-    $json.profiles | Add-Member -NotePropertyName defaults -NotePropertyValue ([pscustomobject]@{})
+if (-not $previewProfile.font) {
+    $previewProfile | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
 }
-if (-not $json.profiles.defaults.font) {
-    $json.profiles.defaults | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
-}
-if (-not $json.profiles.defaults.font.PSObject.Properties['face']) {
-    $json.profiles.defaults.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono'
+if (-not $previewProfile.font.PSObject.Properties['face']) {
+    $previewProfile.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono'
 } else {
-    $json.profiles.defaults.font.face = 'Hack Nerd Font Mono'
+    $previewProfile.font.face = 'Hack Nerd Font Mono'
 }
-if (-not $json.profiles.defaults.font.PSObject.Properties['size']) {
-    $json.profiles.defaults.font | Add-Member -NotePropertyName size -NotePropertyValue 12
+if (-not $previewProfile.font.PSObject.Properties['size']) {
+    $previewProfile.font | Add-Member -NotePropertyName size -NotePropertyValue 12
 } else {
-    $json.profiles.defaults.font.size = 12
+    $previewProfile.font.size = 12
 }
 
 $json | ConvertTo-Json -Depth 100 | Set-Content -Path $settings -Encoding UTF8
 ```
 
-Close and reopen Windows Terminal after running that block. PowerShell sessions inside Windows Terminal will then use `Hack Nerd Font Mono`.
+Close and reopen Windows Terminal after running that block. The `PowerShell Preview` profile will then use `Hack Nerd Font Mono`.
 
 ### Install and Configure Starship
 
@@ -114,20 +111,14 @@ Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/p
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/filled-light.toml' -OutFile (Join-Path $starshipDir 'filled-light.toml')
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/filled-dark.toml' -OutFile (Join-Path $starshipDir 'filled-dark.toml')
 
+$profilePath = Join-Path $HOME 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'
 $profileContent = @'
 $env:STARSHIP_CONFIG = 'C:\ProgramData\kmos\starship-presets\holow-light.toml'
 Invoke-Expression (& starship init powershell)
 '@
 
-$profilePaths = @(
-    (Join-Path $HOME 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'),
-    (Join-Path $HOME 'Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
-)
-
-foreach ($profilePath in $profilePaths) {
-    New-Item -ItemType Directory -Path (Split-Path -Parent $profilePath) -Force | Out-Null
-    Set-Content -Path $profilePath -Value $profileContent -Encoding ASCII
-}
+New-Item -ItemType Directory -Path (Split-Path -Parent $profilePath) -Force | Out-Null
+Set-Content -Path $profilePath -Value $profileContent -Encoding ASCII
 ```
 
-This installs Starship system-wide, downloads all 4 `kmos` presets, and activates `holow-light.toml` for both PowerShell profile locations used by Windows.
+This installs Starship system-wide, downloads all 4 `kmos` presets, and activates `holow-light.toml` for `PowerShell Preview`.
