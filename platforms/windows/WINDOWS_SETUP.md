@@ -75,27 +75,10 @@ function Set-TerminalFont {
     if (-not $Target.font) {
         $Target | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
     }
-    if (-not $Target.font.PSObject.Properties['face']) {
-        $Target.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono'
-    } else {
-        $Target.font.face = 'Hack Nerd Font Mono'
-    }
-    if (-not $Target.font.PSObject.Properties['size']) {
-        $Target.font | Add-Member -NotePropertyName size -NotePropertyValue 12
-    } else {
-        $Target.font.size = 12
-    }
-
-    if (-not $Target.PSObject.Properties['fontFace']) {
-        $Target | Add-Member -NotePropertyName fontFace -NotePropertyValue 'Hack Nerd Font Mono'
-    } else {
-        $Target.fontFace = 'Hack Nerd Font Mono'
-    }
-    if (-not $Target.PSObject.Properties['fontSize']) {
-        $Target | Add-Member -NotePropertyName fontSize -NotePropertyValue 12
-    } else {
-        $Target.fontSize = 12
-    }
+    $Target.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono' -Force
+    $Target.font | Add-Member -NotePropertyName size -NotePropertyValue 12 -Force
+    $Target | Add-Member -NotePropertyName fontFace -NotePropertyValue 'Hack Nerd Font Mono' -Force
+    $Target | Add-Member -NotePropertyName fontSize -NotePropertyValue 12 -Force
 }
 
 if (-not $json.profiles) {
@@ -110,18 +93,14 @@ if (-not $json.profiles.defaults) {
 
 Set-TerminalFont -Target $json.profiles.defaults
 
-foreach ($profile in ($json.profiles.list | Where-Object {
-    ($_.name -match 'PowerShell') -or
-    ($_.source -match 'PowerShell') -or
-    ($_.commandline -match 'pwsh|powershell')
-})) {
+foreach ($profile in $json.profiles.list) {
     Set-TerminalFont -Target $profile
 }
 
 $json | ConvertTo-Json -Depth 100 | Set-Content -Path $settings -Encoding UTF8
 ```
 
-Close and reopen Windows Terminal after running that block. The default Terminal font and any Terminal profile tied to `PowerShell` or `pwsh`, including elevated/admin variants, will use `Hack Nerd Font Mono`.
+Close and reopen Windows Terminal after running that block. The default Terminal font and every explicit Terminal profile, including normal and elevated PowerShell Preview sessions, will use `Hack Nerd Font Mono`.
 
 ### Install and Configure Starship
 
