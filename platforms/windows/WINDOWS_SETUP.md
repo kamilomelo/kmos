@@ -126,3 +126,90 @@ Set-Content -Path $profilePath -Value $profileContent -Encoding ASCII
 ```
 
 This installs Starship system-wide, downloads all 4 `kmos` presets, and activates `holow-light.toml` for `PowerShell Preview`.
+
+## Phase 2: Appearance
+
+Run this before creating additional Windows users so new accounts inherit the same visual defaults.
+
+### Apply Wallpaper, Lock Screen, and Dark Mode
+
+```powershell
+$assetRoot = 'C:\ProgramData\kmos\assets'
+$wallpaperDir = Join-Path $assetRoot 'wallpapers'
+$wallpaperPath = Join-Path $wallpaperDir 'kmos-wallpaper.png'
+New-Item -ItemType Directory -Path $wallpaperDir -Force | Out-Null
+
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/wallpapers/kmos-wallpaper.png' -OutFile $wallpaperPath
+
+function Set-RegistryValue {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)]$Value,
+        [string]$Type = 'String'
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+
+    try {
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
+    } catch {
+        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    }
+}
+
+function Apply-VisualDefaults {
+    param([Parameter(Mandatory)][string]$Root)
+
+    Set-RegistryValue -Path "$Root\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name 'AppsUseLightTheme' -Value 0 -Type DWord
+    Set-RegistryValue -Path "$Root\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name 'SystemUsesLightTheme' -Value 0 -Type DWord
+    Set-RegistryValue -Path "$Root\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name 'ColorPrevalence' -Value 0 -Type DWord
+    Set-RegistryValue -Path "$Root\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name 'EnableTransparency' -Value 0 -Type DWord
+    Set-RegistryValue -Path "$Root\Control Panel\Colors" -Name 'Background' -Value '0 0 0'
+    Set-RegistryValue -Path "$Root\Control Panel\Desktop" -Name 'WallpaperStyle' -Value '6'
+    Set-RegistryValue -Path "$Root\Control Panel\Desktop" -Name 'TileWallpaper' -Value '0'
+    Set-RegistryValue -Path "$Root\Control Panel\Desktop" -Name 'WallPaper' -Value $wallpaperPath
+    Set-RegistryValue -Path "$Root\Software\Microsoft\Windows\DWM" -Name 'AccentColor' -Value 4285887861 -Type DWord
+    Set-RegistryValue -Path "$Root\Software\Microsoft\Windows\DWM" -Name 'AccentColorInactive' -Value 4282400832 -Type DWord
+    Set-RegistryValue -Path "$Root\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent" -Name 'AccentColorMenu' -Value 4285887861 -Type DWord
+}
+
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'LockScreenImage' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'NoLockScreenSlideshow' -Value 1 -Type DWord
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Name 'DisableSpotlightCollectionOnDesktop' -Value 1 -Type DWord
+
+$fileUrl = 'file:///' + (($wallpaperPath -replace '\\', '/') -replace ' ', '%20')
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $fileUrl
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'DesktopImagePath' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'DesktopImageUrl' -Value $fileUrl
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'DesktopImageStatus' -Value 1 -Type DWord
+
+Apply-VisualDefaults -Root 'HKCU:'
+
+reg load HKU\kmosDefault 'C:\Users\Default\NTUSER.DAT'
+try {
+    Apply-VisualDefaults -Root 'HKU:\kmosDefault'
+} finally {
+    reg unload HKU\kmosDefault
+}
+
+Add-Type -TypeDefinition @"
+using System.Runtime.InteropServices;
+public class KmosWallpaper {
+  [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)]
+  public static extern int SystemParametersInfo(int uiAction, int uiParam, string pvParam, int fWinIni);
+}
+"@ -ErrorAction SilentlyContinue | Out-Null
+[void][KmosWallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3)
+```
+
+This sets:
+- `kmos` wallpaper for the current desktop
+- the same image for the Windows lock screen
+- dark mode for apps and system
+- black background fallback
+- the same defaults for future users through the `Default User` hive
