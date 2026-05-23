@@ -28,21 +28,19 @@ Start-Service sshd
 New-NetFirewallRule -Name OpenSSH-Server-In-TCP -DisplayName 'OpenSSH Server (SSH)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow
 ```
 
-### Verify SSH
+#### Verify SSH
 
 ```powershell
 Get-Service sshd
 ssh localhost
 ```
 
-If `ssh localhost` works, the SSH server is up on the local machine. External access still depends on network, hostname, and firewall conditions outside this guide.
-
 ### Install Fonts
 
 ```powershell
 function Install-FontFile {
     param([string]$Path)
-    $dest = Join-Path $env:WINDIR 'Fonts' ([IO.Path]::GetFileName($Path))
+    $dest = Join-Path (Join-Path $env:WINDIR 'Fonts') ([IO.Path]::GetFileName($Path))
     Copy-Item -LiteralPath $Path -Destination $dest -Force
 }
 
