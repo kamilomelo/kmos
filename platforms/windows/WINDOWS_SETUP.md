@@ -38,12 +38,6 @@ ssh localhost
 ### Install Fonts
 
 ```powershell
-function Install-FontFile {
-    param([string]$Path)
-    $dest = Join-Path (Join-Path $env:WINDIR 'Fonts') ([IO.Path]::GetFileName($Path))
-    Copy-Item -LiteralPath $Path -Destination $dest -Force
-}
-
 $fontWork = Join-Path $env:TEMP 'kmos-fonts'
 New-Item -ItemType Directory -Path $fontWork -Force | Out-Null
 
@@ -56,10 +50,10 @@ Expand-Archive -LiteralPath (Join-Path $fontWork 'ABeeZee.zip') -DestinationPath
 Expand-Archive -LiteralPath (Join-Path $fontWork 'more_sugar.zip') -DestinationPath (Join-Path $fontWork 'MoreSugar') -Force
 Expand-Archive -LiteralPath (Join-Path $fontWork 'Hack.zip') -DestinationPath (Join-Path $fontWork 'Hack') -Force
 
-Install-FontFile (Join-Path $fontWork 'ABeeZee\ABeeZee-Regular.ttf')
-Install-FontFile (Join-Path $fontWork 'MoreSugar\MoreSugar-Thin.ttf')
-Install-FontFile (Join-Path $fontWork 'Hack\HackNerdFontMono-Regular.ttf')
-Install-FontFile (Join-Path $fontWork 'Comfortaa-wght.ttf')
+explorer.exe (Join-Path $fontWork 'ABeeZee')
+explorer.exe (Join-Path $fontWork 'MoreSugar')
+explorer.exe (Join-Path $fontWork 'Hack')
+explorer.exe $fontWork
 ```
 
 This is the minimal manual set for Windows:
@@ -67,5 +61,11 @@ This is the minimal manual set for Windows:
 - Hack Nerd Regular
 - More Sugar Thin
 - Comfortaa
+
+Then install these manually with `Install for all users`:
+- `ABeeZee\ABeeZee-Regular.ttf`
+- `MoreSugar\MoreSugar-Thin.ttf`
+- `Hack\HackNerdFontMono-Regular.ttf`
+- `Comfortaa-wght.ttf`
 
 The first two font archives are reused from the `kmos` repo via raw URLs, so you do not need to clone the repo on the Windows machine.
