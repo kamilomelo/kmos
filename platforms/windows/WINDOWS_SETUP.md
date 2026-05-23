@@ -69,30 +69,58 @@ The first two font archives are reused from the `kmos` repo via raw URLs, so you
 $settings = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
 $json = Get-Content -Raw -Path $settings | ConvertFrom-Json
 
+function Set-TerminalFont {
+    param([Parameter(Mandatory)]$Target)
+
+    if (-not $Target.font) {
+        $Target | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
+    }
+    if (-not $Target.font.PSObject.Properties['face']) {
+        $Target.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono'
+    } else {
+        $Target.font.face = 'Hack Nerd Font Mono'
+    }
+    if (-not $Target.font.PSObject.Properties['size']) {
+        $Target.font | Add-Member -NotePropertyName size -NotePropertyValue 12
+    } else {
+        $Target.font.size = 12
+    }
+
+    if (-not $Target.PSObject.Properties['fontFace']) {
+        $Target | Add-Member -NotePropertyName fontFace -NotePropertyValue 'Hack Nerd Font Mono'
+    } else {
+        $Target.fontFace = 'Hack Nerd Font Mono'
+    }
+    if (-not $Target.PSObject.Properties['fontSize']) {
+        $Target | Add-Member -NotePropertyName fontSize -NotePropertyValue 12
+    } else {
+        $Target.fontSize = 12
+    }
+}
+
 if (-not $json.profiles) {
-    $json | Add-Member -NotePropertyName profiles -NotePropertyValue ([pscustomobject]@{})
+    $json | Add-Member -NotePropertyName profiles -NotePropertyValue ([pscustomobject]@{
+        defaults = [pscustomobject]@{}
+        list = @()
+    })
 }
 if (-not $json.profiles.defaults) {
     $json.profiles | Add-Member -NotePropertyName defaults -NotePropertyValue ([pscustomobject]@{})
 }
-if (-not $json.profiles.defaults.font) {
-    $json.profiles.defaults | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
-}
-if (-not $json.profiles.defaults.font.PSObject.Properties['face']) {
-    $json.profiles.defaults.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono'
-} else {
-    $json.profiles.defaults.font.face = 'Hack Nerd Font Mono'
-}
-if (-not $json.profiles.defaults.font.PSObject.Properties['size']) {
-    $json.profiles.defaults.font | Add-Member -NotePropertyName size -NotePropertyValue 12
-} else {
-    $json.profiles.defaults.font.size = 12
+
+Set-TerminalFont -Target $json.profiles.defaults
+
+foreach ($profileName in @('PowerShell', 'PowerShell Preview')) {
+    $profile = $json.profiles.list | Where-Object { $_.name -eq $profileName } | Select-Object -First 1
+    if ($profile) {
+        Set-TerminalFont -Target $profile
+    }
 }
 
 $json | ConvertTo-Json -Depth 100 | Set-Content -Path $settings -Encoding UTF8
 ```
 
-Close and reopen Windows Terminal after running that block. Terminal profiles will then use `Hack Nerd Font Mono` by default unless a profile overrides it.
+Close and reopen Windows Terminal after running that block. The default Terminal font and the `PowerShell` / `PowerShell Preview` profiles will use `Hack Nerd Font Mono`.
 
 ### Install and Configure Starship
 
