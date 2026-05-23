@@ -14,6 +14,7 @@ winget install --id Microsoft.PowerShell.Preview --exact --source winget
 winget install --id GNU.Nano --exact --source winget --scope machine
 winget install --id KDE.Kate --exact --source winget --scope machine
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
+winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
 ```
 
 If `winget` scope causes trouble for PowerShell Preview, use the MSI alternative:
@@ -23,7 +24,7 @@ Invoke-WebRequest -Uri "https://github.com/PowerShell/PowerShell/releases/downlo
 msiexec /i "$env:TEMP\ps77preview.msi" /quiet ALLUSERS=1
 ```
 
-Lenovo Commercial Vantage is handled automatically by the `kmos` workflow and is not part of this manual core-tools block.
+Lenovo Commercial Vantage is Store-backed. If you want to run it manually, the winget Store ID is `9NR5B8GVVM13`.
 
 ### Install and Enable OpenSSH
 
