@@ -60,43 +60,39 @@ This is the minimal manual set for Windows:
 - ABeeZee Regular
 - Hack Nerd Regular
 - More Sugar Thin
-- Comfortaa
-
-Then install these manually with `Install for all users`:
-- `ABeeZee\ABeeZee-Regular.ttf`
-- `MoreSugar\MoreSugar-Thin.ttf`
-- `Hack\HackNerdFontMono-Regular.ttf`
-- `Comfortaa-wght.ttf`
-
+- Comfortaa  
 The first two font archives are reused from the `kmos` repo via raw URLs, so you do not need to clone the repo on the Windows machine.
 
-### Set PowerShell Preview Font
+### Set Windows Terminal Default Font
 
 ```powershell
 $settings = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
 $json = Get-Content -Raw -Path $settings | ConvertFrom-Json
-$previewProfile = $json.profiles.list | Where-Object { $_.name -eq 'PowerShell Preview' } | Select-Object -First 1
-if (-not $previewProfile) {
-    throw 'PowerShell Preview profile not found in Windows Terminal settings.'
+
+if (-not $json.profiles) {
+    $json | Add-Member -NotePropertyName profiles -NotePropertyValue ([pscustomobject]@{})
 }
-if (-not $previewProfile.font) {
-    $previewProfile | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
+if (-not $json.profiles.defaults) {
+    $json.profiles | Add-Member -NotePropertyName defaults -NotePropertyValue ([pscustomobject]@{})
 }
-if (-not $previewProfile.font.PSObject.Properties['face']) {
-    $previewProfile.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono'
+if (-not $json.profiles.defaults.font) {
+    $json.profiles.defaults | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
+}
+if (-not $json.profiles.defaults.font.PSObject.Properties['face']) {
+    $json.profiles.defaults.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono'
 } else {
-    $previewProfile.font.face = 'Hack Nerd Font Mono'
+    $json.profiles.defaults.font.face = 'Hack Nerd Font Mono'
 }
-if (-not $previewProfile.font.PSObject.Properties['size']) {
-    $previewProfile.font | Add-Member -NotePropertyName size -NotePropertyValue 12
+if (-not $json.profiles.defaults.font.PSObject.Properties['size']) {
+    $json.profiles.defaults.font | Add-Member -NotePropertyName size -NotePropertyValue 12
 } else {
-    $previewProfile.font.size = 12
+    $json.profiles.defaults.font.size = 12
 }
 
 $json | ConvertTo-Json -Depth 100 | Set-Content -Path $settings -Encoding UTF8
 ```
 
-Close and reopen Windows Terminal after running that block. The `PowerShell Preview` profile will then use `Hack Nerd Font Mono`.
+Close and reopen Windows Terminal after running that block. Terminal profiles will then use `Hack Nerd Font Mono` by default unless a profile overrides it.
 
 ### Install and Configure Starship
 
