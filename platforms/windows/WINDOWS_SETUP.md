@@ -10,14 +10,20 @@ Run these first on a fresh Windows 11 machine with internet access.
 
 ```powershell
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
-winget install --id Microsoft.PowerShell.Preview --exact --source winget --scope machine
-winget install --id Git.Git --exact --source winget --scope machine
+winget install --id Microsoft.PowerShell.Preview --exact --source winget
+winget install --id Git.Git --exact --source winget
 winget install --id GNU.Nano --exact --source winget --scope machine
 winget install --id KDE.Kate --exact --source winget --scope machine
-winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
 ```
 
-If the Lenovo Store entry is unavailable on a given machine, skip it for now and revisit the Lenovo package path later.
+If `winget` scope causes trouble for PowerShell Preview, use the MSI alternative:
+
+```powershell
+Invoke-WebRequest -Uri "https://github.com/PowerShell/PowerShell/releases/download/v7.7.1-preview.4/PowerShell-7.7.1-preview.4-win-x64.msi" -OutFile "$env:TEMP\ps77preview.msi"
+msiexec /i "$env:TEMP\ps77preview.msi" /quiet ALLUSERS=1
+```
+
+Lenovo Commercial Vantage is handled automatically by the `kmos` workflow and is not part of this manual core-tools block.
 
 ### Install and Enable OpenSSH
 
