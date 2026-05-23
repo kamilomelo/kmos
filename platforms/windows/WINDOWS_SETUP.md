@@ -173,6 +173,9 @@ Set-RegistryValue -Path 'HKCU:\Control Panel\Colors' -Name 'Background' -Value '
 Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '6'
 Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'TileWallpaper' -Value '0'
 Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColor' -Value 4285887861 -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColorInactive' -Value 4282400832 -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Name 'AccentColorMenu' -Value 4285887861 -Type DWord
 
 Add-Type -TypeDefinition @"
 using System.Runtime.InteropServices;
@@ -182,39 +185,6 @@ public class KmosWallpaper {
 }
 "@ -ErrorAction SilentlyContinue | Out-Null
 [void][KmosWallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3)
-```
-
-### Apply Lock Screen Policy
-
-```powershell
-$wallpaperPath = 'C:\ProgramData\kmos\assets\wallpapers\kmos-wallpaper.png'
-$fileUrl = 'file:///' + (($wallpaperPath -replace '\\', '/') -replace ' ', '%20')
-
-function Set-RegistryValue {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)]$Value,
-        [string]$Type = 'String'
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
-    }
-
-    try {
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
-    } catch {
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
-    }
-}
-
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'LockScreenImage' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'NoLockScreenSlideshow' -Value 1 -Type DWord
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Name 'DisableSpotlightCollectionOnDesktop' -Value 1 -Type DWord
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $fileUrl
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
 ```
 
 ### Seed Default User Appearance
@@ -252,6 +222,9 @@ try {
     Set-RegistryValue -Path "$root\Control Panel\Desktop" -Name 'WallpaperStyle' -Value '6'
     Set-RegistryValue -Path "$root\Control Panel\Desktop" -Name 'TileWallpaper' -Value '0'
     Set-RegistryValue -Path "$root\Control Panel\Desktop" -Name 'WallPaper' -Value $wallpaperPath
+    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\DWM" -Name 'AccentColor' -Value 4285887861 -Type DWord
+    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\DWM" -Name 'AccentColorInactive' -Value 4282400832 -Type DWord
+    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent" -Name 'AccentColorMenu' -Value 4285887861 -Type DWord
 } finally {
     reg unload HKU\kmosDefault
 }
@@ -259,5 +232,6 @@ try {
 
 Run the blocks in order. Verify each one before moving on:
 - current user wallpaper and dark mode
-- lock screen image
 - future-user defaults
+
+Lock screen is intentionally left manual here. The policy-based method forces the “managed by your organization” state, which is the wrong tradeoff if you want defaults without blocking the UI.
