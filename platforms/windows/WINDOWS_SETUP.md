@@ -69,3 +69,28 @@ Then install these manually with `Install for all users`:
 - `Comfortaa-wght.ttf`
 
 The first two font archives are reused from the `kmos` repo via raw URLs, so you do not need to clone the repo on the Windows machine.
+
+### Install and Configure Starship
+
+```powershell
+winget install --id Starship.Starship --exact --source winget --scope machine
+
+$starshipDir = 'C:\ProgramData\kmos\starship-presets'
+New-Item -ItemType Directory -Path $starshipDir -Force | Out-Null
+
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/holow-light.toml' -OutFile (Join-Path $starshipDir 'holow-light.toml')
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/holow-dark.toml' -OutFile (Join-Path $starshipDir 'holow-dark.toml')
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/filled-light.toml' -OutFile (Join-Path $starshipDir 'filled-light.toml')
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/filled-dark.toml' -OutFile (Join-Path $starshipDir 'filled-dark.toml')
+
+$profileDir = Join-Path $HOME 'Documents\PowerShell'
+New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+$profilePath = Join-Path $profileDir 'Microsoft.PowerShell_profile.ps1'
+
+@'
+$env:STARSHIP_CONFIG = 'C:\ProgramData\kmos\starship-presets\holow-light.toml'
+Invoke-Expression (& starship init powershell)
+'@ | Set-Content -Path $profilePath -Encoding ASCII
+```
+
+This installs Starship system-wide, downloads all 4 `kmos` presets, and activates `holow-light.toml` for the current PowerShell user.
