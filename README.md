@@ -2,12 +2,13 @@
 
 kmos is a practical operating-system provisioning toolkit.
 
-Today the implemented platform is:
+Today the primary implemented platform is:
 - `archlinux`
-- `windows`
 
-The project is now structured so additional platforms can be added later, such as:
+The project is structured so additional platforms can be added later, especially:
 - `rocky`
+
+There is also a minimal Windows guide under `platforms/windows/`, but the main focus of this repository is the Linux path.
 
 ## How To Use It
 
@@ -30,22 +31,6 @@ The Arch installer also supports:
 ```bash
 ./kmos-install.sh --profile noapps
 ```
-
-### Windows Flow
-
-On a fresh Windows 11 install, use the manual Windows guide:
-
-- [platforms/windows/WINDOWS_SETUP.md](./platforms/windows/WINDOWS_SETUP.md)
-
-The Windows path is now intentionally manual or semi-manual. It is organized as phases and uses direct PowerShell blocks for:
-- optional disk shrink for Linux coexistence
-- hostname and appearance setup
-- Windows app installs
-- OpenSSH client/server setup
-- shared `kmos` assets, wallpaper, fonts, and Starship defaults
-- NVIDIA driver install guidance
-- optional local administrator creation
-- final Chris Titus utility launch
 
 ### Arch Linux Flow
 
@@ -104,6 +89,16 @@ Use:
 ./kmos-install.sh --profile noapps
 ```
 
+## Rocky Linux
+
+Rocky Linux support is planned, but not implemented yet.
+
+The repository layout already reserves a platform slot for it under:
+
+```text
+platforms/rocky/
+```
+
 ## Current Project Structure
 
 ```text
@@ -136,6 +131,14 @@ Use:
 - Platform-specific assets are mirrored into `/opt/kmos/assets/` during installation.
 - Windows reuses assets directly from `platforms/windows/assets/` through the Markdown guide.
 - Future Rocky Linux support should live beside Arch and Windows under `platforms/`.
+
+## Windows
+
+Windows is intentionally kept as a manual or semi-manual path.
+
+If you need it, use:
+
+- [platforms/windows/WINDOWS_SETUP.md](./platforms/windows/WINDOWS_SETUP.md)
 
 ## License
 
