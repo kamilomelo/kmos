@@ -468,3 +468,13 @@ If `nvidia-smi` is not in `PATH`, try:
 ```powershell
 & 'C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe'
 ```
+
+## Phase 5: Chris Titus WinUtil
+
+Open an elevated PowerShell or Windows Terminal session and run:
+
+```powershell
+irm christitus.com/win | iex
+```
+
+Then apply the WinUtil tweaks you want from its interface.
