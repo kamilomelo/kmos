@@ -7,6 +7,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 ARCH_INSTALLER="$SCRIPT_DIR/platforms/archlinux/kmos-archlinux-install.sh"
+ROCKY_INSTALLER="$SCRIPT_DIR/platforms/rocky/kmos-rocky-install.sh"
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -23,6 +24,7 @@ main() {
   local os_id=""
 
   [[ -x "$ARCH_INSTALLER" ]] || die "Missing Arch Linux installer: $ARCH_INSTALLER"
+  [[ -x "$ROCKY_INSTALLER" ]] || die "Missing Rocky Linux installer: $ROCKY_INSTALLER"
 
   case "${OSTYPE:-}" in
     msys*|cygwin*|win32*)
@@ -36,7 +38,7 @@ main() {
       exec bash "$ARCH_INSTALLER" "$@"
       ;;
     rocky)
-      die "Rocky Linux support is not implemented yet. Planned platform path: platforms/rocky/"
+      exec bash "$ROCKY_INSTALLER" "$@"
       ;;
     "")
       die "Could not detect the operating system."

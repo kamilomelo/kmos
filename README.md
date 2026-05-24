@@ -91,13 +91,22 @@ Use:
 
 ## Rocky Linux
 
-Rocky Linux support is planned, but not implemented yet.
+Rocky Linux support now starts from the `Rocky 10 minimal` post-install state.
 
-The repository layout already reserves a platform slot for it under:
+The current Rocky workflow is intentionally conservative:
+- install Rocky Minimal with the official installer first
+- boot the installed system
+- run the local `kmos` Rocky script
+- if ethernet is not available, the Rocky script starts by bringing up Wi-Fi
 
-```text
-platforms/rocky/
+Current Rocky entry points:
+
+```bash
+./platforms/rocky/kmos-rocky-install.sh
+./platforms/rocky/tools/kmos-rocky-wifi-connect.sh
 ```
+
+This is an initial scaffold. The next Rocky stage is KDE installation and post-install desktop configuration on top of the minimal base.
 
 ## Current Project Structure
 
@@ -118,6 +127,10 @@ platforms/rocky/
 │   │   └── tools/                          # Arch helper scripts
 │   │       ├── kmos-wifi-connect.sh
 │   │       └── kmos-usb-flasher.sh
+│   ├── rocky/
+│   │   ├── kmos-rocky-install.sh          # Rocky minimal post-install entry point
+│   │   └── tools/
+│   │       └── kmos-rocky-wifi-connect.sh # Rocky Wi-Fi bootstrap helper
 │   └── windows/
 │       ├── WINDOWS_SETUP.md                # Manual Windows setup workflow
 │       └── assets/                         # Windows-specific runtime assets
@@ -128,6 +141,7 @@ platforms/rocky/
 ## Notes
 
 - The Arch platform still uses the established internal `kmos` package and asset names.
+- The Rocky platform currently starts from a manually installed Rocky Minimal base.
 - Platform-specific assets are mirrored into `/opt/kmos/assets/` during installation.
 - Windows reuses assets directly from `platforms/windows/assets/` through the Markdown guide.
 - Future Rocky Linux support should live beside Arch and Windows under `platforms/`.
