@@ -108,6 +108,8 @@ function Resize-SystemPartitionIfRequested {
 Resize-SystemPartitionIfRequested
 ```
 
+---
+
 ## Phase 2: Appearance
 
 Run this before creating additional Windows users so new accounts inherit the same visual defaults.
@@ -163,6 +165,8 @@ gpupdate /target:user /force
 gpupdate /target:computer /force
 rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 ```
+
+If personalization is still blocked after this cleanup, reboot once before continuing with Phase 2.
 
 ### Stage Wallpaper
 
@@ -386,7 +390,12 @@ Mode B procedure:
 4. run `Apply Lock Screen by PowerShell`
 5. verify the current user looks exactly right
 6. run `Capture and Replay the Current User Appearance for New Users`
+
+If wallpaper or personalization still behaves inconsistently after unlocking old policy keys, reboot or sign out/sign back in before continuing with the rest of Mode B.
+
 This mode is unlocked, but wallpaper inheritance is still the weak point on Windows.
+
+---
 
 ## Phase 3: Core Tools
 
@@ -513,6 +522,8 @@ Set-Content -Path $profilePath -Value $profileContent -Encoding ASCII
 
 This installs Starship system-wide, downloads all 4 `kmos` presets, and activates `holow-light.toml` for `PowerShell Preview`.
 
+---
+
 ## Phase 4: NVIDIA
 
 Run this only on machines that actually have an NVIDIA GPU.
@@ -553,6 +564,8 @@ If `nvidia-smi` is not in `PATH`, try:
 & 'C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe'
 ```
 
+---
+
 ## Phase 5: Chris Titus WinUtil
 
 Open an elevated PowerShell or Windows Terminal session and run:
@@ -563,9 +576,11 @@ irm christitus.com/win | iex
 
 Then apply the WinUtil tweaks you want from its interface.
 
+---
+
 ## Phase 6: Additional Users
 
-Create additional Windows users only after Phases 1 and 2 are complete.
+Create additional Windows users only after Phases 2 and 3 are complete, and after any reboot required by Phase 2 or Phase 4.
 
 ### Create a Local Administrator
 
