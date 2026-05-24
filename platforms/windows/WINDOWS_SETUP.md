@@ -209,7 +209,7 @@ Do this once in the current user until it looks correct.
 
 ### Seed Future User Defaults
 
-This step seeds the same starting look for future users without locking it. It writes only default-user theme and wallpaper values into `C:\Users\Default\NTUSER.DAT`. New users will start with the same wallpaper path, dark mode, and accent baseline, but they can still change those settings freely afterward.
+This step seeds the same starting look for future users without locking it. It writes only default-user theme and wallpaper values into `C:\Users\Default\NTUSER.DAT`. In practice, dark mode and color settings usually inherit reliably; wallpaper inheritance on Windows is less reliable and may still need one manual set on first login. New users can still change those settings freely afterward.
 
 ```powershell
 $wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
@@ -276,6 +276,8 @@ Add-LocalGroupMember -Group 'Administrators' -Member $username
 
 After creating the user:
 - sign in once as that user
-- verify the wallpaper baseline is present
+- verify dark mode and colors were inherited
+- if the wallpaper did not inherit, set the same staged wallpaper manually once from:
+  `C:\Users\Public\Pictures\kmos\kmos-wallpaper.png`
 - verify dark mode and colors were inherited
 - verify `PowerShell Preview`, Terminal font, and Starship are working
