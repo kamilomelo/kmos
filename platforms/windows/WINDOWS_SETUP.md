@@ -131,6 +131,15 @@ This installs Starship system-wide, downloads all 4 `kmos` presets, and activate
 
 Run this before creating additional Windows users so new accounts inherit the same visual defaults.
 
+### Remove Old Organization Policy Locks
+
+```powershell
+Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Recurse -Force -ErrorAction SilentlyContinue
+gpupdate /target:computer /force
+```
+
 ### Stage Wallpaper
 
 ```powershell
@@ -185,6 +194,7 @@ public class KmosWallpaper {
 }
 "@ -ErrorAction SilentlyContinue | Out-Null
 [void][KmosWallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3)
+rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 ```
 
 ### Seed Default User Appearance
@@ -231,7 +241,6 @@ try {
 ```
 
 Run the blocks in order. Verify each one before moving on:
+- old organization policy locks removed
 - current user wallpaper and dark mode
 - future-user defaults
-
-Lock screen is intentionally left manual here. The policy-based method forces the “managed by your organization” state, which is the wrong tradeoff if you want defaults without blocking the UI.
