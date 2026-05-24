@@ -198,14 +198,84 @@ Shared wallpaper path:
 Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
 ```
 
-### Apply Appearance Manually
+### Apply Current User Wallpaper and Dark Mode
 
-Use Windows Settings for this part:
-- `Personalization > Background`: choose the staged `kmos-wallpaper.png`
-- `Personalization > Lock screen`: choose the same image
-- `Personalization > Colors`: set dark mode and your preferred dark gray accents
+```powershell
+$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
 
-Do this once in the current user until it looks correct.
+function Set-RegistryValue {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)]$Value,
+        [string]$Type = 'String'
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+
+    try {
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
+    } catch {
+        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    }
+}
+
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'ColorPrevalence' -Value 0 -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'EnableTransparency' -Value 0 -Type DWord
+Set-RegistryValue -Path 'HKCU:\Control Panel\Colors' -Name 'Background' -Value '0 0 0'
+Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '6'
+Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'TileWallpaper' -Value '0'
+Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColor' -Value 4285887861 -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColorInactive' -Value 4282400832 -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Name 'AccentColorMenu' -Value 4285887861 -Type DWord
+
+Add-Type -TypeDefinition @"
+using System.Runtime.InteropServices;
+public class KmosWallpaper {
+  [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)]
+  public static extern int SystemParametersInfo(int uiAction, int uiParam, string pvParam, int fWinIni);
+}
+"@ -ErrorAction SilentlyContinue | Out-Null
+[void][KmosWallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3)
+rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
+```
+
+### Apply Lock Screen by PowerShell
+
+```powershell
+$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
+$fileUrl = 'file:///' + (($wallpaperPath -replace '\\', '/') -replace ' ', '%20')
+
+function Set-RegistryValue {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)]$Value,
+        [string]$Type = 'String'
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+
+    try {
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
+    } catch {
+        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    }
+}
+
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $fileUrl
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
+```
+
+This lock-screen step is best-effort. If Windows ignores it, use Settings for the lock screen only.
 
 ### Seed Future User Defaults
 
@@ -255,7 +325,8 @@ try {
 Run the blocks in order. Verify each one before moving on:
 - old organization policy locks removed
 - shared wallpaper staged
-- current user appearance configured manually
+- current user wallpaper and dark mode applied
+- lock screen applied
 - future-user defaults seeded
 
 The `Seed Future User Defaults` block is intentionally not a policy step. It should transmit the initial look to new users at first login, while leaving wallpaper, colors, and related appearance settings editable afterward.
