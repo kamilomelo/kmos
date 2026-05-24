@@ -137,7 +137,13 @@ Run this before creating additional Windows users so new accounts inherit the sa
 Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -ErrorAction SilentlyContinue
 gpupdate /target:computer /force
+rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 ```
 
 ### Stage Wallpaper
