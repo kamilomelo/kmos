@@ -2,6 +2,112 @@
 
 This guide is the manual Windows path for `kmos`. Use it from an elevated PowerShell session and run one phase at a time. The commands here are meant to be pasted directly, verified, and only repeated if a step did not complete.
 
+## Phase 0: Optional Disk Resize
+
+Paste this whole block and run it as one piece. This is the same resize logic used in the original `kmos-windows-install.ps1`.
+
+```powershell
+function Prompt-YesNo {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [bool]$Default = $true
+    )
+
+    while ($true) {
+        $suffix = if ($Default) { '[Y/n]' } else { '[y/N]' }
+        $answer = Read-Host "$Prompt $suffix"
+        if ($null -eq $answer) {
+            return $Default
+        }
+
+        $answer = $answer.Trim()
+        if ($answer.Length -eq 0) {
+            return $Default
+        }
+
+        switch -Regex ($answer.ToLowerInvariant()) {
+            '^(y|yes)$' { return $true }
+            '^(n|no)$' { return $false }
+        }
+    }
+}
+
+function Prompt-Choice {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [Parameter(Mandatory)][string[]]$Choices
+    )
+
+    while ($true) {
+        $joined = ($Choices | ForEach-Object { $_ }) -join '/'
+        $answer = Read-Host "$Prompt [$joined]"
+        if ($Choices -contains $answer) {
+            return $answer
+        }
+    }
+}
+
+function Show-PartitionSizes {
+    param(
+        [Parameter(Mandatory)][uint64]$Current,
+        [Parameter(Mandatory)][uint64]$Min,
+        [Parameter(Mandatory)][uint64]$Max
+    )
+
+    Write-Host ("Current C: size: {0:N2} GiB" -f ($Current / 1GB))
+    Write-Host ("Minimum supported C: size: {0:N2} GiB" -f ($Min / 1GB))
+    Write-Host ("Maximum supported C: size: {0:N2} GiB" -f ($Max / 1GB))
+}
+
+function Resize-SystemPartitionIfRequested {
+    if (-not (Prompt-YesNo -Prompt 'Shrink the current disk to leave space for another OS?' -Default $false)) {
+        Write-Host 'Leaving the disk layout unchanged.'
+        return
+    }
+
+    $systemPartition = Get-Partition -DriveLetter 'C'
+    $supported = Get-PartitionSupportedSize -DriveLetter 'C'
+    $disk = Get-Disk -Number $systemPartition.DiskNumber
+    $currentSize = [uint64]$systemPartition.Size
+    $otherPartitionBytes = [uint64](($disk | Get-Partition | Where-Object { $_.DriveLetter -ne 'C' } | Measure-Object -Property Size -Sum).Sum)
+
+    Show-PartitionSizes -Current $currentSize -Min $supported.SizeMin -Max $supported.SizeMax
+
+    $choice = Prompt-Choice -Prompt 'Choose resize mode' -Choices @('half','custom')
+    if ($choice -eq 'half') {
+        $targetSize = [uint64](($disk.Size / 2) - $otherPartitionBytes)
+        $targetSize = [uint64]([math]::Floor($targetSize / 1MB) * 1MB)
+    } else {
+        while ($true) {
+            $customGiB = Read-Host 'Enter the new size for C: in GiB'
+            if ($customGiB -match '^\d+(\.\d+)?$') {
+                $targetSize = [uint64]([double]$customGiB * 1GB)
+                break
+            }
+        }
+    }
+
+    if ($targetSize -lt $supported.SizeMin -or $targetSize -gt $supported.SizeMax) {
+        throw ("Requested C: size {0:N2} GiB is outside the supported range." -f ($targetSize / 1GB))
+    }
+
+    if ($targetSize -ge $currentSize) {
+        throw 'Requested size is not smaller than the current C: partition.'
+    }
+
+    Write-Host ("C: will be resized to {0:N2} GiB" -f ($targetSize / 1GB))
+    if (-not (Prompt-YesNo -Prompt 'Apply this partition resize now?' -Default $false)) {
+        Write-Host 'Skipping partition resize.'
+        return
+    }
+
+    Resize-Partition -DriveLetter 'C' -Size $targetSize
+    Write-Host 'Partition resize completed.'
+}
+
+Resize-SystemPartitionIfRequested
+```
+
 ## Phase 1: Core Tools
 
 Run these first on a fresh Windows 11 machine with internet access.
