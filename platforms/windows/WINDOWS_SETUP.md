@@ -341,8 +341,10 @@ $activeSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\km
 New-Item -Path $activeSetupKey -Force | Out-Null
 Set-ItemProperty -Path $activeSetupKey -Name Version -Value '1,0,0,0'
 New-ItemProperty -Path $activeSetupKey -Name IsInstalled -Value 1 -PropertyType DWord -Force | Out-Null
-Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name 'kmos.appearance' -Value 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File `'$scriptPath`''`""
 ```
+
+This uses `Active Setup` only to register a per-user `RunOnce`. The actual appearance replay then happens after the new user's shell is up, which is more reliable for wallpaper than running too early in the sign-in sequence.
 
 Run the blocks in order. Verify each one before moving on:
 - old organization policy locks removed
