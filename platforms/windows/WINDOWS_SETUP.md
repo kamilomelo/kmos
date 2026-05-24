@@ -277,65 +277,53 @@ Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Persona
 
 This lock-screen step is best-effort. If Windows ignores it, use Settings for the lock screen only.
 
-### Seed Future User Defaults
+### Capture and Replay the Current User Appearance for New Users
 
-This step seeds the same starting look for future users without locking it. It writes only default-user theme and wallpaper values into `C:\Users\Default\NTUSER.DAT`. In practice, dark mode and color settings usually inherit reliably; wallpaper inheritance on Windows is less reliable and may still need one manual set on first login. New users can still change those settings freely afterward.
-
-```powershell
-$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
-
-function Set-RegistryValue {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)]$Value,
-        [string]$Type = 'String'
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
-    }
-
-    try {
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
-    } catch {
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
-    }
-}
-
-reg load HKU\kmosDefault 'C:\Users\Default\NTUSER.DAT'
-try {
-    $root = 'Registry::HKEY_USERS\kmosDefault'
-    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name 'AppsUseLightTheme' -Value 0 -Type DWord
-    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name 'SystemUsesLightTheme' -Value 0 -Type DWord
-    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name 'ColorPrevalence' -Value 0 -Type DWord
-    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name 'EnableTransparency' -Value 0 -Type DWord
-    Set-RegistryValue -Path "$root\Control Panel\Colors" -Name 'Background' -Value '0 0 0'
-    Set-RegistryValue -Path "$root\Control Panel\Desktop" -Name 'WallpaperStyle' -Value '6'
-    Set-RegistryValue -Path "$root\Control Panel\Desktop" -Name 'TileWallpaper' -Value '0'
-    Set-RegistryValue -Path "$root\Control Panel\Desktop" -Name 'WallPaper' -Value $wallpaperPath
-    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\DWM" -Name 'AccentColor' -Value 4285887861 -Type DWord
-    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\DWM" -Name 'AccentColorInactive' -Value 4282400832 -Type DWord
-    Set-RegistryValue -Path "$root\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent" -Name 'AccentColorMenu' -Value 4285887861 -Type DWord
-} finally {
-    reg unload HKU\kmosDefault
-}
-```
-
-### Apply Wallpaper Automatically for New Users at First Login
+This step captures the current user's appearance values after you have the look exactly right, then replays those same values for each new user at first login. It should transmit the same wallpaper path, dark mode, and accent values without policy-locking them afterward.
 
 ```powershell
 $scriptDir = 'C:\ProgramData\kmos\scripts'
-$scriptPath = Join-Path $scriptDir 'Set-KmosWallpaper.ps1'
-$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
-
+$scriptPath = Join-Path $scriptDir 'Apply-KmosAppearance.ps1'
 New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
 
-@"
-`$wallpaperPath = '$wallpaperPath'
-Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name WallPaper -Value `$wallpaperPath
-Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name WallpaperStyle -Value '6'
-Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name TileWallpaper -Value '0'
+$desktop = Get-ItemProperty 'HKCU:\Control Panel\Desktop'
+$personalize = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+$dwm = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\DWM'
+$accent = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent'
+$colors = Get-ItemProperty 'HKCU:\Control Panel\Colors'
+
+$scriptContent = @"
+function Set-RegistryValue {
+    param(
+        [string]`$Path,
+        [string]`$Name,
+        `$Value,
+        [string]`$Type = 'String'
+    )
+
+    if (-not (Test-Path -LiteralPath `$Path)) {
+        New-Item -Path `$Path -Force | Out-Null
+    }
+
+    try {
+        Set-ItemProperty -Path `$Path -Name `$Name -Value `$Value -Force -ErrorAction Stop | Out-Null
+    } catch {
+        New-ItemProperty -Path `$Path -Name `$Name -Value `$Value -PropertyType `$Type -Force | Out-Null
+    }
+}
+
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value $($personalize.AppsUseLightTheme) -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value $($personalize.SystemUsesLightTheme) -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'ColorPrevalence' -Value $($personalize.ColorPrevalence) -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'EnableTransparency' -Value $($personalize.EnableTransparency) -Type DWord
+Set-RegistryValue -Path 'HKCU:\Control Panel\Colors' -Name 'Background' -Value '$($colors.Background)'
+Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '$($desktop.WallpaperStyle)'
+Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'TileWallpaper' -Value '$($desktop.TileWallpaper)'
+Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -Value '$($desktop.WallPaper)'
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColor' -Value $($dwm.AccentColor) -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColorInactive' -Value $($dwm.AccentColorInactive) -Type DWord
+Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Name 'AccentColorMenu' -Value $($accent.AccentColorMenu) -Type DWord
+
 Add-Type @'
 using System.Runtime.InteropServices;
 public class KmosWallpaper {
@@ -343,26 +331,26 @@ public class KmosWallpaper {
   public static extern int SystemParametersInfo(int uiAction, int uiParam, string pvParam, int fWinIni);
 }
 '@
-[void][KmosWallpaper]::SystemParametersInfo(20, 0, `$wallpaperPath, 3)
+[void][KmosWallpaper]::SystemParametersInfo(20, 0, '$($desktop.WallPaper)', 3)
 rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
-"@ | Set-Content -Path $scriptPath -Encoding ASCII
+"@
 
-$activeSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\kmos.wallpaper'
+Set-Content -Path $scriptPath -Value $scriptContent -Encoding ASCII
+
+$activeSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\kmos.appearance'
 New-Item -Path $activeSetupKey -Force | Out-Null
 Set-ItemProperty -Path $activeSetupKey -Name Version -Value '1,0,0,0'
-Set-ItemProperty -Path $activeSetupKey -Name IsInstalled -Value 1 -Type DWord
+New-ItemProperty -Path $activeSetupKey -Name IsInstalled -Value 1 -PropertyType DWord -Force | Out-Null
 Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
 ```
-
-This runs once for each user at first login. It should apply the staged wallpaper without locking the background afterward.
 
 Run the blocks in order. Verify each one before moving on:
 - old organization policy locks removed
 - shared wallpaper staged
 - current user wallpaper and dark mode applied
 - lock screen applied
-- future-user defaults seeded
-- first-login wallpaper apply registered
+- current appearance captured
+- first-login appearance replay registered
 
 The `Seed Future User Defaults` block is intentionally not a policy step. It should transmit the initial look to new users at first login, while leaving wallpaper, colors, and related appearance settings editable afterward.
 
