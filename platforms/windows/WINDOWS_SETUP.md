@@ -452,6 +452,28 @@ For CAD / Fusion / Autodesk machines:
 
 There is no clean, universal `winget --scope machine` path here that I trust for a machine-wide `Studio Driver` install across Lenovo Windows 11 Home/Pro systems. For this phase, use the official NVIDIA driver path instead of trying to force a generic package-manager shortcut.
 
+If you already know the exact official `Studio Driver` package for the machine, you can still automate the install from PowerShell. NVIDIA documents silent Windows driver installation through `setup.exe`.
+
+### Automated PowerShell Install From an Exact NVIDIA Package
+
+This is system-wide. It installs the display driver for the whole machine.
+
+```powershell
+$driverExe = "$env:TEMP\\nvidia-studio-driver.exe"
+$extractDir = "$env:TEMP\\nvidia-studio-driver"
+
+Invoke-WebRequest -Uri 'PASTE_THE_OFFICIAL_NVIDIA_DRIVER_EXE_URL_HERE' -OutFile $driverExe
+Start-Process -FilePath $driverExe -ArgumentList "-s", "-noreboot", "-extract:`"$extractDir`"" -Wait
+Start-Process -FilePath (Join-Path $extractDir 'setup.exe') -ArgumentList '-s', '-n', 'Display.Driver' -Wait
+```
+
+Then reboot if Windows or NVIDIA asks for it.
+
+Use this only when:
+- you already selected the correct official `Studio Driver` package for that GPU
+- you want a quiet machine-wide install
+- you accept that laptop OEM-certified drivers may still be the safer choice on some Lenovo models
+
 Open the official Studio Driver page:
 
 ```powershell
