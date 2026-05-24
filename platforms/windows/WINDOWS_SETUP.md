@@ -433,6 +433,8 @@ After creating the user:
 
 Run this only on machines that actually have an NVIDIA GPU.
 
+For CAD / Fusion / Autodesk machines, prefer the official `NVIDIA Studio Driver`.
+
 ### Detect NVIDIA GPU
 
 ```powershell
@@ -441,76 +443,7 @@ Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' }
 
 If nothing is returned, skip this phase.
 
-### Driver Policy
-
-For CAD / Fusion / Autodesk machines:
-- `Windows Update` is enough to get a functional baseline driver
-- but the preferred path is the official `NVIDIA Studio Driver`
-- on notebooks, NVIDIA explicitly notes that OEM-certified drivers may be recommended for the specific machine
-
-### Automatic vs Lean
-
-There are only two realistic official paths here:
-
-1. `Fully automatic`
-   - install the official `NVIDIA App`
-   - let it detect the GPU and offer driver updates automatically
-   - this is the easiest path
-   - but it is more bloated than a driver-only install
-
-2. `Lean driver-only`
-   - use the exact official `Studio Driver` package for the detected GPU
-   - install only `Display.Driver`
-   - this is cleaner for a CAD workstation
-   - but it is not fully automatic, because the correct package still has to be selected
-
-There is no clean, official, generic PowerShell resolver that I trust for:
-- detect any Lenovo NVIDIA laptop GPU
-- find the correct current `Studio Driver`
-- download it automatically
-- install it system-wide
-
-### Fully Automatic Path
-
-If you want the automatic official route, use NVIDIA App:
-
-```powershell
-Start-Process 'https://www.nvidia.com/en-us/software/nvidia-app/'
-```
-
-Then:
-- install NVIDIA App
-- let it detect the GPU
-- choose the `Studio Driver` track if available for that hardware
-- install the offered driver
-
-### Lean Driver-Only Path
-
-There is no clean, universal `winget --scope machine` path here that I trust for a machine-wide `Studio Driver` install across Lenovo Windows 11 Home/Pro systems. For this phase, use the official NVIDIA driver path instead of trying to force a generic package-manager shortcut.
-
-If you already know the exact official `Studio Driver` package for the machine, you can still automate the install from PowerShell. NVIDIA documents silent Windows driver installation through `setup.exe`.
-
-### Automated PowerShell Install From an Exact NVIDIA Package
-
-This is system-wide. It installs the display driver for the whole machine.
-
-```powershell
-$driverExe = "$env:TEMP\\nvidia-studio-driver.exe"
-$extractDir = "$env:TEMP\\nvidia-studio-driver"
-
-Invoke-WebRequest -Uri 'PASTE_THE_OFFICIAL_NVIDIA_DRIVER_EXE_URL_HERE' -OutFile $driverExe
-Start-Process -FilePath $driverExe -ArgumentList "-s", "-noreboot", "-extract:`"$extractDir`"" -Wait
-Start-Process -FilePath (Join-Path $extractDir 'setup.exe') -ArgumentList '-s', '-n', 'Display.Driver' -Wait
-```
-
-Then reboot if Windows or NVIDIA asks for it.
-
-Use this only when:
-- you already selected the correct official `Studio Driver` package for that GPU
-- you want a quiet machine-wide install
-- you accept that laptop OEM-certified drivers may still be the safer choice on some Lenovo models
-
-Open the official Studio Driver page:
+### Install Studio Driver
 
 ```powershell
 Start-Process 'https://www.nvidia.com/Download/index.aspx'
@@ -521,6 +454,8 @@ Then in the browser:
 - choose `Studio Driver`
 - download and install it
 - reboot if the NVIDIA installer asks for it
+
+If NVIDIA offers both notebook OEM-certified and generic Studio packages, prefer the OEM-certified path for Lenovo laptops.
 
 ### Verify Driver Install
 
@@ -533,10 +468,3 @@ If `nvidia-smi` is not in `PATH`, try:
 ```powershell
 & 'C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe'
 ```
-
-If `nvidia-smi` is missing, the full NVIDIA driver stack is probably not installed yet.
-
-For a successful install, you should see:
-- GPU model
-- driver version
-- basic NVIDIA status output
