@@ -198,6 +198,54 @@ Shared wallpaper path:
 Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
 ```
 
+### Mode A: Enforced Corporate Appearance
+
+Use this if every user must get the same first-login look with no generic Windows appearance. This is the reliable path, but it will restrict personalization changes.
+
+#### Enforce Wallpaper, Lock Screen, and Colors
+
+```powershell
+$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
+$fileUrl = 'file:///' + (($wallpaperPath -replace '\\', '/') -replace ' ', '%20')
+
+function Set-RegistryValue {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)]$Value,
+        [string]$Type = 'String'
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+
+    try {
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
+    } catch {
+        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    }
+}
+
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Name 'Wallpaper' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '6'
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'LockScreenImage' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'NoLockScreenSlideshow' -Value 1 -Type DWord
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $fileUrl
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Name 'DisableWindowsSpotlightFeatures' -Value 1 -Type DWord
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Name 'DisableSpotlightCollectionOnDesktop' -Value 1 -Type DWord
+```
+
+Mode A procedure:
+1. run `Stage Wallpaper`
+2. run `Enforce Wallpaper, Lock Screen, and Colors`
+3. reboot or sign out/sign back in
+4. create users after the machine shows the enforced appearance correctly
+
+Mode A is the reliable corporate-feel path.
+
 ### Mode B: Unlocked Appearance
 
 Use this if users must be free to change wallpaper, lock screen, and colors later. This mode keeps personalization editable, but wallpaper inheritance for new users is still less reliable than colors.
@@ -357,56 +405,7 @@ Mode B procedure:
 4. run `Apply Lock Screen by PowerShell`
 5. verify the current user looks exactly right
 6. run `Capture and Replay the Current User Appearance for New Users`
-
 This mode is unlocked, but wallpaper inheritance is still the weak point on Windows.
-
-### Mode A: Enforced Corporate Appearance
-
-Use this if every user must get the same first-login look with no generic Windows appearance. This is the reliable path, but it will restrict personalization changes.
-
-#### Enforce Wallpaper, Lock Screen, and Colors
-
-```powershell
-$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
-$fileUrl = 'file:///' + (($wallpaperPath -replace '\\', '/') -replace ' ', '%20')
-
-function Set-RegistryValue {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)]$Value,
-        [string]$Type = 'String'
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
-    }
-
-    try {
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
-    } catch {
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
-    }
-}
-
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Name 'Wallpaper' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '6'
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'LockScreenImage' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'NoLockScreenSlideshow' -Value 1 -Type DWord
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $fileUrl
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Name 'DisableWindowsSpotlightFeatures' -Value 1 -Type DWord
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Name 'DisableSpotlightCollectionOnDesktop' -Value 1 -Type DWord
-```
-
-Mode A procedure:
-1. run `Stage Wallpaper`
-2. run `Enforce Wallpaper, Lock Screen, and Colors`
-3. reboot or sign out/sign back in
-4. create users after the machine shows the enforced appearance correctly
-
-Mode A is the reliable corporate-feel path. Mode B is the unlocked path.
 
 ## Phase 3: Additional Users
 
