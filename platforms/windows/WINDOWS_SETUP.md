@@ -428,3 +428,57 @@ After creating the user:
   `C:\Users\Public\Pictures\kmos\kmos-wallpaper.png`
 - verify dark mode and colors were inherited
 - verify `PowerShell Preview`, Terminal font, and Starship are working
+
+## Phase 4: NVIDIA
+
+Run this only on machines that actually have an NVIDIA GPU.
+
+### Detect NVIDIA GPU
+
+```powershell
+Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' } | Select-Object Name, DriverVersion
+```
+
+If nothing is returned, skip this phase.
+
+### Driver Policy
+
+For CAD / Fusion / Autodesk machines:
+- `Windows Update` is enough to get a functional baseline driver
+- but the preferred path is the official `NVIDIA Studio Driver`
+- on notebooks, NVIDIA explicitly notes that OEM-certified drivers may be recommended for the specific machine
+
+### Recommended Install Path
+
+There is no clean, universal `winget --scope machine` path here that I trust for a machine-wide `Studio Driver` install across Lenovo Windows 11 Home/Pro systems. For this phase, use the official NVIDIA driver path instead of trying to force a generic package-manager shortcut.
+
+Open the official Studio Driver page:
+
+```powershell
+Start-Process 'https://www.nvidia.com/Download/index.aspx'
+```
+
+Then in the browser:
+- select the installed NVIDIA GPU
+- choose `Studio Driver`
+- download and install it
+- reboot if the NVIDIA installer asks for it
+
+### Verify Driver Install
+
+```powershell
+nvidia-smi
+```
+
+If `nvidia-smi` is not in `PATH`, try:
+
+```powershell
+& 'C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe'
+```
+
+If `nvidia-smi` is missing, the full NVIDIA driver stack is probably not installed yet.
+
+For a successful install, you should see:
+- GPU model
+- driver version
+- basic NVIDIA status output
