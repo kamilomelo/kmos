@@ -322,12 +322,47 @@ try {
 }
 ```
 
+### Apply Wallpaper Automatically for New Users at First Login
+
+```powershell
+$scriptDir = 'C:\ProgramData\kmos\scripts'
+$scriptPath = Join-Path $scriptDir 'Set-KmosWallpaper.ps1'
+$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
+
+New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
+
+@"
+`$wallpaperPath = '$wallpaperPath'
+Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name WallPaper -Value `$wallpaperPath
+Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name WallpaperStyle -Value '6'
+Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name TileWallpaper -Value '0'
+Add-Type @'
+using System.Runtime.InteropServices;
+public class KmosWallpaper {
+  [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)]
+  public static extern int SystemParametersInfo(int uiAction, int uiParam, string pvParam, int fWinIni);
+}
+'@
+[void][KmosWallpaper]::SystemParametersInfo(20, 0, `$wallpaperPath, 3)
+rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
+"@ | Set-Content -Path $scriptPath -Encoding ASCII
+
+$activeSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\kmos.wallpaper'
+New-Item -Path $activeSetupKey -Force | Out-Null
+Set-ItemProperty -Path $activeSetupKey -Name Version -Value '1,0,0,0'
+Set-ItemProperty -Path $activeSetupKey -Name IsInstalled -Value 1 -Type DWord
+Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+```
+
+This runs once for each user at first login. It should apply the staged wallpaper without locking the background afterward.
+
 Run the blocks in order. Verify each one before moving on:
 - old organization policy locks removed
 - shared wallpaper staged
 - current user wallpaper and dark mode applied
 - lock screen applied
 - future-user defaults seeded
+- first-login wallpaper apply registered
 
 The `Seed Future User Defaults` block is intentionally not a policy step. It should transmit the initial look to new users at first login, while leaving wallpaper, colors, and related appearance settings editable afterward.
 
