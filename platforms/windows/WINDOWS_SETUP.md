@@ -209,6 +209,8 @@ Do this once in the current user until it looks correct.
 
 ### Seed Future User Defaults
 
+This step seeds the same starting look for future users without locking it. It writes only default-user theme and wallpaper values into `C:\Users\Default\NTUSER.DAT`. New users will start with the same wallpaper path, dark mode, and accent baseline, but they can still change those settings freely afterward.
+
 ```powershell
 $wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
 
@@ -255,3 +257,5 @@ Run the blocks in order. Verify each one before moving on:
 - shared wallpaper staged
 - current user appearance configured manually
 - future-user defaults seeded
+
+The `Seed Future User Defaults` block is intentionally not a policy step. It should transmit the initial look to new users at first login, while leaving wallpaper, colors, and related appearance settings editable afterward.
