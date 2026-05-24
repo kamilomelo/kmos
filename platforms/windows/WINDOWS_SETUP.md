@@ -4,7 +4,7 @@ This guide is the manual Windows path for `kmos`. Use it from an elevated PowerS
 
 ## Phase 1: Optional Disk Resize
 
-Paste this whole block and run it as one piece. This is the same resize logic used in the original `kmos-windows-install.ps1`.
+Paste this whole block and run it as one piece. This is the same resize logic used in the original Windows installer.
 
 ```powershell
 function Prompt-YesNo {

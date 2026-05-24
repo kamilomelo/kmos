@@ -33,18 +33,17 @@ The Arch installer also supports:
 
 ### Windows Flow
 
-On a fresh Windows 11 install, open an elevated PowerShell session and run:
+On a fresh Windows 11 install, use the manual Windows guide:
 
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\platforms\windows\kmos-windows-install.ps1
-```
+- [platforms/windows/WINDOWS_SETUP.md](./platforms/windows/WINDOWS_SETUP.md)
 
-This script is intended to be run after Windows is already installed and online. It handles:
-- PowerShell preview bootstrap
+The Windows path is now intentionally manual or semi-manual. It is organized as phases and uses direct PowerShell blocks for:
 - optional disk shrink for Linux coexistence
+- hostname and appearance setup
 - Windows app installs
 - OpenSSH client/server setup
-- shared kmos assets, wallpaper, fonts, and Starship defaults
+- shared `kmos` assets, wallpaper, fonts, and Starship defaults
+- NVIDIA driver install guidance
 - optional local administrator creation
 - final Chris Titus utility launch
 
@@ -125,9 +124,8 @@ Use:
 │   │       ├── kmos-wifi-connect.sh
 │   │       └── kmos-usb-flasher.sh
 │   └── windows/
-│       ├── assets/                         # Windows-specific runtime assets
-│       ├── kmos-windows-install.ps1        # Main Windows post-install provisioner
-│       └── Apply-KmosWindowsUser.ps1       # Per-user Windows defaults hook
+│       ├── WINDOWS_SETUP.md                # Manual Windows setup workflow
+│       └── assets/                         # Windows-specific runtime assets
 ├── LICENSE
 └── README.md
 ```
@@ -136,7 +134,7 @@ Use:
 
 - The Arch platform still uses the established internal `kmos` package and asset names.
 - Platform-specific assets are mirrored into `/opt/kmos/assets/` during installation.
-- Windows stages its reusable assets from `platforms/windows/assets/` into `C:\ProgramData\kmos\assets`.
+- Windows reuses assets directly from `platforms/windows/assets/` through the Markdown guide.
 - Future Rocky Linux support should live beside Arch and Windows under `platforms/`.
 
 ## License
