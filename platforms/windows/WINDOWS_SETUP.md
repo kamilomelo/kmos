@@ -145,15 +145,24 @@ gpupdate /target:computer /force
 ```powershell
 $assetRoot = 'C:\ProgramData\kmos\assets'
 $wallpaperDir = Join-Path $assetRoot 'wallpapers'
-$wallpaperPath = Join-Path $wallpaperDir 'kmos-wallpaper.png'
+$wallpaperPng = Join-Path $wallpaperDir 'kmos-wallpaper.png'
+$wallpaperBmp = Join-Path $wallpaperDir 'kmos-wallpaper.bmp'
 New-Item -ItemType Directory -Path $wallpaperDir -Force | Out-Null
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/wallpapers/kmos-wallpaper.png' -OutFile $wallpaperPath
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/wallpapers/kmos-wallpaper.png' -OutFile $wallpaperPng
+
+Add-Type -AssemblyName System.Drawing
+$image = [System.Drawing.Image]::FromFile($wallpaperPng)
+try {
+    $image.Save($wallpaperBmp, [System.Drawing.Imaging.ImageFormat]::Bmp)
+} finally {
+    $image.Dispose()
+}
 ```
 
 ### Apply Current User Wallpaper and Dark Mode
 
 ```powershell
-$wallpaperPath = 'C:\ProgramData\kmos\assets\wallpapers\kmos-wallpaper.png'
+$wallpaperPath = 'C:\ProgramData\kmos\assets\wallpapers\kmos-wallpaper.bmp'
 
 function Set-RegistryValue {
     param(
@@ -200,7 +209,7 @@ rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 ### Seed Default User Appearance
 
 ```powershell
-$wallpaperPath = 'C:\ProgramData\kmos\assets\wallpapers\kmos-wallpaper.png'
+$wallpaperPath = 'C:\ProgramData\kmos\assets\wallpapers\kmos-wallpaper.bmp'
 
 function Set-RegistryValue {
     param(
