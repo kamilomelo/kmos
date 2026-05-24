@@ -259,3 +259,23 @@ Run the blocks in order. Verify each one before moving on:
 - future-user defaults seeded
 
 The `Seed Future User Defaults` block is intentionally not a policy step. It should transmit the initial look to new users at first login, while leaving wallpaper, colors, and related appearance settings editable afterward.
+
+## Phase 3: Additional Users
+
+Create additional Windows users only after Phase 2 is complete.
+
+### Create a Local Administrator
+
+```powershell
+$username = Read-Host 'Enter the new local username'
+$password = Read-Host 'Enter the password for the new user' -AsSecureString
+
+New-LocalUser -Name $username -Password $password -FullName $username -Description 'kmos local administrator'
+Add-LocalGroupMember -Group 'Administrators' -Member $username
+```
+
+After creating the user:
+- sign in once as that user
+- verify the wallpaper baseline is present
+- verify dark mode and colors were inherited
+- verify `PowerShell Preview`, Terminal font, and Starship are working
