@@ -114,6 +114,64 @@ Resize-SystemPartitionIfRequested
 
 Run this before creating additional Windows users so new accounts inherit the same visual defaults.
 
+### Set Computer Name
+
+```powershell
+function Prompt-YesNo {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [bool]$Default = $true
+    )
+
+    while ($true) {
+        $suffix = if ($Default) { '[Y/n]' } else { '[y/N]' }
+        $answer = Read-Host "$Prompt $suffix"
+        if ($null -eq $answer) {
+            return $Default
+        }
+
+        $answer = $answer.Trim()
+        if ($answer.Length -eq 0) {
+            return $Default
+        }
+
+        switch -Regex ($answer.ToLowerInvariant()) {
+            '^(y|yes)$' { return $true }
+            '^(n|no)$' { return $false }
+        }
+    }
+}
+
+function Prompt-ConfirmedText {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [string]$ConfirmLabel = 'Is this correct?'
+    )
+
+    while ($true) {
+        $value = ''
+        while ([string]::IsNullOrWhiteSpace($value)) {
+            $value = (Read-Host $Prompt).Trim()
+        }
+
+        if (Prompt-YesNo -Prompt ("{0}: {1}. {2}" -f $Prompt, $value, $ConfirmLabel) -Default $true) {
+            return $value
+        }
+    }
+}
+
+$currentName = $env:COMPUTERNAME
+Write-Host "Current computer name: $currentName"
+
+$newName = Prompt-ConfirmedText -Prompt 'Enter the desired computer name'
+if ($newName -eq $currentName) {
+    Write-Host 'Computer name already matches the requested name.'
+} else {
+    Rename-Computer -NewName $newName -Force
+    Write-Host "Computer renamed to $newName. A reboot will be required for the new name to take effect."
+}
+```
+
 ### Remove Old Organization Policy Locks
 
 ```powershell
