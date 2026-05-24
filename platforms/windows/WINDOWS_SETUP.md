@@ -144,21 +144,21 @@ gpupdate /target:computer /force
 
 ```powershell
 $wallpaperDir = Join-Path $env:PUBLIC 'Pictures\kmos'
-$wallpaperPath = Join-Path $wallpaperDir 'kmos-wallpaper.png'
+$wallpaperPath = Join-Path $wallpaperDir 'kmos-wallpaper.jpg'
 New-Item -ItemType Directory -Path $wallpaperDir -Force | Out-Null
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/wallpapers/kmos-wallpaper.png' -OutFile $wallpaperPath
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/wallpapers/kmos-wallpaper.jpg' -OutFile $wallpaperPath
 ```
 
 Shared wallpaper path:
 
 ```powershell
-Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
+Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.jpg'
 ```
 
 ### Apply Appearance Manually
 
 Use Windows Settings for this part:
-- `Personalization > Background`: choose the staged `kmos-wallpaper.png`
+- `Personalization > Background`: choose the staged `kmos-wallpaper.jpg`
 - `Personalization > Lock screen`: choose the same image
 - `Personalization > Colors`: set dark mode and your preferred dark gray accents
 
@@ -167,7 +167,7 @@ Do this once in the current user until it looks correct.
 ### Seed Future User Defaults
 
 ```powershell
-$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
+$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.jpg'
 
 function Set-RegistryValue {
     param(
