@@ -134,23 +134,51 @@ Run this before creating additional Windows users so new accounts inherit the sa
 ### Remove Old Organization Policy Locks
 
 ```powershell
-Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop' -Name 'NoChangingWallPaper' -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop' -Name 'NoChangingWallPaper' -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Name 'NoActiveDesktop' -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Name 'NoActiveDesktopChanges' -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Name 'NoActiveDesktop' -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Name 'NoActiveDesktopChanges' -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -ErrorAction SilentlyContinue
+$policyPaths = @(
+    'HKCU:\Software\Policies\Microsoft\Windows\Personalization',
+    'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization',
+    'HKCU:\Software\Policies\Microsoft\Windows\CloudContent',
+    'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent',
+    'HKCU:\Software\Policies\Microsoft\Windows\Control Panel\Desktop',
+    'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop',
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop',
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System',
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer',
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
+)
+
+foreach ($path in $policyPaths) {
+    Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$policyValues = @(
+    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop'; Name = 'NoChangingWallPaper' },
+    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop'; Name = 'NoChangingWallPaper' },
+    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'; Name = 'NoActiveDesktop' },
+    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'; Name = 'NoActiveDesktopChanges' },
+    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; Name = 'NoActiveDesktop' },
+    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; Name = 'NoActiveDesktopChanges' },
+    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'Wallpaper' },
+    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'WallpaperStyle' },
+    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'Wallpaper' },
+    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'WallpaperStyle' },
+    @{ Path = 'HKCU:\Control Panel\Desktop'; Name = 'WallPaper' }
+)
+
+foreach ($item in $policyValues) {
+    Remove-ItemProperty -Path $item.Path -Name $item.Name -ErrorAction SilentlyContinue
+}
+
+$themesDir = Join-Path $env:APPDATA 'Microsoft\Windows\Themes'
+Remove-Item -Path (Join-Path $themesDir 'TranscodedWallpaper*') -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $themesDir 'CachedFiles') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $themesDir 'slideshow.ini') -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $themesDir '*.theme') -Force -ErrorAction SilentlyContinue
+
+gpupdate /target:user /force
 gpupdate /target:computer /force
 rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 ```
