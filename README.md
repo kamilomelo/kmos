@@ -102,8 +102,8 @@ The current Rocky workflow is intentionally conservative:
 Current Rocky entry points:
 
 ```bash
-./platforms/rocky/kmos-rocky-install.sh
-./platforms/rocky/tools/kmos-rocky-wifi-connect.sh
+./platforms/rockylinux/kmos-rockylinux-install.sh
+./platforms/rockylinux/tools/kmos-rockylinux-wifi-connect.sh
 ```
 
 This is an initial scaffold. The next Rocky stage is KDE installation and post-install desktop configuration on top of the minimal base.
@@ -127,10 +127,10 @@ This is an initial scaffold. The next Rocky stage is KDE installation and post-i
 │   │   └── tools/                          # Arch helper scripts
 │   │       ├── kmos-wifi-connect.sh
 │   │       └── kmos-usb-flasher.sh
-│   ├── rocky/
-│   │   ├── kmos-rocky-install.sh          # Rocky minimal post-install entry point
+│   ├── rockylinux/
+│   │   ├── kmos-rockylinux-install.sh     # Rocky minimal post-install entry point
 │   │   └── tools/
-│   │       └── kmos-rocky-wifi-connect.sh # Rocky Wi-Fi bootstrap helper
+│   │       └── kmos-rockylinux-wifi-connect.sh # Rocky Wi-Fi bootstrap helper
 │   └── windows/
 │       ├── WINDOWS_SETUP.md                # Manual Windows setup workflow
 │       └── assets/                         # Windows-specific runtime assets

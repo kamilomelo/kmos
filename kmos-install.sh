@@ -7,7 +7,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 ARCH_INSTALLER="$SCRIPT_DIR/platforms/archlinux/kmos-archlinux-install.sh"
-ROCKY_INSTALLER="$SCRIPT_DIR/platforms/rocky/kmos-rocky-install.sh"
+ROCKY_INSTALLER="$SCRIPT_DIR/platforms/rockylinux/kmos-rockylinux-install.sh"
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2

@@ -6,7 +6,7 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-WIFI_HELPER="$SCRIPT_DIR/tools/kmos-rocky-wifi-connect.sh"
+WIFI_HELPER="$SCRIPT_DIR/tools/kmos-rockylinux-wifi-connect.sh"
 STEP_INDEX=0
 STEP_TOTAL=3
 
