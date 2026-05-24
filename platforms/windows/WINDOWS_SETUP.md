@@ -144,59 +144,27 @@ gpupdate /target:computer /force
 
 ```powershell
 $wallpaperDir = Join-Path $env:PUBLIC 'Pictures\kmos'
-$wallpaperPng = Join-Path $wallpaperDir 'kmos-wallpaper.png'
+$wallpaperPath = Join-Path $wallpaperDir 'kmos-wallpaper.png'
 New-Item -ItemType Directory -Path $wallpaperDir -Force | Out-Null
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/wallpapers/kmos-wallpaper.png' -OutFile $wallpaperPng
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/wallpapers/kmos-wallpaper.png' -OutFile $wallpaperPath
 ```
 
-### Apply Current User Wallpaper and Dark Mode
+Shared wallpaper path:
 
 ```powershell
-$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
-
-function Set-RegistryValue {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)]$Value,
-        [string]$Type = 'String'
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
-    }
-
-    try {
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
-    } catch {
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
-    }
-}
-
-Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Type DWord
-Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Type DWord
-Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'ColorPrevalence' -Value 0 -Type DWord
-Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'EnableTransparency' -Value 0 -Type DWord
-Set-RegistryValue -Path 'HKCU:\Control Panel\Colors' -Name 'Background' -Value '0 0 0'
-Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '6'
-Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'TileWallpaper' -Value '0'
-Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColor' -Value 4285887861 -Type DWord
-Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColorInactive' -Value 4282400832 -Type DWord
-Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Name 'AccentColorMenu' -Value 4285887861 -Type DWord
-
-Add-Type -TypeDefinition @"
-using System.Runtime.InteropServices;
-public class KmosWallpaper {
-  [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)]
-  public static extern int SystemParametersInfo(int uiAction, int uiParam, string pvParam, int fWinIni);
-}
-"@ -ErrorAction SilentlyContinue | Out-Null
-[void][KmosWallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3)
-rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
+Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
 ```
 
-### Seed Default User Appearance
+### Apply Appearance Manually
+
+Use Windows Settings for this part:
+- `Personalization > Background`: choose the staged `kmos-wallpaper.png`
+- `Personalization > Lock screen`: choose the same image
+- `Personalization > Colors`: set dark mode and your preferred dark gray accents
+
+Do this once in the current user until it looks correct.
+
+### Seed Future User Defaults
 
 ```powershell
 $wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
@@ -241,5 +209,6 @@ try {
 
 Run the blocks in order. Verify each one before moving on:
 - old organization policy locks removed
-- current user wallpaper and dark mode
-- future-user defaults
+- shared wallpaper staged
+- current user appearance configured manually
+- future-user defaults seeded
