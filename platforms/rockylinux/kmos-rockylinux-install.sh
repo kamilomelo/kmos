@@ -425,6 +425,11 @@ EOF
     fi
   done
 
+  if [[ -f "$HOME/.bashrc" ]]; then
+    # shellcheck disable=SC1090
+    source "$HOME/.bashrc" || true
+  fi
+
   success "Starship presets and bashrc hooks staged."
   warn "Open a new shell or run: exec bash -l"
 }
