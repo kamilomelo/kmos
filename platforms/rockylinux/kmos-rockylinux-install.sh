@@ -340,14 +340,25 @@ enable_cli_repositories() {
 install_cli_tooling() {
   advance_step "Install Rocky CLI tooling"
 
-  if ! dnf -y install nano btop fastfetch zoxide starship; then
+  if ! dnf -y install nano btop fastfetch; then
     warn "CLI tooling install failed without CRB. Enabling CRB and retrying."
     dnf config-manager --set-enabled crb
     dnf -y makecache
-    dnf -y install nano btop fastfetch zoxide starship
+    dnf -y install nano btop fastfetch
   fi
 
-  command -v zoxide >/dev/null 2>&1 || die "zoxide installation did not produce a usable binary."
+  if ! command -v zoxide >/dev/null 2>&1; then
+    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+  fi
+
+  if ! command -v starship >/dev/null 2>&1; then
+    curl -sS https://starship.rs/install.sh | sh -s -- -y
+  fi
+
+  if ! command -v zoxide >/dev/null 2>&1; then
+    die "zoxide installation did not produce a usable binary."
+  fi
+
   if ! command -v starship >/dev/null 2>&1; then
     die "starship installation did not produce a usable binary."
   fi
