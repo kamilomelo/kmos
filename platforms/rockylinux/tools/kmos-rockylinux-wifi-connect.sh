@@ -40,7 +40,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(nmcli ping rfkill systemctl)
+  local tools=(nmcli ping rfkill systemctl rpm)
   local t
 
   for t in "${tools[@]}"; do
@@ -48,6 +48,17 @@ require_tools() {
   done
 
   [[ ${#missing[@]} -eq 0 ]] || die "Missing required tools: ${missing[*]}"
+}
+
+require_wifi_stack() {
+  local missing=()
+
+  rpm -q NetworkManager-wifi >/dev/null 2>&1 || missing+=("NetworkManager-wifi")
+  rpm -q wpa_supplicant >/dev/null 2>&1 || missing+=("wpa_supplicant")
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    die "Missing Wi-Fi packages: ${missing[*]}. Connect with ethernet first and rerun kmos so it can prepare the Rocky Wi-Fi stack."
+  fi
 }
 
 ask_yes_no() {
@@ -94,9 +105,11 @@ main() {
   init_ui
   require_root
   require_tools
+  require_wifi_stack
 
   systemctl enable --now NetworkManager >/dev/null 2>&1 || die "Could not start NetworkManager."
   rfkill unblock all >/dev/null 2>&1 || die "Could not unblock wireless devices."
+  nmcli radio wifi on >/dev/null 2>&1 || true
 
   adapter="$(pick_wifi_adapter)"
   info "Using Wi-Fi adapter: $adapter"

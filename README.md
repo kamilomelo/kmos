@@ -115,11 +115,16 @@ This is an initial scaffold. The next Rocky stage is KDE installation and post-i
 
 Current Rocky sequence:
 1. network
-2. swapfile
-3. full update
-4. reboot
-5. rerun `kmos`
-6. continue with NVIDIA and CLI tooling stages as they are implemented
+2. prepare Wi-Fi support while ethernet is available
+3. swapfile
+4. full update
+5. reboot
+6. rerun `kmos`
+7. enable CRB and EPEL
+8. install CLI tooling
+9. stage Starship presets and shell hooks
+10. create additional users
+11. continue with NVIDIA and KDE stages as they are implemented
 
 ## Current Project Structure
 

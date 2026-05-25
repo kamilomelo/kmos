@@ -8,10 +8,11 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 WIFI_HELPER="$SCRIPT_DIR/tools/kmos-rockylinux-wifi-connect.sh"
 STEP_INDEX=0
-STEP_TOTAL=6
+STEP_TOTAL=8
 STATE_DIR="/var/lib/kmos/rockylinux"
 REBOOT_MARKER="$STATE_DIR/reboot-required-after-update"
 UPDATE_DONE_MARKER="$STATE_DIR/update-baseline-complete"
+STARSHIP_PRESET_DIR="$SCRIPT_DIR/../archlinux/assets/starship-presets"
 
 UI_RESET=""
 UI_BOLD=""
@@ -146,7 +147,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(dnf ping systemctl mkdir cat id useradd chpasswd usermod)
+  local tools=(dnf ping systemctl mkdir cat id useradd chpasswd usermod rpm cp curl)
   local t
 
   for t in "${tools[@]}"; do
@@ -198,6 +199,10 @@ has_wired_carrier() {
   return 1
 }
 
+has_wifi_stack() {
+  rpm -q NetworkManager-wifi >/dev/null 2>&1 && rpm -q wpa_supplicant >/dev/null 2>&1
+}
+
 ensure_state_dir() {
   mkdir -p "$STATE_DIR"
 }
@@ -224,6 +229,25 @@ ensure_network() {
 
   has_internet || die "Internet is still unavailable. Connect Rocky to the network, then rerun kmos."
   success "Internet access confirmed."
+}
+
+prepare_wifi_support() {
+  advance_step "Prepare Rocky Wi-Fi support"
+
+  if ! has_wifi_adapter; then
+    info "No Wi-Fi adapter detected. Skipping Rocky Wi-Fi preparation."
+    return
+  fi
+
+  if has_wifi_stack; then
+    success "Rocky Wi-Fi packages are already installed."
+    return
+  fi
+
+  info "Installing Rocky Wi-Fi packages while internet is available."
+  dnf -y install NetworkManager-wifi wpa_supplicant
+  systemctl enable --now NetworkManager >/dev/null 2>&1 || true
+  success "Rocky Wi-Fi support packages installed."
 }
 
 update_system_baseline() {
@@ -304,6 +328,63 @@ configure_swapfile() {
   success "Created ${swap_size} GiB swapfile at /swapfile."
 }
 
+enable_cli_repositories() {
+  advance_step "Enable Rocky CLI repositories"
+
+  rpm -q dnf-plugins-core >/dev/null 2>&1 || dnf -y install dnf-plugins-core
+  dnf config-manager --set-enabled crb
+  rpm -q epel-release >/dev/null 2>&1 || dnf -y install epel-release
+  dnf -y makecache
+  success "CRB and EPEL are ready."
+}
+
+install_cli_tooling() {
+  advance_step "Install Rocky CLI tooling"
+
+  dnf -y install btop fastfetch
+
+  if command -v zoxide >/dev/null 2>&1; then
+    info "zoxide already installed. Skipping."
+  else
+    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh -s -- -b /usr/local/bin
+  fi
+
+  if command -v starship >/dev/null 2>&1; then
+    info "starship already installed. Skipping."
+  else
+    curl -sS https://starship.rs/install.sh | sh -s -- -y -b /usr/local/bin
+  fi
+
+  success "Rocky CLI tooling installed."
+}
+
+stage_shell_presets() {
+  local target_dir="/opt/kmos/starship-presets"
+  local shell_hook="/etc/profile.d/kmos-shell.sh"
+
+  advance_step "Stage shell presets"
+
+  [[ -d "$STARSHIP_PRESET_DIR" ]] || die "Missing starship presets: $STARSHIP_PRESET_DIR"
+
+  mkdir -p "$target_dir"
+  cp "$STARSHIP_PRESET_DIR"/*.toml "$target_dir"/
+
+  cat > "$shell_hook" <<'EOF'
+export STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml
+
+if command -v starship >/dev/null 2>&1; then
+  eval "$(starship init bash)"
+fi
+
+if command -v zoxide >/dev/null 2>&1; then
+  eval "$(zoxide init bash)"
+fi
+EOF
+
+  chmod 644 "$shell_hook"
+  success "Starship presets and shell hooks staged."
+}
+
 configure_additional_users() {
   local username=""
   local password=""
@@ -342,6 +423,10 @@ describe_scope() {
   log "  - assumes /boot/efi, /boot, and / only"
   log "  - creates swap as a swapfile instead of a swap partition"
   log "  - forces a full update and reboot boundary before NVIDIA or tooling"
+  log "  - prepares Wi-Fi support on Rocky minimal while ethernet is available"
+  log "  - enables CRB and EPEL for CLI tooling"
+  log "  - installs btop, fastfetch, starship, and zoxide"
+  log "  - stages the 4 kmos starship presets"
   log "  - brings up Wi-Fi first when ethernet is not available"
   log "  - can already create additional local users"
   log "  - prepares the repo for the upcoming KDE and package stages"
@@ -351,8 +436,7 @@ next_steps() {
   advance_step "Next Rocky work"
   log "Next implementation step:"
   log "  - detect and install NVIDIA drivers, then verify with nvidia-smi"
-  log "  - enable EPEL/required repositories for CLI tooling"
-  log "  - install btop, fastfetch, starship, and zoxide"
+  log "  - install nvtop after the Rocky NVIDIA path is working"
   log "  - install KDE on top of Rocky minimal"
   log "  - add Rocky post-install desktop configuration stages"
 }
@@ -364,8 +448,12 @@ main() {
   require_tools
   is_rocky || die "This installer only supports Rocky Linux."
   ensure_network
+  prepare_wifi_support
   configure_swapfile
   update_system_baseline
+  enable_cli_repositories
+  install_cli_tooling
+  stage_shell_presets
   configure_additional_users
   describe_scope
   next_steps
