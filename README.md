@@ -124,6 +124,7 @@ Current Rocky sequence:
 8. only enable CRB if the CLI packages need it
 9. install CLI tooling
 10. stage Starship presets and shell hooks
+    - then open a new shell or run `exec bash -l`
 11. create additional users
 12. continue with NVIDIA and KDE stages as they are implemented
 
