@@ -350,10 +350,10 @@ install_cli_tooling() {
   if command -v zoxide >/dev/null 2>&1; then
     info "zoxide already installed. Skipping."
   else
-    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh -s -- -b /usr/local/bin
+    dnf -y install zoxide
   fi
 
-  if [[ ! -x /usr/local/bin/zoxide ]] && ! command -v zoxide >/dev/null 2>&1; then
+  if ! command -v zoxide >/dev/null 2>&1; then
     die "zoxide installation did not produce a usable binary."
   fi
 
@@ -398,9 +398,7 @@ if [[ -n "${BASH_VERSION:-}" ]] && [[ $- == *i* ]]; then
   fi
 fi
 
-if [[ -x /usr/local/bin/zoxide ]]; then
-  eval "$(/usr/local/bin/zoxide init bash)"
-elif command -v zoxide >/dev/null 2>&1; then
+if command -v zoxide >/dev/null 2>&1; then
   eval "$(zoxide init bash)"
 fi
 EOF
