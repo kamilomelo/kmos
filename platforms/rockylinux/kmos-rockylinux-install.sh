@@ -372,13 +372,9 @@ install_cli_tooling() {
 
 stage_shell_presets() {
   local target_dir="/opt/kmos/starship-presets"
-  local shell_hook="/etc/profile.d/kmos-shell.sh"
-  local bashrc_hook="/etc/bashrc.d/kmos-shell.sh"
-  local system_bashrc="/etc/bashrc"
-  local system_profile="/etc/profile"
   local user_bashrc=""
-  local user_bash_profile=""
   local home_dir=""
+  local bashrc_block=""
 
   advance_step "Stage shell presets"
 
@@ -387,58 +383,30 @@ stage_shell_presets() {
   mkdir -p "$target_dir"
   cp "$STARSHIP_PRESET_DIR"/*.toml "$target_dir"/
 
-  cat > "$shell_hook" <<'EOF'
+  bashrc_block=$(cat <<'EOF'
+
 export STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml
-
-if [[ -n "${BASH_VERSION:-}" ]] && [[ $- == *i* ]]; then
-  if command -v starship >/dev/null 2>&1; then
-    eval "$(starship init bash)"
-  fi
-fi
-
-if command -v zoxide >/dev/null 2>&1; then
-  eval "$(zoxide init bash)"
-fi
+eval "$(starship init bash)"
+eval "$(zoxide init bash)"
 EOF
-
-  chmod 644 "$shell_hook"
-
-  mkdir -p /etc/bashrc.d
-  cp "$shell_hook" "$bashrc_hook"
-  chmod 644 "$bashrc_hook"
-
-  if [[ -f "$system_bashrc" ]] && ! grep -q '/etc/profile.d/kmos-shell.sh' "$system_bashrc"; then
-    printf '\n[[ -r /etc/profile.d/kmos-shell.sh ]] && . /etc/profile.d/kmos-shell.sh\n' >> "$system_bashrc"
-  fi
-
-  if [[ -f "$system_profile" ]] && ! grep -q '/etc/profile.d/kmos-shell.sh' "$system_profile"; then
-    printf '\n[[ -r /etc/profile.d/kmos-shell.sh ]] && . /etc/profile.d/kmos-shell.sh\n' >> "$system_profile"
-  fi
+)
 
   mkdir -p /etc/skel
-  touch /etc/skel/.bashrc /etc/skel/.bash_profile
-  if ! grep -q '/etc/profile.d/kmos-shell.sh' /etc/skel/.bashrc; then
-    printf '\n[[ -r /etc/profile.d/kmos-shell.sh ]] && . /etc/profile.d/kmos-shell.sh\n' >> /etc/skel/.bashrc
-  fi
-  if ! grep -q '/etc/profile.d/kmos-shell.sh' /etc/skel/.bash_profile; then
-    printf '\n[[ -r /etc/profile.d/kmos-shell.sh ]] && . /etc/profile.d/kmos-shell.sh\n' >> /etc/skel/.bash_profile
+  touch /etc/skel/.bashrc
+  if ! grep -q 'STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml' /etc/skel/.bashrc; then
+    printf '%s\n' "$bashrc_block" >> /etc/skel/.bashrc
   fi
 
   for home_dir in /root /home/*; do
     [[ -d "$home_dir" ]] || continue
     user_bashrc="$home_dir/.bashrc"
-    user_bash_profile="$home_dir/.bash_profile"
     touch "$user_bashrc"
-    touch "$user_bash_profile"
-    if ! grep -q '/etc/profile.d/kmos-shell.sh' "$user_bashrc"; then
-      printf '\n[[ -r /etc/profile.d/kmos-shell.sh ]] && . /etc/profile.d/kmos-shell.sh\n' >> "$user_bashrc"
-    fi
-    if ! grep -q '/etc/profile.d/kmos-shell.sh' "$user_bash_profile"; then
-      printf '\n[[ -r /etc/profile.d/kmos-shell.sh ]] && . /etc/profile.d/kmos-shell.sh\n' >> "$user_bash_profile"
+    if ! grep -q 'STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml' "$user_bashrc"; then
+      printf '%s\n' "$bashrc_block" >> "$user_bashrc"
     fi
   done
 
-  success "Starship presets and shell hooks staged."
+  success "Starship presets and bashrc hooks staged."
   warn "Open a new shell or run: exec bash -l"
 }
 
