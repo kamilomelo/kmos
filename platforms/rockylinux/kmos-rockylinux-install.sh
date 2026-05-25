@@ -360,10 +360,10 @@ install_cli_tooling() {
   if command -v starship >/dev/null 2>&1; then
     info "starship already installed. Skipping."
   else
-    curl -sSfL https://starship.rs/install.sh | sh -s -- -y -b /usr/local/bin
+    dnf -y install starship
   fi
 
-  if [[ ! -x /usr/local/bin/starship ]] && ! command -v starship >/dev/null 2>&1; then
+  if ! command -v starship >/dev/null 2>&1; then
     die "starship installation did not produce a usable binary."
   fi
 
@@ -391,9 +391,7 @@ stage_shell_presets() {
 export STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml
 
 if [[ -n "${BASH_VERSION:-}" ]] && [[ $- == *i* ]]; then
-  if [[ -x /usr/local/bin/starship ]]; then
-    eval "$(/usr/local/bin/starship init bash)"
-  elif command -v starship >/dev/null 2>&1; then
+  if command -v starship >/dev/null 2>&1; then
     eval "$(starship init bash)"
   fi
 fi
