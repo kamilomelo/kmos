@@ -8,7 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 WIFI_HELPER="$SCRIPT_DIR/tools/kmos-rockylinux-wifi-connect.sh"
 STEP_INDEX=0
-STEP_TOTAL=5
+STEP_TOTAL=6
 STATE_DIR="/var/lib/kmos/rockylinux"
 REBOOT_MARKER="$STATE_DIR/reboot-required-after-update"
 UPDATE_DONE_MARKER="$STATE_DIR/update-baseline-complete"
@@ -113,6 +113,24 @@ ask_text() {
   printf '%s\n' "$answer"
 }
 
+ask_password() {
+  local prompt="$1"
+  local password=""
+  local confirm=""
+
+  while true; do
+    read -r -s -p "$prompt: " password
+    printf '\n' >&2
+    [[ -n "$password" ]] || continue
+    read -r -s -p "Confirm password: " confirm
+    printf '\n' >&2
+    [[ "$password" == "$confirm" ]] && break
+    warn "Passwords do not match."
+  done
+
+  printf '%s\n' "$password"
+}
+
 print_banner() {
   printf '\n' >&2
   printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 24)" "$UI_RESET" >&2
@@ -128,7 +146,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(dnf ping systemctl mkdir cat)
+  local tools=(dnf ping systemctl mkdir cat id useradd chpasswd usermod)
   local t
 
   for t in "${tools[@]}"; do
@@ -286,6 +304,36 @@ configure_swapfile() {
   success "Created ${swap_size} GiB swapfile at /swapfile."
 }
 
+configure_additional_users() {
+  local username=""
+  local password=""
+
+  advance_step "Configure additional users"
+
+  if ! ask_yes_no "Add another local user now?" "no"; then
+    info "Skipping additional user creation."
+    return
+  fi
+
+  while true; do
+    username="$(ask_text 'Enter the username')"
+    id "$username" >/dev/null 2>&1 && die "User already exists: $username"
+    password="$(ask_password 'Enter password')"
+
+    useradd -m "$username"
+    printf '%s:%s\n' "$username" "$password" | chpasswd
+
+    if ask_yes_no "Grant sudo access to $username?" "yes"; then
+      usermod -aG wheel "$username"
+      success "Created user $username with sudo access."
+    else
+      success "Created user $username."
+    fi
+
+    ask_yes_no "Add another local user?" "no" || break
+  done
+}
+
 describe_scope() {
   advance_step "Describe current Rocky scope"
   info "Rocky support is now scaffolded for the post-install minimal workflow."
@@ -295,6 +343,7 @@ describe_scope() {
   log "  - creates swap as a swapfile instead of a swap partition"
   log "  - forces a full update and reboot boundary before NVIDIA or tooling"
   log "  - brings up Wi-Fi first when ethernet is not available"
+  log "  - can already create additional local users"
   log "  - prepares the repo for the upcoming KDE and package stages"
 }
 
@@ -317,6 +366,7 @@ main() {
   ensure_network
   configure_swapfile
   update_system_baseline
+  configure_additional_users
   describe_scope
   next_steps
 }
