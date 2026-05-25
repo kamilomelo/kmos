@@ -353,10 +353,18 @@ install_cli_tooling() {
     curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh -s -- -b /usr/local/bin
   fi
 
+  if [[ ! -x /usr/local/bin/zoxide ]] && ! command -v zoxide >/dev/null 2>&1; then
+    die "zoxide installation did not produce a usable binary."
+  fi
+
   if command -v starship >/dev/null 2>&1; then
     info "starship already installed. Skipping."
   else
-    curl -sS https://starship.rs/install.sh | sh -s -- -y -b /usr/local/bin
+    curl -sSfL https://starship.rs/install.sh | sh -s -- -y -b /usr/local/bin
+  fi
+
+  if [[ ! -x /usr/local/bin/starship ]] && ! command -v starship >/dev/null 2>&1; then
+    die "starship installation did not produce a usable binary."
   fi
 
   success "Rocky CLI tooling installed."
@@ -390,7 +398,9 @@ if [[ -n "${BASH_VERSION:-}" ]] && [[ $- == *i* ]]; then
   fi
 fi
 
-if command -v zoxide >/dev/null 2>&1; then
+if [[ -x /usr/local/bin/zoxide ]]; then
+  eval "$(/usr/local/bin/zoxide init bash)"
+elif command -v zoxide >/dev/null 2>&1; then
   eval "$(zoxide init bash)"
 fi
 EOF
