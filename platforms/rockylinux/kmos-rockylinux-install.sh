@@ -8,7 +8,10 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 WIFI_HELPER="$SCRIPT_DIR/tools/kmos-rockylinux-wifi-connect.sh"
 STEP_INDEX=0
-STEP_TOTAL=4
+STEP_TOTAL=5
+STATE_DIR="/var/lib/kmos/rockylinux"
+REBOOT_MARKER="$STATE_DIR/reboot-required-after-update"
+UPDATE_DONE_MARKER="$STATE_DIR/update-baseline-complete"
 
 UI_RESET=""
 UI_BOLD=""
@@ -125,7 +128,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(dnf ping systemctl)
+  local tools=(dnf ping systemctl mkdir cat)
   local t
 
   for t in "${tools[@]}"; do
@@ -177,6 +180,10 @@ has_wired_carrier() {
   return 1
 }
 
+ensure_state_dir() {
+  mkdir -p "$STATE_DIR"
+}
+
 ensure_network() {
   advance_step "Ensure network access"
 
@@ -199,6 +206,38 @@ ensure_network() {
 
   has_internet || die "Internet is still unavailable. Connect Rocky to the network, then rerun kmos."
   success "Internet access confirmed."
+}
+
+update_system_baseline() {
+  local current_boot_id=""
+  local recorded_boot_id=""
+
+  advance_step "Update Rocky baseline"
+  ensure_state_dir
+  current_boot_id="$(cat /proc/sys/kernel/random/boot_id)"
+
+  if [[ -f "$REBOOT_MARKER" ]]; then
+    recorded_boot_id="$(cat "$REBOOT_MARKER")"
+    if [[ "$current_boot_id" == "$recorded_boot_id" ]]; then
+      die "A full system update already ran. Reboot Rocky before continuing."
+    fi
+
+    rm -f "$REBOOT_MARKER"
+    touch "$UPDATE_DONE_MARKER"
+    success "Reboot after the baseline update confirmed."
+    return
+  fi
+
+  if [[ -f "$UPDATE_DONE_MARKER" ]]; then
+    success "Baseline update already completed. Skipping."
+    return
+  fi
+
+  info "Running full system update before any NVIDIA or workstation tooling."
+  dnf -y upgrade --refresh
+  printf '%s\n' "$current_boot_id" > "$REBOOT_MARKER"
+  warn "Baseline update completed. Reboot Rocky now, then rerun kmos to continue."
+  exit 0
 }
 
 configure_swapfile() {
@@ -254,6 +293,7 @@ describe_scope() {
   log "  - assumes Rocky 10 minimal is already installed"
   log "  - assumes /boot/efi, /boot, and / only"
   log "  - creates swap as a swapfile instead of a swap partition"
+  log "  - forces a full update and reboot boundary before NVIDIA or tooling"
   log "  - brings up Wi-Fi first when ethernet is not available"
   log "  - prepares the repo for the upcoming KDE and package stages"
 }
@@ -261,8 +301,11 @@ describe_scope() {
 next_steps() {
   advance_step "Next Rocky work"
   log "Next implementation step:"
+  log "  - detect and install NVIDIA drivers, then verify with nvidia-smi"
+  log "  - enable EPEL/required repositories for CLI tooling"
+  log "  - install btop, fastfetch, starship, and zoxide"
   log "  - install KDE on top of Rocky minimal"
-  log "  - add Rocky post-install package and desktop configuration stages"
+  log "  - add Rocky post-install desktop configuration stages"
 }
 
 main() {
@@ -273,6 +316,7 @@ main() {
   is_rocky || die "This installer only supports Rocky Linux."
   ensure_network
   configure_swapfile
+  update_system_baseline
   describe_scope
   next_steps
 }

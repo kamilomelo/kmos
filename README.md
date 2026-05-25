@@ -102,6 +102,7 @@ The current Rocky workflow is intentionally conservative:
 - run the local `kmos` Rocky script
 - let the Rocky script create a swapfile instead
 - if ethernet is not available, the Rocky script starts by bringing up Wi-Fi
+- the first successful Rocky update run stops on purpose and requires a reboot before NVIDIA or tooling work continues
 
 Current Rocky entry points:
 
@@ -111,6 +112,14 @@ Current Rocky entry points:
 ```
 
 This is an initial scaffold. The next Rocky stage is KDE installation and post-install desktop configuration on top of the minimal base.
+
+Current Rocky sequence:
+1. network
+2. swapfile
+3. full update
+4. reboot
+5. rerun `kmos`
+6. continue with NVIDIA and CLI tooling stages as they are implemented
 
 ## Current Project Structure
 
