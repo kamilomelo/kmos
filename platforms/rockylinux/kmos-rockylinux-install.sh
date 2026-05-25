@@ -371,6 +371,8 @@ stage_shell_presets() {
   local user_bashrc=""
   local home_dir=""
   local bashrc_block=""
+  local bashrc_marker_begin="# >>> kmos shell init >>>"
+  local bashrc_marker_end="# <<< kmos shell init <<<"
 
   advance_step "Stage shell presets"
 
@@ -381,15 +383,17 @@ stage_shell_presets() {
 
   bashrc_block=$(cat <<'EOF'
 
+# >>> kmos shell init >>>
 export STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml
 eval "$(starship init bash)"
 eval "$(zoxide init bash)"
+# <<< kmos shell init <<<
 EOF
 )
 
   mkdir -p /etc/skel
   touch /etc/skel/.bashrc
-  if ! grep -q 'STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml' /etc/skel/.bashrc; then
+  if ! grep -qF "$bashrc_marker_begin" /etc/skel/.bashrc; then
     printf '%s\n' "$bashrc_block" >> /etc/skel/.bashrc
   fi
 
@@ -397,7 +401,7 @@ EOF
     [[ -d "$home_dir" ]] || continue
     user_bashrc="$home_dir/.bashrc"
     touch "$user_bashrc"
-    if ! grep -q 'STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml' "$user_bashrc"; then
+    if ! grep -qF "$bashrc_marker_begin" "$user_bashrc"; then
       printf '%s\n' "$bashrc_block" >> "$user_bashrc"
     fi
   done
