@@ -8,7 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 WIFI_HELPER="$SCRIPT_DIR/tools/kmos-rockylinux-wifi-connect.sh"
 STEP_INDEX=0
-STEP_TOTAL=3
+STEP_TOTAL=4
 
 UI_RESET=""
 UI_BOLD=""
@@ -95,6 +95,19 @@ ask_yes_no() {
       *) warn "Please answer yes or no." ;;
     esac
   done
+}
+
+ask_text() {
+  local prompt="$1"
+  local default="${2:-}"
+  local answer=""
+
+  read -r -p "$prompt${default:+ [$default]}: " answer
+  if [[ -z "$answer" && -n "$default" ]]; then
+    answer="$default"
+  fi
+
+  printf '%s\n' "$answer"
 }
 
 print_banner() {
@@ -188,11 +201,59 @@ ensure_network() {
   success "Internet access confirmed."
 }
 
+configure_swapfile() {
+  local swap_size=""
+
+  advance_step "Configure swapfile"
+
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -qx '/swapfile'; then
+    success "/swapfile is already active."
+    return
+  fi
+
+  if grep -Eq '^[^#]+\s+none\s+swap\s' /etc/fstab 2>/dev/null; then
+    warn "A swap entry already exists in /etc/fstab. Leaving swap configuration unchanged."
+    return
+  fi
+
+  if [[ -e /swapfile ]]; then
+    warn "/swapfile already exists, but it is not active."
+    if ask_yes_no "Activate the existing /swapfile and keep it in /etc/fstab?" "yes"; then
+      chmod 600 /swapfile
+      mkswap /swapfile >/dev/null
+      swapon /swapfile
+      grep -qxF '/swapfile none swap sw 0 0' /etc/fstab || printf '/swapfile none swap sw 0 0\n' >> /etc/fstab
+      success "Existing /swapfile activated and persisted."
+      return
+    fi
+    warn "Skipping swapfile changes."
+    return
+  fi
+
+  if ! ask_yes_no "Create a swapfile now?" "yes"; then
+    warn "Skipping swapfile creation."
+    return
+  fi
+
+  swap_size="$(ask_text 'Enter swapfile size in GiB' '8')"
+  [[ "$swap_size" =~ ^[0-9]+$ ]] || die "Swapfile size must be an integer number of GiB."
+  (( swap_size > 0 )) || die "Swapfile size must be greater than zero."
+
+  dd if=/dev/zero of=/swapfile bs=1M count=$((swap_size * 1024)) status=progress
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  grep -qxF '/swapfile none swap sw 0 0' /etc/fstab || printf '/swapfile none swap sw 0 0\n' >> /etc/fstab
+  success "Created ${swap_size} GiB swapfile at /swapfile."
+}
+
 describe_scope() {
   advance_step "Describe current Rocky scope"
   info "Rocky support is now scaffolded for the post-install minimal workflow."
   log "Current scope:"
   log "  - assumes Rocky 10 minimal is already installed"
+  log "  - assumes /boot/efi, /boot, and / only"
+  log "  - creates swap as a swapfile instead of a swap partition"
   log "  - brings up Wi-Fi first when ethernet is not available"
   log "  - prepares the repo for the upcoming KDE and package stages"
 }
@@ -211,6 +272,7 @@ main() {
   require_tools
   is_rocky || die "This installer only supports Rocky Linux."
   ensure_network
+  configure_swapfile
   describe_scope
   next_steps
 }
