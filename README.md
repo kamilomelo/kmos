@@ -120,11 +120,12 @@ Current Rocky sequence:
 4. full update
 5. reboot
 6. rerun `kmos`
-7. enable CRB and EPEL
-8. install CLI tooling
-9. stage Starship presets and shell hooks
-10. create additional users
-11. continue with NVIDIA and KDE stages as they are implemented
+7. enable EPEL
+8. only enable CRB if the CLI packages need it
+9. install CLI tooling
+10. stage Starship presets and shell hooks
+11. create additional users
+12. continue with NVIDIA and KDE stages as they are implemented
 
 ## Current Project Structure
 

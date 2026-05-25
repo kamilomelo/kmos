@@ -332,16 +332,20 @@ enable_cli_repositories() {
   advance_step "Enable Rocky CLI repositories"
 
   rpm -q dnf-plugins-core >/dev/null 2>&1 || dnf -y install dnf-plugins-core
-  dnf config-manager --set-enabled crb
   rpm -q epel-release >/dev/null 2>&1 || dnf -y install epel-release
   dnf -y makecache
-  success "CRB and EPEL are ready."
+  success "EPEL is ready."
 }
 
 install_cli_tooling() {
   advance_step "Install Rocky CLI tooling"
 
-  dnf -y install btop fastfetch
+  if ! dnf -y install btop fastfetch; then
+    warn "CLI tooling install failed without CRB. Enabling CRB and retrying."
+    dnf config-manager --set-enabled crb
+    dnf -y makecache
+    dnf -y install btop fastfetch
+  fi
 
   if command -v zoxide >/dev/null 2>&1; then
     info "zoxide already installed. Skipping."
@@ -450,7 +454,7 @@ describe_scope() {
   log "  - creates swap as a swapfile instead of a swap partition"
   log "  - forces a full update and reboot boundary before NVIDIA or tooling"
   log "  - prepares Wi-Fi support on Rocky minimal while ethernet is available"
-  log "  - enables CRB and EPEL for CLI tooling"
+  log "  - enables EPEL first and only falls back to CRB if needed"
   log "  - installs btop, fastfetch, starship, and zoxide"
   log "  - stages the 4 kmos starship presets"
   log "  - brings up Wi-Fi first when ethernet is not available"
