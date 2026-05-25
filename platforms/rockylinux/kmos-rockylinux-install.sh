@@ -340,11 +340,11 @@ enable_cli_repositories() {
 install_cli_tooling() {
   advance_step "Install Rocky CLI tooling"
 
-  if ! dnf -y install btop fastfetch; then
+  if ! dnf -y install nano btop fastfetch; then
     warn "CLI tooling install failed without CRB. Enabling CRB and retrying."
     dnf config-manager --set-enabled crb
     dnf -y makecache
-    dnf -y install btop fastfetch
+    dnf -y install nano btop fastfetch
   fi
 
   if command -v zoxide >/dev/null 2>&1; then
@@ -486,7 +486,7 @@ describe_scope() {
   log "  - forces a full update and reboot boundary before NVIDIA or tooling"
   log "  - prepares Wi-Fi support on Rocky minimal while ethernet is available"
   log "  - enables EPEL first and only falls back to CRB if needed"
-  log "  - installs btop, fastfetch, starship, and zoxide"
+  log "  - installs nano, btop, fastfetch, starship, and zoxide"
   log "  - stages the 4 kmos starship presets"
   log "  - brings up Wi-Fi first when ethernet is not available"
   log "  - can already create additional local users"
