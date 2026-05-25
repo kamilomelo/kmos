@@ -339,6 +339,7 @@ enable_cli_repositories() {
 
 install_cli_tooling() {
   advance_step "Install Rocky CLI tooling"
+  export PATH="/usr/local/bin:/root/.local/bin:$HOME/.local/bin:$PATH"
 
   if ! dnf -y install tar nano btop fastfetch; then
     warn "CLI tooling install failed without CRB. Enabling CRB and retrying."
@@ -348,11 +349,29 @@ install_cli_tooling() {
   fi
 
   if ! command -v zoxide >/dev/null 2>&1; then
-    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | bash
+    export PATH="/usr/local/bin:/root/.local/bin:$HOME/.local/bin:$PATH"
   fi
 
   if ! command -v starship >/dev/null 2>&1; then
-    curl -sS https://starship.rs/install.sh | sh -s -- -y
+    curl -sS https://starship.rs/install.sh | sh -s -- -y -b /usr/local/bin
+    export PATH="/usr/local/bin:/root/.local/bin:$HOME/.local/bin:$PATH"
+  fi
+
+  if [[ ! -x /usr/local/bin/zoxide ]]; then
+    if [[ -x /root/.local/bin/zoxide ]]; then
+      install -m 0755 /root/.local/bin/zoxide /usr/local/bin/zoxide
+    elif [[ -x "$HOME/.local/bin/zoxide" ]]; then
+      install -m 0755 "$HOME/.local/bin/zoxide" /usr/local/bin/zoxide
+    fi
+  fi
+
+  if [[ ! -x /usr/local/bin/starship ]]; then
+    if [[ -x /root/.local/bin/starship ]]; then
+      install -m 0755 /root/.local/bin/starship /usr/local/bin/starship
+    elif [[ -x "$HOME/.local/bin/starship" ]]; then
+      install -m 0755 "$HOME/.local/bin/starship" /usr/local/bin/starship
+    fi
   fi
 
   if ! command -v zoxide >/dev/null 2>&1; then
