@@ -122,7 +122,7 @@ Current Rocky sequence:
 6. rerun `kmos`
 7. enable EPEL
 8. only enable CRB if the CLI packages need it
-9. install CLI tooling (`nano`, `btop`, `fastfetch` via `dnf`; `starship` and `zoxide` via their official installers)
+9. install CLI tooling (`tar`, `nano`, `btop`, `fastfetch` via `dnf`; `starship` and `zoxide` via their official installers)
 10. stage Starship presets and shell hooks
     - then open a new shell or run `exec bash -l`
 11. create additional users
