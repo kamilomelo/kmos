@@ -85,6 +85,18 @@ ask_yes_no() {
   done
 }
 
+ask_text() {
+  local prompt="$1"
+  local answer=""
+
+  while true; do
+    read -r -p "$prompt: " answer
+    [[ -n "$answer" ]] && break
+  done
+
+  printf '%s\n' "$answer"
+}
+
 pick_wifi_adapter() {
   local adapter=""
 
@@ -95,6 +107,18 @@ pick_wifi_adapter() {
 
 has_internet() {
   ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1
+}
+
+show_networks() {
+  local adapter="$1"
+
+  nmcli --fields IN-USE,SSID,SIGNAL,SECURITY device wifi list ifname "$adapter" >&2 || true
+}
+
+wifi_scan_has_results() {
+  local adapter="$1"
+
+  nmcli -t -f SSID device wifi list ifname "$adapter" 2>/dev/null | grep -q '.'
 }
 
 main() {
@@ -115,18 +139,40 @@ main() {
   info "Using Wi-Fi adapter: $adapter"
 
   nmcli device set "$adapter" managed yes >/dev/null 2>&1 || true
+  nmcli device disconnect "$adapter" >/dev/null 2>&1 || true
+
+  info "Scanning Wi-Fi networks..."
   nmcli device wifi rescan ifname "$adapter" >/dev/null 2>&1 || true
+  sleep 3
 
   printf '\nAvailable networks:\n' >&2
-  nmcli --fields IN-USE,SSID,SIGNAL,SECURITY device wifi list ifname "$adapter" >&2 || true
+  show_networks "$adapter"
   printf '\n' >&2
 
-  read -r -p "SSID: " ssid
-  [[ -n "$ssid" ]] || die "SSID cannot be empty."
+  if ! wifi_scan_has_results "$adapter"; then
+    warn "No Wi-Fi networks were detected."
+    if ask_yes_no "Restart NetworkManager and rescan once more?" "yes"; then
+      systemctl restart NetworkManager || die "Could not restart NetworkManager."
+      sleep 3
+      rfkill unblock all >/dev/null 2>&1 || true
+      nmcli radio wifi on >/dev/null 2>&1 || true
+      nmcli device wifi rescan ifname "$adapter" >/dev/null 2>&1 || true
+      sleep 3
+      printf '\nAvailable networks after restart:\n' >&2
+      show_networks "$adapter"
+      printf '\n' >&2
+    fi
+  fi
+
+  ssid="$(ask_text 'SSID')"
   read -r -s -p "Password: " password
   printf '\n' >&2
 
-  nmcli device wifi connect "$ssid" password "$password" ifname "$adapter" || die "Wi-Fi connection failed."
+  if ask_yes_no "Is this a hidden SSID?" "no"; then
+    nmcli device wifi connect "$ssid" password "$password" hidden yes ifname "$adapter" || die "Wi-Fi connection failed."
+  else
+    nmcli device wifi connect "$ssid" password "$password" ifname "$adapter" || die "Wi-Fi connection failed."
+  fi
 
   has_internet || die "Wi-Fi connected, but internet access is still unavailable."
   info "Wi-Fi connected and internet access is working."
