@@ -437,6 +437,12 @@ EOF
     fi
   done
 
+  if [[ -f "$HOME/.bashrc" ]]; then
+    set +u
+    BASHRCSOURCED="" source "$HOME/.bashrc" >/dev/null 2>&1 || true
+    set -u
+  fi
+
   success "Starship presets and bashrc hooks staged."
   warn "Open a new shell or run: exec bash -l"
 }
