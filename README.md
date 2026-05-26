@@ -102,7 +102,7 @@ The current Rocky workflow is intentionally conservative:
 - run the local `kmos` Rocky script
 - let the Rocky script create a swapfile instead
 - if ethernet is not available, the Rocky script starts by bringing up Wi-Fi
-- the first successful Rocky update run stops on purpose and requires a reboot before NVIDIA or tooling work continues
+- the first successful Rocky update run stops on purpose and requires a reboot before tooling or NVIDIA work continues
 
 Current Rocky entry points:
 
@@ -111,7 +111,7 @@ Current Rocky entry points:
 ./platforms/rockylinux/tools/kmos-rockylinux-wifi-connect.sh
 ```
 
-This is an initial scaffold. The next Rocky stage is KDE installation and post-install desktop configuration on top of the minimal base.
+The Rocky path now covers the pre-KDE minimal workflow. KDE and desktop post-install configuration still come later.
 
 Current Rocky sequence:
 1. network
@@ -125,8 +125,12 @@ Current Rocky sequence:
 9. install CLI tooling (`tar`, `nano`, `btop`, `fastfetch` via `dnf`; `starship` and `zoxide` via their official installers)
 10. stage Starship presets and shell hooks
     - then open a new shell or run `exec bash -l`
-11. create additional users
-12. continue with NVIDIA and KDE stages as they are implemented
+11. detect NVIDIA hardware
+12. on Rocky 10 with NVIDIA present, add the official NVIDIA repo and install `nvidia-open`
+13. reboot, rerun `kmos`, and verify with `nvidia-smi`
+14. install `nvtop`
+15. create additional users
+16. continue with KDE and desktop stages as they are implemented
 
 ## Current Project Structure
 

@@ -8,10 +8,12 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 WIFI_HELPER="$SCRIPT_DIR/tools/kmos-rockylinux-wifi-connect.sh"
 STEP_INDEX=0
-STEP_TOTAL=8
+STEP_TOTAL=11
 STATE_DIR="/var/lib/kmos/rockylinux"
 REBOOT_MARKER="$STATE_DIR/reboot-required-after-update"
 UPDATE_DONE_MARKER="$STATE_DIR/update-baseline-complete"
+NVIDIA_REBOOT_MARKER="$STATE_DIR/reboot-required-after-nvidia"
+NVIDIA_DONE_MARKER="$STATE_DIR/nvidia-open-complete"
 STARSHIP_PRESET_DIR="$SCRIPT_DIR/../archlinux/assets/starship-presets"
 
 UI_RESET=""
@@ -201,6 +203,16 @@ has_wired_carrier() {
 
 has_wifi_stack() {
   rpm -q NetworkManager-wifi >/dev/null 2>&1 && rpm -q wpa_supplicant >/dev/null 2>&1
+}
+
+has_nvidia_gpu() {
+  command -v lspci >/dev/null 2>&1 || return 1
+  lspci | grep -Eiq 'VGA|3D' && lspci | grep -iq 'NVIDIA'
+}
+
+secure_boot_enabled() {
+  command -v mokutil >/dev/null 2>&1 || return 1
+  mokutil --sb-state 2>/dev/null | grep -qi 'enabled'
 }
 
 ensure_state_dir() {
@@ -434,6 +446,90 @@ EOF
   warn "Open a new shell or run: exec bash -l"
 }
 
+install_nvidia_open() {
+  local current_boot_id=""
+  local recorded_boot_id=""
+  local gpu_lines=""
+  local cuda_repo="/etc/yum.repos.d/cuda-rhel10.repo"
+
+  advance_step "Install Rocky NVIDIA open driver"
+  ensure_state_dir
+  dnf -y install dnf-plugins-core pciutils kernel-devel-matched kernel-headers mokutil
+
+  if ! has_nvidia_gpu; then
+    info "No NVIDIA GPU detected. Skipping Rocky NVIDIA setup."
+    return
+  fi
+
+  gpu_lines="$(lspci | grep -i 'NVIDIA' || true)"
+  info "Detected NVIDIA hardware:"
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && log "  - $line"
+  done <<< "$gpu_lines"
+  info "kmos assumes Rocky 10 plus Turing-or-newer NVIDIA hardware here and uses nvidia-open."
+
+  current_boot_id="$(cat /proc/sys/kernel/random/boot_id)"
+
+  if [[ -f "$NVIDIA_REBOOT_MARKER" ]]; then
+    recorded_boot_id="$(cat "$NVIDIA_REBOOT_MARKER")"
+    if [[ "$current_boot_id" == "$recorded_boot_id" ]]; then
+      die "The NVIDIA driver install already ran. Reboot Rocky before continuing."
+    fi
+
+    rm -f "$NVIDIA_REBOOT_MARKER"
+
+    if ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi >/dev/null 2>&1; then
+      die "Reboot after NVIDIA install was detected, but nvidia-smi is still not working. Check Secure Boot enrollment or driver load state before continuing."
+    fi
+
+    touch "$NVIDIA_DONE_MARKER"
+    success "NVIDIA reboot confirmed and nvidia-smi is working."
+  fi
+
+  if [[ -f "$NVIDIA_DONE_MARKER" ]]; then
+    success "Rocky NVIDIA driver is already installed and verified."
+  elif command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+    touch "$NVIDIA_DONE_MARKER"
+    success "NVIDIA driver is already active."
+  else
+    [[ -f "$cuda_repo" ]] || dnf config-manager --add-repo "https://developer.download.nvidia.com/compute/cuda/repos/rhel10/$(uname -m)/cuda-rhel10.repo"
+    dnf clean expire-cache
+    dnf -y install nvidia-open
+
+    if secure_boot_enabled; then
+      warn "UEFI Secure Boot is enabled."
+      if [[ -f /var/lib/dkms/mok.pub ]]; then
+        if ask_yes_no "Import the DKMS MOK key now so the NVIDIA modules can be enrolled on reboot?" "yes"; then
+          mokutil --import /var/lib/dkms/mok.pub
+          warn "At the next reboot, enroll the MOK key in the firmware screen or the NVIDIA modules may not load."
+        else
+          warn "Skipping MOK import. If Secure Boot stays enabled, the NVIDIA modules may fail to load after reboot."
+        fi
+      else
+        warn "Secure Boot is enabled, but /var/lib/dkms/mok.pub is missing. If the driver fails to load after reboot, inspect the DKMS signing state."
+      fi
+    fi
+
+    printf '%s\n' "$current_boot_id" > "$NVIDIA_REBOOT_MARKER"
+    warn "NVIDIA packages installed. Reboot Rocky now, then rerun kmos to verify nvidia-smi and continue."
+    exit 0
+  fi
+
+  if rpm -q nvtop >/dev/null 2>&1; then
+    success "nvtop is already installed."
+    return
+  fi
+
+  if ! dnf -y install nvtop; then
+    warn "nvtop install failed on the current repo set. Enabling CRB and retrying."
+    dnf config-manager --set-enabled crb
+    dnf -y makecache
+    dnf -y install nvtop
+  fi
+
+  success "nvtop installed."
+}
+
 configure_additional_users() {
   local username=""
   local password=""
@@ -475,17 +571,17 @@ describe_scope() {
   log "  - prepares Wi-Fi support on Rocky minimal while ethernet is available"
   log "  - enables EPEL first and only falls back to CRB if needed"
   log "  - installs tar, nano, btop, fastfetch, starship, and zoxide"
+  log "  - installs Rocky 10 NVIDIA drivers with the official nvidia-open path when NVIDIA hardware is present"
+  log "  - verifies the NVIDIA stage with nvidia-smi and then installs nvtop"
   log "  - stages the 4 kmos starship presets"
   log "  - brings up Wi-Fi first when ethernet is not available"
   log "  - can already create additional local users"
-  log "  - prepares the repo for the upcoming KDE and package stages"
+  log "  - prepares the repo for the upcoming KDE and desktop stages"
 }
 
 next_steps() {
   advance_step "Next Rocky work"
   log "Next implementation step:"
-  log "  - detect and install NVIDIA drivers, then verify with nvidia-smi"
-  log "  - install nvtop after the Rocky NVIDIA path is working"
   log "  - install KDE on top of Rocky minimal"
   log "  - add Rocky post-install desktop configuration stages"
 }
@@ -503,6 +599,7 @@ main() {
   enable_cli_repositories
   install_cli_tooling
   stage_shell_presets
+  install_nvidia_open
   configure_additional_users
   describe_scope
   next_steps
