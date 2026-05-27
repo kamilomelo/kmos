@@ -210,6 +210,28 @@ has_nvidia_gpu() {
   lspci | grep -Eiq 'VGA|3D' && lspci | grep -iq 'NVIDIA'
 }
 
+running_kernel_release() {
+  uname -r
+}
+
+latest_installed_kernel_release() {
+  rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-core 2>/dev/null | sort -V | tail -n 1
+}
+
+require_running_latest_kernel() {
+  local running_kernel=""
+  local newest_kernel=""
+
+  running_kernel="$(running_kernel_release)"
+  newest_kernel="$(latest_installed_kernel_release)"
+
+  [[ -n "$newest_kernel" ]] || return 0
+
+  if [[ "$running_kernel" != "$newest_kernel" ]]; then
+    die "A newer kernel is installed ($newest_kernel) but Rocky is still running $running_kernel. Reboot before continuing so DKMS/NVIDIA stays aligned with the running kernel."
+  fi
+}
+
 secure_boot_enabled() {
   command -v mokutil >/dev/null 2>&1 || return 1
   mokutil --sb-state 2>/dev/null | grep -qi 'enabled'
@@ -456,6 +478,7 @@ install_nvidia_open() {
   advance_step "Install Rocky NVIDIA open driver"
   ensure_state_dir
   dnf -y install dnf-plugins-core pciutils kernel-devel-matched kernel-headers mokutil
+  require_running_latest_kernel
 
   if ! has_nvidia_gpu; then
     info "No NVIDIA GPU detected. Skipping Rocky NVIDIA setup."
@@ -517,8 +540,11 @@ install_nvidia_open() {
   fi
 
   if rpm -q nvtop >/dev/null 2>&1; then
-    success "nvtop is already installed."
-    return
+    if command -v nvtop >/dev/null 2>&1; then
+      success "nvtop is already installed."
+      return
+    fi
+    warn "The nvtop package is installed but the binary is missing from PATH. Reinstalling."
   fi
 
   if ! dnf -y install nvtop; then
@@ -528,6 +554,7 @@ install_nvidia_open() {
     dnf -y install nvtop
   fi
 
+  command -v nvtop >/dev/null 2>&1 || die "nvtop installation completed, but no usable nvtop binary was found."
   success "nvtop installed."
 }
 

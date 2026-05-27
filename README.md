@@ -132,6 +132,13 @@ Current Rocky sequence:
 15. create additional users
 16. continue with KDE and desktop stages as they are implemented
 
+For later Rocky updates, keep the NVIDIA path safe by following the same rule:
+- run the update
+- reboot into the newest installed kernel
+- only then continue using `kmos` or validating the NVIDIA stack
+
+The Rocky script now blocks if a newer kernel is installed but not yet running, because that state is exactly where DKMS-backed NVIDIA rebuilds can drift or fail.
+
 ## Current Project Structure
 
 ```text
