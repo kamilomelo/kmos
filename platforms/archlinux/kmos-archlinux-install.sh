@@ -1232,17 +1232,16 @@ install_kmos_assets() {
 }
 
 configure_starship_bash() {
-  local preset="$STARSHIP_PRESET_DIR/$STARSHIP_PRESET_MODE-$STARSHIP_PRESET_THEME.toml"
   local bashrc="$MOUNT_POINT/etc/bash.bashrc"
 
-  if [[ ! -r "$preset" ]]; then
-    warn "Starship preset not found: $preset"
-    return 0
-  fi
-
-  install -Dm0644 "$preset" "$MOUNT_POINT/etc/starship.toml"
   install -Dm0644 /dev/stdin "$MOUNT_POINT/etc/profile.d/10-kmos-starship.sh" <<'STARSHIP_PROFILE'
-export STARSHIP_CONFIG=/etc/starship.toml
+if [[ -f /usr/share/kmos/kde-profile || -f /usr/share/xsessions/plasma.desktop || -f /usr/share/wayland-sessions/plasma.desktop ]]; then
+  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/holow-light.toml
+elif [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_TTY:-}" ]]; then
+  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/holow-light.toml
+else
+  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/tty-term.toml
+fi
 STARSHIP_PROFILE
 
   touch "$bashrc"
