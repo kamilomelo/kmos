@@ -5,6 +5,8 @@
 
 set -Eeuo pipefail
 
+NETWORK_NAMES=()
+
 UI_RESET=""
 UI_BOLD=""
 UI_INFO=""
@@ -121,10 +123,95 @@ wifi_scan_has_results() {
   nmcli -t -f SSID device wifi list ifname "$adapter" 2>/dev/null | grep -q '.'
 }
 
+collect_network_names() {
+  local adapter="$1"
+  local output=""
+  local ssid=""
+  local existing=""
+  local duplicate=0
+  local index=1
+
+  NETWORK_NAMES=()
+  output="$(nmcli -t -f SSID device wifi list ifname "$adapter" 2>/dev/null || true)"
+
+  while IFS= read -r ssid; do
+    [[ -n "$ssid" ]] || continue
+    duplicate=0
+    for existing in "${NETWORK_NAMES[@]}"; do
+      if [[ "$existing" == "$ssid" ]]; then
+        duplicate=1
+        break
+      fi
+    done
+    (( duplicate == 0 )) && NETWORK_NAMES+=("$ssid")
+  done <<< "$output"
+
+  if [[ ${#NETWORK_NAMES[@]} -eq 0 ]]; then
+    [[ -n "$output" ]] && printf '%s\n' "$output" >&2
+    warn "No Wi-Fi names could be parsed from the scan. You can enter the SSID manually."
+    return 1
+  fi
+
+  info "Available Wi-Fi networks:"
+  for ssid in "${NETWORK_NAMES[@]}"; do
+    printf '  %d) %s\n' "$index" "$ssid" >&2
+    ((index++))
+  done
+}
+
+prompt_wifi_credentials() {
+  local -n out_ssid="$1"
+  local -n out_password="$2"
+  local -n out_hidden="$3"
+  local selected_ssid=""
+  local wifi_password=""
+  local choice=""
+
+  printf '\n' >&2
+  if [[ ${#NETWORK_NAMES[@]} -gt 0 ]]; then
+    printf '  m) Manual or hidden network\n' >&2
+    while true; do
+      read -r -p "Select Wi-Fi network [1-${#NETWORK_NAMES[@]}/m]: " choice
+      case "$choice" in
+        [Mm])
+          read -r -p "Wi-Fi SSID: " selected_ssid
+          ask_yes_no "Is this a hidden network?" "no" && out_hidden=1 || out_hidden=0
+          break
+          ;;
+        ''|*[!0-9]*)
+          warn "Invalid selection."
+          ;;
+        *)
+          if (( choice >= 1 && choice <= ${#NETWORK_NAMES[@]} )); then
+            selected_ssid="${NETWORK_NAMES[$((choice - 1))]}"
+            out_hidden=0
+            break
+          fi
+          warn "Invalid selection."
+          ;;
+      esac
+    done
+  else
+    read -r -p "Wi-Fi SSID: " selected_ssid
+    ask_yes_no "Is this a hidden network?" "no" && out_hidden=1 || out_hidden=0
+  fi
+
+  [[ -n "$selected_ssid" ]] || die "SSID cannot be empty."
+  info "Network name is $selected_ssid"
+
+  read -r -s -p "Wi-Fi password: " wifi_password
+  printf '\n' >&2
+  [[ -n "$wifi_password" ]] || die "Password cannot be empty."
+
+  out_ssid="$selected_ssid"
+  out_password="$wifi_password"
+}
+
 main() {
   local adapter=""
   local ssid=""
   local password=""
+  local hidden=0
 
   init_ui
   require_root
@@ -148,6 +235,7 @@ main() {
   printf '\nAvailable networks:\n' >&2
   show_networks "$adapter"
   printf '\n' >&2
+  collect_network_names "$adapter" || true
 
   if ! wifi_scan_has_results "$adapter"; then
     warn "No Wi-Fi networks were detected."
@@ -161,14 +249,13 @@ main() {
       printf '\nAvailable networks after restart:\n' >&2
       show_networks "$adapter"
       printf '\n' >&2
+      collect_network_names "$adapter" || true
     fi
   fi
 
-  ssid="$(ask_text 'SSID')"
-  read -r -s -p "Password: " password
-  printf '\n' >&2
+  prompt_wifi_credentials ssid password hidden
 
-  if ask_yes_no "Is this a hidden SSID?" "no"; then
+  if (( hidden == 1 )); then
     nmcli device wifi connect "$ssid" password "$password" hidden yes ifname "$adapter" || die "Wi-Fi connection failed."
   else
     nmcli device wifi connect "$ssid" password "$password" ifname "$adapter" || die "Wi-Fi connection failed."
