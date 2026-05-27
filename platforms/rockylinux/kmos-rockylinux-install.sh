@@ -279,7 +279,7 @@ prepare_wifi_support() {
   fi
 
   info "Installing Rocky Wi-Fi packages while internet is available."
-  dnf -y install NetworkManager-wifi wpa_supplicant
+  dnf -y --setopt=install_weak_deps=False install NetworkManager-wifi wpa_supplicant
   systemctl enable --now NetworkManager >/dev/null 2>&1 || true
   success "Rocky Wi-Fi support packages installed."
 }
@@ -365,8 +365,8 @@ configure_swapfile() {
 enable_cli_repositories() {
   advance_step "Enable Rocky CLI repositories"
 
-  rpm -q dnf-plugins-core >/dev/null 2>&1 || dnf -y install dnf-plugins-core
-  rpm -q epel-release >/dev/null 2>&1 || dnf -y install epel-release
+  rpm -q dnf-plugins-core >/dev/null 2>&1 || dnf -y --setopt=install_weak_deps=False install dnf-plugins-core
+  rpm -q epel-release >/dev/null 2>&1 || dnf -y --setopt=install_weak_deps=False install epel-release
   dnf -y makecache
   success "EPEL is ready."
 }
@@ -375,11 +375,11 @@ install_cli_tooling() {
   advance_step "Install Rocky CLI tooling"
   export PATH="/usr/local/bin:/root/.local/bin:$HOME/.local/bin:$PATH"
 
-  if ! dnf -y install tar nano btop fastfetch; then
+  if ! dnf -y --setopt=install_weak_deps=False install tar nano btop fastfetch; then
     warn "CLI tooling install failed without CRB. Enabling CRB and retrying."
     dnf config-manager --set-enabled crb
     dnf -y makecache
-    dnf -y install tar nano btop fastfetch
+    dnf -y --setopt=install_weak_deps=False install tar nano btop fastfetch
   fi
 
   if ! command -v zoxide >/dev/null 2>&1; then
@@ -477,7 +477,7 @@ install_nvidia_open() {
 
   advance_step "Install Rocky NVIDIA open driver"
   ensure_state_dir
-  dnf -y install dnf-plugins-core pciutils kernel-devel-matched kernel-headers mokutil
+  dnf -y --setopt=install_weak_deps=False install dnf-plugins-core pciutils kernel-devel-matched kernel-headers mokutil
   require_running_latest_kernel
 
   if ! has_nvidia_gpu; then
@@ -518,7 +518,7 @@ install_nvidia_open() {
   else
     [[ -f "$cuda_repo" ]] || dnf config-manager --add-repo "https://developer.download.nvidia.com/compute/cuda/repos/rhel10/$(uname -m)/cuda-rhel10.repo"
     dnf clean expire-cache
-    dnf -y install nvidia-open
+    dnf -y --setopt=install_weak_deps=False install nvidia-open
 
     if secure_boot_enabled; then
       warn "UEFI Secure Boot is enabled."
@@ -547,11 +547,11 @@ install_nvidia_open() {
     warn "The nvtop package is installed but the binary is missing from PATH. Reinstalling."
   fi
 
-  if ! dnf -y install nvtop; then
+  if ! dnf -y --setopt=install_weak_deps=False install nvtop; then
     warn "nvtop install failed on the current repo set. Enabling CRB and retrying."
     dnf config-manager --set-enabled crb
     dnf -y makecache
-    dnf -y install nvtop
+    dnf -y --setopt=install_weak_deps=False install nvtop
   fi
 
   command -v nvtop >/dev/null 2>&1 || die "nvtop installation completed, but no usable nvtop binary was found."
