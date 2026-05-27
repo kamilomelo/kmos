@@ -448,19 +448,29 @@ eval "$(zoxide init bash)"
 EOF
 )
 
+  rewrite_bashrc_block() {
+    local target_file="$1"
+
+    touch "$target_file"
+    if grep -qF "$bashrc_marker_begin" "$target_file"; then
+      awk -v begin="$bashrc_marker_begin" -v end="$bashrc_marker_end" '
+        $0 == begin { skipping=1; next }
+        $0 == end { skipping=0; next }
+        skipping != 1 { print }
+      ' "$target_file" > "${target_file}.kmos.tmp"
+      mv "${target_file}.kmos.tmp" "$target_file"
+    fi
+
+    printf '%s\n' "$bashrc_block" >> "$target_file"
+  }
+
   mkdir -p /etc/skel
-  touch /etc/skel/.bashrc
-  if ! grep -qF "$bashrc_marker_begin" /etc/skel/.bashrc; then
-    printf '%s\n' "$bashrc_block" >> /etc/skel/.bashrc
-  fi
+  rewrite_bashrc_block /etc/skel/.bashrc
 
   for home_dir in /root /home/*; do
     [[ -d "$home_dir" ]] || continue
     user_bashrc="$home_dir/.bashrc"
-    touch "$user_bashrc"
-    if ! grep -qF "$bashrc_marker_begin" "$user_bashrc"; then
-      printf '%s\n' "$bashrc_block" >> "$user_bashrc"
-    fi
+    rewrite_bashrc_block "$user_bashrc"
   done
 
   if [[ -f "$HOME/.bashrc" ]]; then
