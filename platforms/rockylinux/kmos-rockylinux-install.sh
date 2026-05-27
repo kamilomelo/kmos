@@ -437,7 +437,11 @@ stage_shell_presets() {
   bashrc_block=$(cat <<'EOF'
 
 # >>> kmos shell init >>>
-export STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml
+if [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_TTY:-}" ]]; then
+  export STARSHIP_CONFIG=/opt/kmos/starship-presets/holow-light.toml
+else
+  export STARSHIP_CONFIG=/opt/kmos/starship-presets/tty-term.toml
+fi
 eval "$(starship init bash)"
 eval "$(zoxide init bash)"
 # <<< kmos shell init <<<
