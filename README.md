@@ -91,18 +91,13 @@ Use:
 
 ## Rocky Linux
 
-Rocky Linux support now starts from the `Rocky 10 minimal` post-install state.
+Rocky Linux support starts from the `Rocky 10 minimal` post-install state.
 
-The current Rocky workflow is intentionally conservative:
-- install Rocky Minimal with the official installer first
-- use `/boot/efi`, `/boot`, and `/` only
-- do not create a separate `/home` partition
-- do not create a swap partition
-- boot the installed system
-- run the local `kmos` Rocky script
-- let the Rocky script create a swapfile instead
-- if ethernet is not available, the Rocky script starts by bringing up Wi-Fi
-- the first successful Rocky update run stops on purpose and requires a reboot before tooling or NVIDIA work continues
+Use a minimal disk layout:
+- `/boot/efi`
+- `/`
+
+After the first boot, run the local `kmos` Rocky script. It will create the swapfile, handle Wi-Fi if needed, and stop after the first successful update until you reboot.
 
 Current Rocky entry points:
 
