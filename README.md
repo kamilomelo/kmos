@@ -106,19 +106,19 @@ Current Rocky entry points:
 ./platforms/rockylinux/tools/kmos-rockylinux-wifi-connect.sh
 ```
 
-The Rocky path now covers the pre-KDE minimal workflow. KDE and desktop post-install configuration still come later.
+The Rocky path covers the headless minimal workflow.
 
 Current Rocky sequence:
 1. network + Wi-Fi prep
 2. swapfile
 3. full update -> reboot -> rerun `kmos`
 4. enable EPEL, then use CRB only if the CLI packages need it
-5. install CLI tooling (`tar`, `nano`, `btop`, `fastfetch`, `starship`, `zoxide`)
-6. stage Starship presets and shell hooks, then open a new shell or run `exec bash -l`
+5. install CLI tooling
+6. stage Starship presets and shell hooks
 7. detect NVIDIA hardware; if present, add the official NVIDIA repo and install `nvidia-open`
 8. reboot -> rerun `kmos` -> verify with `nvidia-smi`
 9. create additional users
-10. continue with KDE and desktop stages as they are implemented
+10. continue with later stages as they are implemented
 
 For later Rocky updates, keep the NVIDIA path safe by following the same rule:
 - run the update
