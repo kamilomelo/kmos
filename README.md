@@ -65,8 +65,8 @@ The dispatcher will route to the Arch installer.
 Use the repository from external media, then run Wi-Fi setup first:
 
 ```bash
-mount /dev/<usb-partition> /mnt
-cd /mnt/<kmos-folder>
+mount /dev/<usb-partition> /mnt/usb
+cd /mnt/usb/<kmos-folder>
 ./platforms/archlinux/tools/kmos-wifi-connect.sh
 ```
 
