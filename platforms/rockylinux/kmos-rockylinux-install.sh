@@ -553,23 +553,7 @@ install_nvidia_open() {
     exit 0
   fi
 
-  if rpm -q nvtop >/dev/null 2>&1; then
-    if command -v nvtop >/dev/null 2>&1; then
-      success "nvtop is already installed."
-      return
-    fi
-    warn "The nvtop package is installed but the binary is missing from PATH. Reinstalling."
-  fi
-
-  if ! dnf -y --setopt=install_weak_deps=False install nvtop; then
-    warn "nvtop install failed on the current repo set. Enabling CRB and retrying."
-    dnf config-manager --set-enabled crb
-    dnf -y makecache
-    dnf -y --setopt=install_weak_deps=False install nvtop
-  fi
-
-  command -v nvtop >/dev/null 2>&1 || die "nvtop installation completed, but no usable nvtop binary was found."
-  success "nvtop installed."
+  success "Rocky NVIDIA driver is already installed and verified."
 }
 
 configure_additional_users() {
@@ -614,7 +598,7 @@ describe_scope() {
   log "  - enables EPEL first and only falls back to CRB if needed"
   log "  - installs tar, nano, btop, fastfetch, starship, and zoxide"
   log "  - installs Rocky 10 NVIDIA drivers with the official nvidia-open path when NVIDIA hardware is present"
-  log "  - verifies the NVIDIA stage with nvidia-smi and then installs nvtop"
+  log "  - verifies the NVIDIA stage with nvidia-smi"
   log "  - stages the 4 kmos starship presets"
   log "  - brings up Wi-Fi first when ethernet is not available"
   log "  - can already create additional local users"

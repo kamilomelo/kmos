@@ -128,9 +128,8 @@ Current Rocky sequence:
 11. detect NVIDIA hardware
 12. on Rocky 10 with NVIDIA present, add the official NVIDIA repo and install `nvidia-open`
 13. reboot, rerun `kmos`, and verify with `nvidia-smi`
-14. install `nvtop`
-15. create additional users
-16. continue with KDE and desktop stages as they are implemented
+14. create additional users
+15. continue with KDE and desktop stages as they are implemented
 
 For later Rocky updates, keep the NVIDIA path safe by following the same rule:
 - run the update
