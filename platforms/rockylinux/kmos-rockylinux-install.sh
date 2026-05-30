@@ -602,14 +602,13 @@ describe_scope() {
   log "  - stages the 4 kmos starship presets"
   log "  - brings up Wi-Fi first when ethernet is not available"
   log "  - can already create additional local users"
-  log "  - prepares the repo for the upcoming KDE and desktop stages"
 }
 
 next_steps() {
   advance_step "Next Rocky work"
   log "Next implementation step:"
-  log "  - install KDE on top of Rocky minimal"
-  log "  - add Rocky post-install desktop configuration stages"
+  log "  - continue the headless Rocky workflow"
+  log "  - extend Rocky support with future non-desktop stages as needed"
 }
 
 main() {
