@@ -243,7 +243,7 @@ Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
 
 ### Mode A: Enforced Corporate Appearance
 
-Use this if every user must get the same first-login look with no generic Windows appearance. This is the reliable path, but it will restrict personalization changes.
+Use this if you want Windows to try to enforce the kmos look by policy. This path does not capture a user profile and does not replay anything for later users. It is best-effort on Windows and may still need a manual check after reboot.
 
 #### Enforce Wallpaper, Lock Screen, and Colors
 
@@ -285,13 +285,14 @@ Mode A procedure:
 1. run `Stage Wallpaper`
 2. run `Enforce Wallpaper, Lock Screen, and Colors`
 3. reboot or sign out/sign back in
-4. create users after the machine shows the enforced appearance correctly
+4. verify the machine kept the enforced appearance
+5. create users only after that check passes
 
-Mode A is the reliable corporate-feel path.
+Mode A ends here. Do not run the Mode B blocks in this mode.
 
 ### Mode B: Unlocked Appearance
 
-Use this if users must be free to change wallpaper, lock screen, and colors later. This mode keeps personalization editable, but wallpaper inheritance for new users is still less reliable than colors.
+Use this if you want to set the current user once and then replay that look for new users later. This mode keeps personalization editable and does not use the policy-enforcement block from Mode A.
 
 #### Apply Current User Wallpaper and Dark Mode
 
@@ -448,6 +449,10 @@ Mode B procedure:
 4. run `Apply Lock Screen by PowerShell`
 5. verify the current user looks exactly right
 6. run `Capture and Replay the Current User Appearance for New Users`
+7. reboot or sign out/sign back in
+8. create new users after that
+
+Mode B starts with the current user. It does not include the policy-enforcement block from Mode A.
 
 If wallpaper or personalization still behaves inconsistently after unlocking old policy keys, reboot or sign out/sign back in before continuing with the rest of Mode B.
 
