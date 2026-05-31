@@ -109,7 +109,7 @@ Current Rocky entry points:
 The Rocky path covers the headless minimal workflow.
 
 Current Rocky sequence:
-1. network + Wi-Fi prep
+1. hostname + network + Wi-Fi prep
 2. swapfile
 3. full update -> reboot -> rerun `kmos`
 4. enable EPEL, then use CRB only if the CLI packages need it

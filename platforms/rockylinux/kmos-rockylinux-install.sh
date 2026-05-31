@@ -8,7 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 WIFI_HELPER="$SCRIPT_DIR/tools/kmos-rockylinux-wifi-connect.sh"
 STEP_INDEX=0
-STEP_TOTAL=11
+STEP_TOTAL=12
 STATE_DIR="/var/lib/kmos/rockylinux"
 REBOOT_MARKER="$STATE_DIR/reboot-required-after-update"
 UPDATE_DONE_MARKER="$STATE_DIR/update-baseline-complete"
@@ -157,6 +157,29 @@ require_tools() {
   done
 
   [[ ${#missing[@]} -eq 0 ]] || die "Missing required tools: ${missing[*]}"
+}
+
+current_hostname() {
+  hostnamectl --static 2>/dev/null | awk 'NR==1 { print $1 }'
+}
+
+configure_hostname() {
+  local hostname=""
+  local current=""
+
+  advance_step "Set hostname"
+
+  current="$(current_hostname)"
+  if [[ -n "$current" && "$current" != "localhost" && "$current" != "localhost.localdomain" ]]; then
+    success "Hostname is already set to: $current"
+    return
+  fi
+
+  hostname="$(ask_text 'Enter the desired hostname' 'rocky')"
+  [[ -n "$hostname" ]] || die "Hostname cannot be empty."
+
+  hostnamectl set-hostname "$hostname"
+  success "Hostname set to: $hostname"
 }
 
 detect_linux_id() {
@@ -592,6 +615,7 @@ describe_scope() {
   log "Current scope:"
   log "  - assumes Rocky 10 minimal is already installed"
   log "  - assumes /boot/efi, /boot, and / only"
+  log "  - sets the hostname before network and Wi-Fi setup"
   log "  - creates swap as a swapfile instead of a swap partition"
   log "  - forces a full update and reboot boundary before NVIDIA or tooling"
   log "  - prepares Wi-Fi support on Rocky minimal while ethernet is available"
@@ -617,6 +641,7 @@ main() {
   require_root
   require_tools
   is_rocky || die "This installer only supports Rocky Linux."
+  configure_hostname
   ensure_network
   prepare_wifi_support
   configure_swapfile
