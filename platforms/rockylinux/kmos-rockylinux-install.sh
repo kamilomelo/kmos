@@ -398,11 +398,11 @@ install_cli_tooling() {
   advance_step "Install Rocky CLI tooling"
   export PATH="/usr/local/bin:/root/.local/bin:$HOME/.local/bin:$PATH"
 
-  if ! dnf -y --setopt=install_weak_deps=False install tar nano btop fastfetch; then
+  if ! dnf -y --setopt=install_weak_deps=False install tar nano btop fastfetch ripgrep; then
     warn "CLI tooling install failed without CRB. Enabling CRB and retrying."
     dnf config-manager --set-enabled crb
     dnf -y makecache
-    dnf -y --setopt=install_weak_deps=False install tar nano btop fastfetch
+    dnf -y --setopt=install_weak_deps=False install tar nano btop fastfetch ripgrep
   fi
 
   if ! command -v zoxide >/dev/null 2>&1; then
@@ -620,7 +620,7 @@ describe_scope() {
   log "  - forces a full update and reboot boundary before NVIDIA or tooling"
   log "  - prepares Wi-Fi support on Rocky minimal while ethernet is available"
   log "  - enables EPEL first and only falls back to CRB if needed"
-  log "  - installs tar, nano, btop, fastfetch, starship, and zoxide"
+  log "  - installs tar, nano, btop, fastfetch, ripgrep, starship, and zoxide"
   log "  - installs Rocky 10 NVIDIA drivers with the official nvidia-open path when NVIDIA hardware is present"
   log "  - verifies the NVIDIA stage with nvidia-smi"
   log "  - stages the 4 kmos starship presets"

@@ -9,6 +9,7 @@ license=('MIT')
 depends=(
   'btop'
   'fastfetch'
+  'ripgrep'
   'starship'
   'zoxide'
 )
