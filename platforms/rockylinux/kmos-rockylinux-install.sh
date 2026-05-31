@@ -149,7 +149,7 @@ require_root() {
 
 require_tools() {
   local missing=()
-  local tools=(dnf ping systemctl mkdir cat id useradd chpasswd usermod rpm cp curl)
+  local tools=(dnf ping systemctl hostnamectl mkdir cat id useradd chpasswd usermod rpm cp curl)
   local t
 
   for t in "${tools[@]}"; do
