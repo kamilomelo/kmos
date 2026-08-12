@@ -139,13 +139,23 @@ write_color_scheme_autostart() {
 set -eu
 
 cfg="${XDG_CONFIG_HOME:-$HOME/.config}/kdeglobals"
+marker="${XDG_CONFIG_HOME:-$HOME/.config}/.kmos-colorscheme-applied"
 
-if [ -r "$cfg" ] && grep -q '^[[:space:]]*ColorScheme=kmos$' "$cfg"; then
+if [ -f "$marker" ]; then
   exit 0
 fi
 
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+  kwriteconfig6 --file "$cfg" --group General --key ColorScheme kmos >/dev/null 2>&1 || true
+  kwriteconfig6 --file "$cfg" --group General --key AccentColor "117,117,117" >/dev/null 2>&1 || true
+  kwriteconfig6 --file "$cfg" --group General --key LastUsedCustomAccentColor "117,117,117" >/dev/null 2>&1 || true
+  kwriteconfig6 --file "$cfg" --group General --key LookAndFeelPackage org.kde.kmos.desktop >/dev/null 2>&1 || true
+fi
+
 if command -v plasma-apply-colorscheme >/dev/null 2>&1; then
-  plasma-apply-colorscheme kmos >/dev/null 2>&1 || true
+  if plasma-apply-colorscheme kmos >/dev/null 2>&1 || plasma-apply-colorscheme KMOS >/dev/null 2>&1; then
+    touch "$marker"
+  fi
 fi
 EOF
 
@@ -599,7 +609,9 @@ apply_color_scheme_defaults() {
   install_lookandfeel_defaults
   write_color_scheme_autostart "$autostart_script" "$autostart_desktop"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/color-schemes/KMOS.colors"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/etc/skel/.local/share/color-schemes/kmos.colors"
   install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/color-schemes/KMOS.colors"
+  install -Dm0644 "$ASSET_COLOR_SCHEME" "$MOUNT_POINT/root/.local/share/color-schemes/kmos.colors"
 
   write_kdeglobals_defaults "$MOUNT_POINT/etc/xdg/kdeglobals"
   write_kdeglobals_defaults "$MOUNT_POINT/etc/skel/.config/kdeglobals"
@@ -609,8 +621,9 @@ apply_color_scheme_defaults() {
     while IFS= read -r -d '' home_dir; do
       username="$(basename "$home_dir")"
       install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/KMOS.colors"
+      install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/kmos.colors"
       write_kdeglobals_defaults "$home_dir/.config/kdeglobals"
-      arch-chroot "$MOUNT_POINT" chown "$username:$username" "/home/$username/.config" "/home/$username/.config/kdeglobals" 2>/dev/null || true
+      arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.config" "/home/$username/.local" 2>/dev/null || true
     done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
   fi
 
