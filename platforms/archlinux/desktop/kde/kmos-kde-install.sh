@@ -351,11 +351,11 @@ install_kde_assets() {
   done
 }
 
-remove_kwallet_helpers() {
+remove_optional_kwallet_helpers() {
   local package=""
   local installed=()
 
-  for package in kwallet-pam kwalletmanager ksshaskpass; do
+  for package in kwalletmanager ksshaskpass; do
     if arch-chroot "$MOUNT_POINT" pacman -Q "$package" >/dev/null 2>&1; then
       installed+=("$package")
     fi
@@ -396,37 +396,9 @@ remove_unwanted_packages() {
   fi
 }
 
-write_kwallet_config() {
-  local target="$1"
-
-  install -Dm0644 /dev/stdin "$target" <<'KWALLETRC'
-[Wallet]
-Enabled=false
-First Use=false
-
-[org.freedesktop.secrets]
-apiEnabled=false
-KWALLETRC
-}
-
-disable_kwallet() {
-  local home_dir=""
-  local username=""
-
-  remove_kwallet_helpers
-  write_kwallet_config "$MOUNT_POINT/etc/xdg/kwalletrc"
-  write_kwallet_config "$MOUNT_POINT/etc/skel/.config/kwalletrc"
-  write_kwallet_config "$MOUNT_POINT/root/.config/kwalletrc"
-
-  if [[ -d "$MOUNT_POINT/home" ]]; then
-    while IFS= read -r -d '' home_dir; do
-      username="$(basename "$home_dir")"
-      write_kwallet_config "$home_dir/.config/kwalletrc"
-      arch-chroot "$MOUNT_POINT" chown "$username:$username" "/home/$username/.config" "/home/$username/.config/kwalletrc" 2>/dev/null || true
-    done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
-  fi
-
-  success "KWallet disabled by default."
+preserve_kwallet_backend() {
+  remove_optional_kwallet_helpers
+  success "KWallet backend preserved for Secret Service clients."
 }
 
 read_wpa_value() {
@@ -653,7 +625,7 @@ main() {
   install_kde_packages
   remove_unwanted_packages
   install_kde_assets
-  disable_kwallet
+  preserve_kwallet_backend
   migrate_wifi_to_networkmanager
   enable_kde_services
   bootstrap_paru || warn "AUR helper bootstrap skipped; continuing without AUR packages."
