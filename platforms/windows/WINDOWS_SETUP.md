@@ -499,27 +499,32 @@ ssh localhost
 $fontWork = Join-Path $env:TEMP 'kmos-fonts'
 New-Item -ItemType Directory -Path $fontWork -Force | Out-Null
 
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/extra-fonts/ABeeZee.zip' -OutFile (Join-Path $fontWork 'ABeeZee.zip')
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/extra-fonts/more_sugar.zip' -OutFile (Join-Path $fontWork 'more_sugar.zip')
-Invoke-WebRequest -Uri 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.zip' -OutFile (Join-Path $fontWork 'Hack.zip')
-Invoke-WebRequest -Uri 'https://github.com/google/fonts/raw/main/ofl/comfortaa/Comfortaa%5Bwght%5D.ttf' -OutFile (Join-Path $fontWork 'Comfortaa-wght.ttf')
+$fontApiBase = 'https://api.github.com/repos/kamilomelo/kappa-type/contents/fonts'
+$families = @('kappa-text', 'kappa-mark', 'kappa-form', 'kappa-mono', 'kappa-spin')
 
-Expand-Archive -LiteralPath (Join-Path $fontWork 'ABeeZee.zip') -DestinationPath (Join-Path $fontWork 'ABeeZee') -Force
-Expand-Archive -LiteralPath (Join-Path $fontWork 'more_sugar.zip') -DestinationPath (Join-Path $fontWork 'MoreSugar') -Force
-Expand-Archive -LiteralPath (Join-Path $fontWork 'Hack.zip') -DestinationPath (Join-Path $fontWork 'Hack') -Force
+foreach ($family in $families) {
+    $familyDir = Join-Path $fontWork $family
+    New-Item -ItemType Directory -Path $familyDir -Force | Out-Null
+    $items = Invoke-RestMethod -Uri "$fontApiBase/$family/ttf?ref=main"
 
-explorer.exe (Join-Path $fontWork 'ABeeZee')
-explorer.exe (Join-Path $fontWork 'MoreSugar')
-explorer.exe (Join-Path $fontWork 'Hack')
+    foreach ($item in $items) {
+        if ($item.download_url -and $item.name -like '*.ttf') {
+            Invoke-WebRequest -Uri $item.download_url -OutFile (Join-Path $familyDir $item.name)
+        }
+    }
+
+    explorer.exe $familyDir
+}
+
 explorer.exe $fontWork
 ```
 
-This is the minimal manual set for Windows:
-- ABeeZee Regular
-- Hack Nerd Regular
-- More Sugar Thin
-- Comfortaa  
-The first two font archives are reused from the `kmos` repo via raw URLs, so you do not need to clone the repo on the Windows machine.
+This installs the current Kappa font system for Windows:
+- `Kappa Text`
+- `Kappa Mark`
+- `Kappa Form`
+- `Kappa Mono`
+- `Kappa Spin`
 
 ### Set Windows Terminal Default Font
 
@@ -533,9 +538,9 @@ function Set-TerminalFont {
     if (-not $Target.font) {
         $Target | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
     }
-    $Target.font | Add-Member -NotePropertyName face -NotePropertyValue 'Hack Nerd Font Mono' -Force
+    $Target.font | Add-Member -NotePropertyName face -NotePropertyValue 'Kappa Mono' -Force
     $Target.font | Add-Member -NotePropertyName size -NotePropertyValue 12 -Force
-    $Target | Add-Member -NotePropertyName fontFace -NotePropertyValue 'Hack Nerd Font Mono' -Force
+    $Target | Add-Member -NotePropertyName fontFace -NotePropertyValue 'Kappa Mono' -Force
     $Target | Add-Member -NotePropertyName fontSize -NotePropertyValue 12 -Force
 }
 
@@ -558,7 +563,7 @@ foreach ($profile in $json.profiles.list) {
 $json | ConvertTo-Json -Depth 100 | Set-Content -Path $settings -Encoding UTF8
 ```
 
-Close and reopen Windows Terminal after running that block. The default Terminal font and every explicit Terminal profile, including normal and elevated PowerShell Preview sessions, will use `Hack Nerd Font Mono`.
+Close and reopen Windows Terminal after running that block. The default Terminal font and every explicit Terminal profile, including normal and elevated PowerShell Preview sessions, will use `Kappa Mono`.
 
 ### Install and Configure Starship
 

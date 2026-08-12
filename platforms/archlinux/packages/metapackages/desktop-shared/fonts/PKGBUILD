@@ -6,13 +6,7 @@ pkgdesc="kmos font package set"
 arch=('any')
 url="https://github.com/kamilomelo/kmos"
 license=('MIT')
-depends=(
-  'gnu-free-fonts'
-  'opendesktop-fonts'
-  'otf-font-awesome'
-  'ttf-hack-nerd'
-  'ttf-mononoki-nerd'
-)
+depends=()
 
 package() {
   :

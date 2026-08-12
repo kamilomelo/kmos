@@ -21,12 +21,12 @@ ASSET_KATE_THEME_AYU="$REPO_ROOT/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$REPO_ROOT/assets/kate/kmos-github.theme"
 ASSET_DASHBOARD_ICON="$REPO_ROOT/assets/icons/kmos.ico"
 ASSET_AUR_PACKAGE_LIST="$REPO_AUR_DIR/aur-packages.kmos"
-ASSET_EXTRA_FONTS_DIR="$REPO_ROOT/assets/extra-fonts"
 TARGET_WALLPAPER="/opt/kmos/assets/wallpapers/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
 TARGET_DASHBOARD_ICON="/opt/kmos/assets/icons/kmos.ico"
 TARGET_AUR_PACKAGE_LIST="/opt/kmos/assets/aur/aur-packages.kmos"
+KAPPA_TYPE_API_BASE="https://api.github.com/repos/kamilomelo/kappa-type/contents/fonts"
 
 UI_RESET=""
 UI_BOLD=""
@@ -827,50 +827,53 @@ run_target_pacman_without_packagekit_hook() {
 
 install_extra_fonts() {
   local fonts_dir="$MOUNT_POINT/usr/local/share/fonts/kmos"
-  local asset=""
-  local temp_dir=""
+  local family=""
+  local api_url=""
+  local metadata=""
+  local downloaded=0
+  local legacy_font=""
+  local -a families=(
+    "kappa-text"
+    "kappa-mark"
+    "kappa-form"
+    "kappa-mono"
+    "kappa-spin"
+  )
 
-  [[ -d "$ASSET_EXTRA_FONTS_DIR" ]] || return 0
   install -d "$fonts_dir"
 
-  for asset in "$ASSET_EXTRA_FONTS_DIR"/*; do
-    [[ -e "$asset" ]] || continue
-    case "$asset" in
-      *.zip)
-        temp_dir="$(mktemp -d)"
-        if command -v bsdtar >/dev/null 2>&1; then
-          bsdtar -xf "$asset" -C "$temp_dir"
-        elif command -v unzip >/dev/null 2>&1; then
-          unzip -oq "$asset" -d "$temp_dir"
-        else
-          warn "Skipping extra font archive without extractor support: ${asset##*/}"
-          rm -rf "$temp_dir"
-          continue
-        fi
-        case "${asset##*/}" in
-          ABeeZee.zip)
-            [[ -f "$temp_dir/ABeeZee-Regular.ttf" ]] && install -m 0644 "$temp_dir/ABeeZee-Regular.ttf" "$fonts_dir/ABeeZee-Regular.ttf"
-            [[ -f "$temp_dir/ABeeZee-Italic.ttf" ]] && install -m 0644 "$temp_dir/ABeeZee-Italic.ttf" "$fonts_dir/ABeeZee-Italic.ttf"
-            ;;
-          more_sugar.zip)
-            [[ -f "$temp_dir/MoreSugar-Thin.ttf" ]] && install -m 0644 "$temp_dir/MoreSugar-Thin.ttf" "$fonts_dir/MoreSugar-Thin.ttf"
-            rm -f "$fonts_dir/MoreSugar-Regular.ttf" "$fonts_dir/MoreSugar-Extras.ttf" "$fonts_dir/MoreSugar-Regular.otf" "$fonts_dir/MoreSugar-Thin.otf" "$fonts_dir/MoreSugar-Extras.otf"
-            ;;
-          *)
-            find "$temp_dir" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -exec install -m 0644 {} "$fonts_dir/" \;
-            ;;
-        esac
-        rm -rf "$temp_dir"
-        ;;
-      *.ttf|*.otf|*.ttc)
-        install -m 0644 "$asset" "$fonts_dir/${asset##*/}"
-        ;;
-    esac
+  find "$fonts_dir" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -delete 2>/dev/null || true
+
+  for family in "${families[@]}"; do
+    api_url="$KAPPA_TYPE_API_BASE/$family/ttf?ref=main"
+    metadata="$(curl -fsSL "$api_url")" || die "Could not fetch Kappa font metadata for $family."
+
+    while IFS= read -r download_url; do
+      [[ -n "$download_url" ]] || continue
+      curl -fsSL "$download_url" -o "$fonts_dir/${download_url##*/}" || die "Could not download ${download_url##*/}."
+      downloaded=1
+    done < <(printf '%s\n' "$metadata" | grep -o 'https://raw.githubusercontent.com/[^"]*\.ttf')
+  done
+
+  (( downloaded == 1 )) || die "No Kappa fonts were downloaded."
+
+  for legacy_font in \
+    ABeeZee-Regular.ttf \
+    ABeeZee-Italic.ttf \
+    MoreSugar-Thin.ttf \
+    MoreSugar-Regular.ttf \
+    MoreSugar-Extras.ttf \
+    MoreSugar-Regular.otf \
+    MoreSugar-Thin.otf \
+    MoreSugar-Extras.otf \
+    Comfortaa-wght.ttf
+  do
+    rm -f "$fonts_dir/$legacy_font"
   done
 
   find "$fonts_dir" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -exec chmod 0644 {} +
   arch-chroot "$MOUNT_POINT" fc-cache -r >/dev/null 2>&1 || warn "Could not refresh font cache after installing extra fonts."
-  success "Extra fonts installed from assets."
+  success "Kappa font families installed."
 }
 
 remove_noto_fonts() {
@@ -882,6 +885,24 @@ remove_noto_fonts() {
   find "$MOUNT_POINT/usr/share/fonts" -type f \( -iname 'Noto*.ttf' -o -iname 'Noto*.otf' -o -iname 'Noto*.ttc' \) -delete 2>/dev/null || true
   arch-chroot "$MOUNT_POINT" fc-cache -r >/dev/null 2>&1 || warn "Could not refresh font cache after removing noto fonts."
   success "Noto fonts removed from package database and filesystem."
+}
+
+remove_legacy_kmos_font_packages() {
+  local pkg=""
+  local -a packages=(
+    "gnu-free-fonts"
+    "opendesktop-fonts"
+    "otf-font-awesome"
+    "ttf-hack-nerd"
+    "ttf-mononoki-nerd"
+    "ttf-comfortaa"
+  )
+
+  for pkg in "${packages[@]}"; do
+    if arch-chroot "$MOUNT_POINT" pacman -Q "$pkg" >/dev/null 2>&1; then
+      run_target_pacman_without_packagekit_hook "-Rdd --noconfirm $pkg" || warn "Could not remove legacy font package: $pkg"
+    fi
+  done
 }
 
 write_aur_installer_script() {
@@ -981,6 +1002,7 @@ apply_post_tweaks() {
   apply_virtual_desktop_defaults
   install_extra_fonts
   remove_noto_fonts
+  remove_legacy_kmos_font_packages
   install_aur_packages
   record_profile
   success "KDE post-install hook executed."
