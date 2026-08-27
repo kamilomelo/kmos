@@ -1260,6 +1260,15 @@ fi
 BASHRC
   fi
 
+  if ! grep -q '^# kmos default editor$' "$bashrc"; then
+    cat >> "$bashrc" <<'BASHRC_EDITOR'
+
+# kmos default editor
+export EDITOR=nano
+export VISUAL=nano
+BASHRC_EDITOR
+  fi
+
   success "Starship configured for Bash."
 }
 

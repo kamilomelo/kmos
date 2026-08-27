@@ -8,6 +8,7 @@ url="https://github.com/kamilomelo/kmos"
 license=('MIT')
 depends=(
   'filezilla'
+  'networkmanager-openvpn'
   'openvpn'
   'rclone'
   'rsync'

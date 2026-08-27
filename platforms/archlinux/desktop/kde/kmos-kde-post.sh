@@ -680,11 +680,25 @@ install_yakuake_skin() {
   cp -a "$ASSET_YAKUAKE_SKIN_DIR" "$target_asset_skin"
 }
 
+install_yakuake_autostart() {
+  install -Dm0644 /dev/stdin "$MOUNT_POINT/etc/xdg/autostart/kmos-yakuake.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Yakuake
+Comment=Launch Yakuake when the KDE session starts
+Exec=yakuake
+Terminal=false
+OnlyShowIn=KDE;
+X-GNOME-Autostart-enabled=false
+EOF
+}
+
 apply_yakuake_defaults() {
   local home_dir=""
   local username=""
 
   install_yakuake_skin
+  install_yakuake_autostart
 
   write_yakuake_rc "$MOUNT_POINT/etc/skel/.config/yakuakerc"
   write_yakuake_rc "$MOUNT_POINT/root/.config/yakuakerc"
