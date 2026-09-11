@@ -10,6 +10,7 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 KDE_PROFILE="${kmos_kde_profile:-full}"
 INSTALL_AUR="${kmos_INSTALL_AUR:-yes}"
+AUR_HELPER="${kmos_AUR_HELPER:-paru}"
 REPO_AUR_DIR="$REPO_ROOT/packages/aur"
 ASSET_WALLPAPER="$REPO_ROOT/assets/wallpapers/kmos-wallpaper.png"
 ASSET_COLOR_SCHEME="$REPO_ROOT/assets/color-schemes/kmos.colors"
@@ -941,6 +942,7 @@ set -Eeuo pipefail
 
 list_file="/usr/share/kmos/aur/aur-packages.kmos"
 pacman_wrapper="/usr/share/kmos/bin/kmos-pacman-nohooks"
+aur_helper="${1:-paru}"
 packages=()
 line=""
 
@@ -953,7 +955,18 @@ while IFS= read -r line; do
 done < "$list_file"
 
 [[ ${#packages[@]} -gt 0 ]] || exit 0
-paru --pacman "$pacman_wrapper" --noprovides -S --needed --noconfirm --skipreview "${packages[@]}"
+case "$aur_helper" in
+  paru)
+    paru --pacman "$pacman_wrapper" --noprovides -S --needed --noconfirm --skipreview "${packages[@]}"
+    ;;
+  yay)
+    yay --pacman "$pacman_wrapper" -S --needed --noconfirm --answerclean None --answerdiff None "${packages[@]}"
+    ;;
+  *)
+    printf 'Unknown AUR helper: %s\n' "$aur_helper" >&2
+    exit 1
+    ;;
+esac
 EOF
 }
 
@@ -970,11 +983,16 @@ EOF
 install_aur_packages() {
   local builder_user=""
   local installer_script="$MOUNT_POINT/usr/share/kmos/bin/kmos-install-aur-packages.sh"
-  local sudoers_file="$MOUNT_POINT/etc/sudoers.d/10-kmos-paru"
+  local sudoers_file="$MOUNT_POINT/etc/sudoers.d/10-kmos-aur-helper"
   local group_list=""
   local -a packages=()
 
   [[ "$INSTALL_AUR" == "yes" ]] || return 0
+
+  case "$AUR_HELPER" in
+    paru|yay) ;;
+    *) warn "Unknown AUR helper: $AUR_HELPER; skipping AUR package installation."; return 0 ;;
+  esac
 
   [[ -r "$ASSET_AUR_PACKAGE_LIST" ]] || return 0
   mapfile -t packages < <(read_package_list_file "$ASSET_AUR_PACKAGE_LIST")
@@ -989,8 +1007,8 @@ install_aur_packages() {
     warn "User $builder_user is not in wheel; skipping AUR package installation."
     return 0
   fi
-  if ! arch-chroot "$MOUNT_POINT" bash -lc "command -v paru >/dev/null 2>&1"; then
-    warn "paru is not installed in the target system; skipping AUR package installation."
+  if ! arch-chroot "$MOUNT_POINT" bash -lc "command -v '$AUR_HELPER' >/dev/null 2>&1"; then
+    warn "$AUR_HELPER is not installed in the target system; skipping AUR package installation."
     return 0
   fi
 
@@ -1002,7 +1020,7 @@ EOF
 
   write_aur_installer_script "$installer_script"
 
-  if ! arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- /usr/share/kmos/bin/kmos-install-aur-packages.sh; then
+  if ! arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- /usr/share/kmos/bin/kmos-install-aur-packages.sh "$AUR_HELPER"; then
     rm -f "$sudoers_file"
     warn "AUR package installation failed."
     return 0

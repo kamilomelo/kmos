@@ -13,6 +13,7 @@ METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main
 KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/archlinux/desktop/kde/kmos-kde-post.sh"
 KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
 INSTALL_AUR="${kmos_INSTALL_AUR:-yes}"
+AUR_HELPER="${kmos_AUR_HELPER:-paru}"
 PRUNE_LIST_FILE="$REPO_ROOT/assets/prune/kde-remove-packages.kmos"
 PACMAN_RETRIES="${kmos_PACMAN_RETRIES:-4}"
 
@@ -228,6 +229,9 @@ load_kde_metapackages() {
 
   detail "Profile" "$KDE_PROFILE"
   detail "AUR" "$INSTALL_AUR"
+  if [[ "$INSTALL_AUR" == "yes" ]]; then
+    detail "AUR helper" "$AUR_HELPER"
+  fi
   detail "Metapackages" "${SELECTED_METAPACKAGES[*]}"
   detail "Packages" "${#KDE_PACKAGES[@]}"
 }
@@ -557,20 +561,19 @@ bootstrap_paru() {
 $builder_user ALL=(ALL:ALL) NOPASSWD: /usr/bin/pacman
 EOF
 
-  arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "git clone https://aur.archlinux.org/paru-bin.git '$aur_root/paru-bin'" || {
-    rm -f "$sudoers_file"
-    warn "Could not clone paru-bin from AUR."
-    return 1
-  }
-  if arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "cd '$aur_root/paru-bin' && makepkg -si --noconfirm --needed --clean --cleanbuild"; then
-    if arch-chroot "$MOUNT_POINT" bash -lc "command -v paru >/dev/null 2>&1 && paru --version >/dev/null 2>&1"; then
-      rm -f "$sudoers_file"
-      success "paru-bin bootstrapped for KDE install."
-      return 0
+  if arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "git clone https://aur.archlinux.org/paru-bin.git '$aur_root/paru-bin'"; then
+    if arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "cd '$aur_root/paru-bin' && makepkg -si --noconfirm --needed --clean --cleanbuild"; then
+      if arch-chroot "$MOUNT_POINT" bash -lc "command -v paru >/dev/null 2>&1 && paru --version >/dev/null 2>&1"; then
+        rm -f "$sudoers_file"
+        success "paru-bin bootstrapped for KDE install."
+        return 0
+      fi
+      warn "paru-bin installed but is not runnable on this target. Falling back to source build."
     fi
-    warn "paru-bin installed but is not runnable on this target. Falling back to source build."
-    arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm paru-bin paru-bin-debug >/dev/null 2>&1 || true
+  else
+    warn "Could not clone paru-bin from AUR. Falling back to source build."
   fi
+  arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm paru-bin paru-bin-debug >/dev/null 2>&1 || true
 
   if ! arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm rust cargo; then
     rm -f "$sudoers_file"
@@ -593,12 +596,65 @@ EOF
   success "paru bootstrapped for KDE install."
 }
 
+bootstrap_yay() {
+  local builder_user=""
+  local sudoers_file="$MOUNT_POINT/etc/sudoers.d/10-kmos-yay-bootstrap"
+  local aur_root=""
+
+  [[ "$INSTALL_AUR" == "yes" ]] || return 0
+
+  builder_user="$(get_aur_builder_user)" || {
+    warn "Could not find a normal user for AUR helper installation."
+    return 1
+  }
+  aur_root="/home/$builder_user/.kaur"
+
+  if arch-chroot "$MOUNT_POINT" bash -lc "command -v yay >/dev/null 2>&1 && yay --version >/dev/null 2>&1"; then
+    return 0
+  fi
+
+  arch-chroot "$MOUNT_POINT" mkdir -p "$aur_root"
+  arch-chroot "$MOUNT_POINT" rm -rf "$aur_root/yay-bin"
+  arch-chroot "$MOUNT_POINT" chown -R "$builder_user:$builder_user" "/home/$builder_user/.kaur"
+
+  install -Dm0440 /dev/stdin "$sudoers_file" <<EOF
+$builder_user ALL=(ALL:ALL) NOPASSWD: /usr/bin/pacman
+EOF
+
+  arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "git clone https://aur.archlinux.org/yay-bin.git '$aur_root/yay-bin'" || {
+    rm -f "$sudoers_file"
+    warn "Could not clone yay-bin from AUR."
+    return 1
+  }
+  if ! arch-chroot "$MOUNT_POINT" runuser -u "$builder_user" -- bash -lc "cd '$aur_root/yay-bin' && makepkg -si --noconfirm --needed --clean --cleanbuild"; then
+    rm -f "$sudoers_file"
+    warn "Could not install yay-bin."
+    return 1
+  fi
+  if ! arch-chroot "$MOUNT_POINT" bash -lc "command -v yay >/dev/null 2>&1 && yay --version >/dev/null 2>&1"; then
+    rm -f "$sudoers_file"
+    warn "yay-bin installed but yay is not runnable on this target."
+    return 1
+  fi
+
+  rm -f "$sudoers_file"
+  success "yay-bin bootstrapped for KDE install."
+}
+
+bootstrap_aur_helper() {
+  case "$AUR_HELPER" in
+    paru) bootstrap_paru ;;
+    yay) bootstrap_yay ;;
+    *) warn "Unknown AUR helper: $AUR_HELPER"; return 1 ;;
+  esac
+}
+
 run_kde_post_installer() {
   local local_installer="$SCRIPT_DIR/kmos-kde-post.sh"
   local fetched_installer="/tmp/kmos-kde-post.sh"
 
   if [[ -f "$local_installer" ]]; then
-    kmos_INSTALL_AUR="$INSTALL_AUR" bash "$local_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
+    kmos_INSTALL_AUR="$INSTALL_AUR" kmos_AUR_HELPER="$AUR_HELPER" bash "$local_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
     return 0
   fi
 
@@ -610,7 +666,7 @@ run_kde_post_installer() {
     die "KDE post installer not found locally and neither curl nor wget is available."
   fi
 
-  kmos_INSTALL_AUR="$INSTALL_AUR" bash "$fetched_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
+  kmos_INSTALL_AUR="$INSTALL_AUR" kmos_AUR_HELPER="$AUR_HELPER" bash "$fetched_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
 }
 
 main() {
@@ -628,7 +684,7 @@ main() {
   preserve_kwallet_backend
   migrate_wifi_to_networkmanager
   enable_kde_services
-  bootstrap_paru || warn "AUR helper bootstrap skipped; continuing without AUR packages."
+  bootstrap_aur_helper || warn "AUR helper bootstrap skipped; continuing without AUR packages."
   run_kde_post_installer
   final_success "KDE desktop layer installed. Reboot when ready."
 }
