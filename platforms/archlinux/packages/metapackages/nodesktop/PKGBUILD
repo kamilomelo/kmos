@@ -1,6 +1,6 @@
 # Maintainer: Kamilo Melo
 pkgname=kmos-nodesktop
-pkgver=2026.09.04
+pkgver=2026.09.13
 pkgrel=1
 pkgdesc="kmos no-desktop command-line package set"
 arch=('any')
@@ -13,6 +13,7 @@ depends=(
   'ripgrep'
   'starship'
   'syncthing'
+  'tree'
   'zoxide'
 )
 
