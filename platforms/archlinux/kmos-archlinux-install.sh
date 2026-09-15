@@ -1327,6 +1327,9 @@ wpa_quote() {
 configure_wifi_after_boot() {
   local wpa_config="$MOUNT_POINT/etc/wpa_supplicant/wpa_supplicant-$WIFI_ADAPTER.conf"
   local link_config="$MOUNT_POINT/etc/systemd/network/10-kmos-wifi.link"
+  local iwd_handoff="$WIFI_HANDOFF_DIR/iwd"
+  local iwd_target="$MOUNT_POINT/var/lib/iwd"
+  local use_iwd=0
 
   [[ "$ENABLE_WIFI_AFTER_BOOT" == "yes" ]] || return 0
 
@@ -1348,6 +1351,21 @@ configure_wifi_after_boot() {
 
   chmod 600 "$wpa_config"
 
+  if [[ -d "$iwd_handoff" ]] && find "$iwd_handoff" -maxdepth 1 -type f -print -quit | grep -q .; then
+    install -d -m 0700 "$iwd_target" "$MOUNT_POINT/etc/iwd"
+    cp -a "$iwd_handoff/." "$iwd_target/"
+    chown -R root:root "$iwd_target"
+    chmod -R go-rwx "$iwd_target"
+    install -Dm0644 /dev/stdin "$MOUNT_POINT/etc/iwd/main.conf" <<'IWD_CONFIG'
+[General]
+EnableNetworkConfiguration=true
+
+[Network]
+NameResolvingService=systemd
+IWD_CONFIG
+    use_iwd=1
+  fi
+
   if [[ -n "$WIFI_MAC" ]]; then
     install -Dm0644 /dev/stdin "$link_config" <<WIFI_LINK
 [Match]
@@ -1358,17 +1376,35 @@ Name=$WIFI_ADAPTER
 WIFI_LINK
   fi
 
-  if ! arch-chroot "$MOUNT_POINT" systemctl enable "wpa_supplicant@$WIFI_ADAPTER.service"; then
-    warn "Could not enable wpa_supplicant@$WIFI_ADAPTER.service. The base install will continue."
-    return 0
+  if ((use_iwd == 1)); then
+    arch-chroot "$MOUNT_POINT" systemctl disable "wpa_supplicant@$WIFI_ADAPTER.service" "dhcpcd@$WIFI_ADAPTER.service" >/dev/null 2>&1 || true
+    if ! arch-chroot "$MOUNT_POINT" systemctl enable iwd.service systemd-resolved.service; then
+      warn "Could not enable persistent iwd networking. Falling back to wpa_supplicant."
+      arch-chroot "$MOUNT_POINT" systemctl disable iwd.service systemd-resolved.service >/dev/null 2>&1 || true
+      use_iwd=0
+    else
+      arch-chroot "$MOUNT_POINT" ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+    fi
   fi
-  if ! arch-chroot "$MOUNT_POINT" systemctl enable "dhcpcd@$WIFI_ADAPTER.service"; then
-    warn "Could not enable dhcpcd@$WIFI_ADAPTER.service. The base install will continue."
-    return 0
+
+  if ((use_iwd == 0)); then
+    if ! arch-chroot "$MOUNT_POINT" systemctl enable "wpa_supplicant@$WIFI_ADAPTER.service"; then
+      warn "Could not enable wpa_supplicant@$WIFI_ADAPTER.service. The base install will continue."
+      return 0
+    fi
+    if ! arch-chroot "$MOUNT_POINT" systemctl enable "dhcpcd@$WIFI_ADAPTER.service"; then
+      warn "Could not enable dhcpcd@$WIFI_ADAPTER.service. The base install will continue."
+      return 0
+    fi
   fi
   rm -f "$WIFI_HANDOFF_DIR/adapter" "$WIFI_HANDOFF_DIR/ssid" "$WIFI_HANDOFF_DIR/password" "$WIFI_HANDOFF_DIR/hidden"
+  rm -rf "$iwd_handoff"
   rmdir "$WIFI_HANDOFF_DIR" 2>/dev/null || true
-  success "Wi-Fi configured for first boot."
+  if ((use_iwd == 1)); then
+    success "Wi-Fi configured for first boot with the working iwd profile."
+  else
+    success "Wi-Fi configured for first boot with wpa_supplicant."
+  fi
 }
 
 configure_wired_network_after_boot() {

@@ -1,6 +1,6 @@
 # Maintainer: Kamilo Melo
 pkgname=kmos-nodesktop
-pkgver=2026.09.13
+pkgver=2026.09.15
 pkgrel=1
 pkgdesc="kmos no-desktop command-line package set"
 arch=('any')
@@ -9,6 +9,7 @@ license=('MIT')
 depends=(
   'btop'
   'fastfetch'
+  'iwd'
   'opencode'
   'ripgrep'
   'starship'

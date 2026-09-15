@@ -487,6 +487,7 @@ migrate_wifi_to_networkmanager() {
 
 enable_kde_services() {
   if arch-chroot "$MOUNT_POINT" pacman -Q networkmanager >/dev/null 2>&1; then
+    arch-chroot "$MOUNT_POINT" systemctl disable iwd.service >/dev/null 2>&1 || true
     arch-chroot "$MOUNT_POINT" systemctl disable dhcpcd.service >/dev/null 2>&1 || true
     arch-chroot "$MOUNT_POINT" systemctl enable NetworkManager.service
   fi

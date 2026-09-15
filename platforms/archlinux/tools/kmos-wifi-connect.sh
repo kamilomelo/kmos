@@ -122,7 +122,7 @@ print_banner() {
 
 require_tools() {
   local missing=()
-  local tools=(chmod ip iwctl mkdir rfkill ping sed timedatectl)
+  local tools=(chmod cp ip iwctl mkdir rfkill ping sed timedatectl)
   local t
 
   for t in "${tools[@]}"; do
@@ -377,6 +377,12 @@ save_wifi_handoff() {
   printf '%s\n' "$password" > "$WIFI_HANDOFF_DIR/password"
   printf '%s\n' "$hidden_network" > "$WIFI_HANDOFF_DIR/hidden"
   chmod 600 "$WIFI_HANDOFF_DIR/adapter" "$WIFI_HANDOFF_DIR/ssid" "$WIFI_HANDOFF_DIR/password" "$WIFI_HANDOFF_DIR/hidden"
+
+  if [[ -d /var/lib/iwd ]]; then
+    mkdir -p "$WIFI_HANDOFF_DIR/iwd"
+    cp -a /var/lib/iwd/. "$WIFI_HANDOFF_DIR/iwd/"
+    chmod -R go-rwx "$WIFI_HANDOFF_DIR/iwd"
+  fi
 }
 
 verify_internet() {
