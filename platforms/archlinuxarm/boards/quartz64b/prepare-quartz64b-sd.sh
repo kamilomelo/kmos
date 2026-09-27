@@ -569,23 +569,23 @@ cleanup_workdir_prompt() {
     info "Custom work directory preserved; inspect and remove it manually when finished: $WORK_DIR"
     return
   fi
-  printf '\nDirectorio de trabajo: %s\n' "$WORK_DIR"
-  printf '  1) Conservar para preparar otra SD sin volver a descargar (predeterminado)\n'
-  printf '  2) Borrar descargas, firmas y archivos de verificacion\n'
+  printf '\nWork directory: %s\n' "$WORK_DIR"
+  printf '  1) Keep downloads for another SD card (default)\n'
+  printf '  2) Delete downloads, signatures and verification files\n'
   while true; do
-    read -r -p 'Que desea hacer? [1-2] (predeterminado: 1): ' choice
+    read -r -p 'Choose an action [1-2] (default: 1): ' choice
     choice=${choice:-1}
     case "$choice" in
       1)
-        info 'Directorio de trabajo conservado.'
+        info 'Work directory kept.'
         return
         ;;
       2)
         rm -rf -- "$WORK_DIR"
-        info 'Directorio de trabajo borrado.'
+        info 'Work directory deleted.'
         return
         ;;
-      *) warn 'Seleccione 1 o 2.' ;;
+      *) warn 'Choose 1 or 2.' ;;
     esac
   done
 }

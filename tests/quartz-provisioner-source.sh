@@ -29,25 +29,6 @@ if (find_local_repository) >/dev/null 2>&1; then
 fi
 SCRIPT_DIR="$repo/platforms/archlinuxarm/boards/quartz64b"
 
-# Fake clone into an isolated private directory; never contact GitHub here.
-TMPDIR=$fixture
-git() {
-  [[ "$1" == clone && "$2" == --depth && "$3" == 1 && "$4" == --branch && "$5" == main ]] || return 1
-  local target=$7
-  mkdir -p "$target/platforms/archlinux/packages/metapackages/kde/noapps" \
-    "$target/platforms/archlinux/packages/metapackages/nodesktop" \
-    "$target/platforms/archlinux/assets/starship-presets" \
-    "$target/platforms/archlinuxarm/boards/quartz64b"
-  cp "$repo/platforms/archlinux/packages/metapackages/kde/noapps/PKGBUILD" "$target/platforms/archlinux/packages/metapackages/kde/noapps/PKGBUILD"
-  cp "$repo/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD" "$target/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD"
-  cp "$repo/platforms/archlinux/assets/starship-presets/tty-term.toml" "$target/platforms/archlinux/assets/starship-presets/tty-term.toml"
-  cp "$repo/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" "$target/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh"
-  cp "$repo/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" "$target/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
-}
-checkout=$(checkout_kmos)
-[[ -x "$checkout/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" ]]
-unset -f git
-
 # Declining the initial confirmation must not invoke pacman or change the board.
 ask_yes_no() { return 1; }
 require_root_and_arm() { :; }
@@ -56,13 +37,24 @@ if (main) > "$fixture/declined-output" 2>&1; then
   printf 'Declined provisioning unexpectedly succeeded.\n' >&2
   exit 1
 fi
-grep -q 'Cancelado sin modificar el sistema' "$fixture/declined-output"
+grep -q 'Cancelled without modifying the system' "$fixture/declined-output"
+
+# With consent, the first package stage must use this checkout, not re-clone.
+(
+  ask_yes_no() { return 0; }
+  initialize_pacman() { :; }
+  install_kmos_packages() {
+    [[ "$1" == "$repo" ]] || exit 1
+    exit 0
+  }
+  main
+)
 
 # Even an affirmative Wi-Fi answer is harmless when no adapter is present.
 ask_yes_no() { return 0; }
 detect_wifi_adapter() { return 1; }
 configure_wifi 2> "$fixture/wifi-warning"
-grep -q 'No se detecto adaptador Wi-Fi' "$fixture/wifi-warning"
+grep -q 'No Wi-Fi adapter detected' "$fixture/wifi-warning"
 
 pacman() {
   case "$1" in
@@ -89,5 +81,5 @@ fi
 
 PRIMARY_USER=example
 configure_syncthing 2> "$fixture/syncthing-warning"
-grep -q 'Syncthing no esta instalado' "$fixture/syncthing-warning"
+grep -q 'Syncthing is not installed' "$fixture/syncthing-warning"
 printf 'Quartz provisioner uses local KMOS files and honors skipped packages: OK.\n'

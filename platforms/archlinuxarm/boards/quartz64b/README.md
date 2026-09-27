@@ -62,24 +62,22 @@ networking or a compatible adapter will be necessary.
 
 ## Provision KMOS headless, then optionally KDE
 
-After confirming internet access on the booted Quartz64, download the
-provisioner from the published GitHub `main` branch and run it from the local
-console (shown for a root login). The cloned checkout is pinned to the commit
-that GitHub returns when the run begins:
+After confirming internet access on the booted Quartz64, use `git` to clone
+the repository and run its executable provisioner. From the local root console:
 
 ```bash
-curl -fL -o provision-kmos-headless.sh \
-  https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
-chmod +x provision-kmos-headless.sh
-./provision-kmos-headless.sh
+command -v git
+git clone https://github.com/kamilomelo/kmos.git
+cd kmos
+./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
 ```
 
-It asks before any update, initializes Arch Linux ARM's keyring, updates the
-system, installs the base tools and `git`, then clones KMOS over HTTPS into a
-unique private directory under `/var/tmp`. It records the cloned commit and
-uses that checkout for all manifests and assets. If the downloaded entry point
-differs from the cloned commit, it restarts from the cloned version. The clone
-is retained for inspection; it is never silently replaced or deleted.
+If `command -v git` prints nothing, Git must first be installed **on the
+board** using its working network. Do not attempt the clone until it is
+available. The provisioner validates the local checkout and reports its commit
+before asking permission to make changes. It never fetches another copy or
+replaces files in your clone. Its initial `pacman -Syu` can update the board
+kernel, so back up the working card before confirming provisioning.
 
 Headless provisioning installs available ARM CLI packages, asks before
 skipping unavailable packages, configures terminal presets, hostname, timezone

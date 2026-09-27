@@ -6,7 +6,6 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-readonly KMOS_REPOSITORY='https://github.com/kamilomelo/kmos.git'
 SCRIPT_DIR=$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")
 REPOSITORY_DIR=""
 PRIMARY_USER=""
@@ -34,9 +33,9 @@ usage() {
   cat <<'EOF'
 Usage: ./provision-kmos-headless.sh
 
-Requires a working network connection on an already booted Quartz64. Clones
-KMOS from GitHub, records one commit, and uses that checkout for every package
-manifest, asset and helper. Does not modify the board's bootloader.
+Run this script from a complete local KMOS Git checkout on an already booted
+Quartz64. Uses the checkout's package manifests, assets and helper scripts.
+It does not clone another repository or modify the board's bootloader.
 EOF
 }
 
@@ -53,7 +52,7 @@ ask_yes_no() {
     case "$answer" in
       [Yy]|[Yy][Ee][Ss]) return 0 ;;
       [Nn]|[Nn][Oo]) return 1 ;;
-      *) warn 'Responda y o n.' ;;
+      *) warn 'Please answer yes or no.' ;;
     esac
   done
 }
@@ -63,10 +62,10 @@ prompt_secret() {
   while true; do
     read -r -s -p "$prompt: " first
     printf '\n' >&2
-    [[ -n "$first" ]] || { warn 'La contrasena no puede estar vacia.'; continue; }
-    read -r -s -p "Confirme $prompt: " second
+    [[ -n "$first" ]] || { warn 'Password cannot be empty.'; continue; }
+    read -r -s -p "Confirm $prompt: " second
     printf '\n' >&2
-    [[ "$first" == "$second" ]] || { warn 'Las contrasenas no coinciden.'; continue; }
+    [[ "$first" == "$second" ]] || { warn 'Passwords do not match.'; continue; }
     printf '%s\n' "$first"
     unset first second
     return
@@ -74,10 +73,10 @@ prompt_secret() {
 }
 
 require_root_and_arm() {
-  [[ $(uname -m) == aarch64 ]] || die "Este script es para aarch64; arquitectura actual: $(uname -m)"
+  [[ $(uname -m) == aarch64 ]] || die "This script requires AArch64; current architecture: $(uname -m)"
   ((EUID == 0)) && return
-  command -v sudo >/dev/null 2>&1 || die 'Se requiere acceso root, pero sudo no esta instalado.'
-  info 'Se requiere acceso root; sudo solicitara su contrasena.'
+  command -v sudo >/dev/null 2>&1 || die 'Root access is required, but sudo is not installed.'
+  info 'Root access is required; sudo will prompt for your password.'
   exec sudo -- "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
 }
 
@@ -85,35 +84,27 @@ parse_arguments() {
   while (($#)); do
     case "$1" in
       -h|--help) usage; exit 0 ;;
-      *) die "Opcion desconocida: $1" ;;
+      *) die "Unknown option: $1" ;;
     esac
   done
 }
 
 find_local_repository() {
   local repository_dir=""
-  repository_dir=$(cd -- "$SCRIPT_DIR/../../../.." && pwd -P) || die 'No se pudo localizar la copia local de KMOS.'
+  repository_dir=$(cd -- "$SCRIPT_DIR/../../../.." && pwd -P) || die 'Could not locate the local KMOS checkout.'
   validate_repository "$repository_dir"
   printf '%s\n' "$repository_dir"
 }
 
 validate_repository() {
   local repository_dir=$1
-  [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD" ]] || die 'Falta el manifiesto headless. Copie el repositorio KMOS completo al Quartz64 antes de ejecutar el script.'
-  [[ -r "$repository_dir/platforms/archlinux/assets/starship-presets/tty-term.toml" ]] || die 'Faltan los presets de KMOS. Copie el repositorio completo.'
-  [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" ]] || die 'Falta el provisionador Quartz64 en la copia local.'
-  [[ -x "$repository_dir/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" ]] || die 'Falta el helper Wi-Fi de Quartz64.'
-  [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/kde/noapps/PKGBUILD" ]] || die 'Falta el manifiesto KDE de KMOS.'
-}
-
-checkout_kmos() {
-  local work_dir repository_dir
-  work_dir=$(mktemp -d "${TMPDIR:-/var/tmp}/kmos-quartz.XXXXXXXX") || die 'No se pudo crear un directorio de descarga privado.'
-  repository_dir="$work_dir/kmos"
-  info "Descargando KMOS de GitHub a $repository_dir"
-  git clone --depth 1 --branch main "$KMOS_REPOSITORY" "$repository_dir" || die "Fallo la descarga; se conserva $work_dir para inspeccion."
-  validate_repository "$repository_dir"
-  printf '%s\n' "$repository_dir"
+  [[ -d "$repository_dir/.git" ]] || die 'A complete KMOS Git checkout is required.'
+  [[ $(git -C "$repository_dir" rev-parse --show-toplevel) == "$repository_dir" ]] || die 'The KMOS path does not match the Git checkout root.'
+  [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD" ]] || die 'Headless package manifest missing. Clone the complete KMOS repository onto the Quartz64.'
+  [[ -r "$repository_dir/platforms/archlinux/assets/starship-presets/tty-term.toml" ]] || die 'KMOS terminal presets missing. Clone the complete repository.'
+  [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" ]] || die 'Quartz64 provisioner missing from the checkout.'
+  [[ -x "$repository_dir/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" ]] || die 'Quartz64 Wi-Fi helper missing from the checkout.'
+  [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/kde/noapps/PKGBUILD" ]] || die 'KMOS KDE manifest missing from the checkout.'
 }
 
 configure_pacman() {
@@ -128,7 +119,7 @@ configure_pacman() {
 }
 
 initialize_pacman() {
-  info 'Inicializando keyring y actualizando Arch Linux ARM.'
+  info 'Initializing the package keyring and updating Arch Linux ARM.'
   pacman-key --init
   pacman-key --populate archlinuxarm
   pacman -Syu --needed --noconfirm
@@ -138,7 +129,7 @@ initialize_pacman() {
 
 load_kmos_packages() {
   local pkgbuild=$1
-  [[ -r "$pkgbuild" ]] || die "No existe el metapaquete KMOS: $pkgbuild"
+  [[ -r "$pkgbuild" ]] || die "KMOS package manifest not found: $pkgbuild"
   awk -F"'" '
     /^depends=\(/ { in_depends=1; next }
     in_depends && /^\)/ { exit }
@@ -148,24 +139,24 @@ load_kmos_packages() {
 
 handle_unavailable_package() {
   local package=$1 choice
-  printf '\n%s no esta disponible en los repositorios aarch64.\n' "$package"
+  printf '\n%s is unavailable in the AArch64 repositories.\n' "$package"
   case "$package" in
-    opencode) printf 'Fuente oficial para inspeccionar/compilar: https://github.com/anomalyco/opencode\n' ;;
-    *) printf 'No hay una fuente oficial de compilacion declarada automaticamente para este paquete.\n' ;;
+    opencode) printf 'Upstream source for inspection or building: https://github.com/anomalyco/opencode\n' ;;
+    *) printf 'No upstream build source is configured automatically for this package.\n' ;;
   esac
   while true; do
-    read -r -p 'Omitir [o], cancelar [c], o mostrar fuente [f]? [o]: ' choice
-    choice=${choice:-o}
+    read -r -p 'Skip [s], cancel [c], or show upstream [u]? [s]: ' choice
+    choice=${choice:-s}
     case "$choice" in
-      [Oo]) warn "Se omitira $package."; return ;;
-      [Ff])
+      [Ss]) warn "Skipping $package."; return ;;
+      [Uu])
         case "$package" in
-          opencode) printf 'Fuente oficial: https://github.com/anomalyco/opencode\n' ;;
-          *) printf 'No hay fuente declarada para %s.\n' "$package" ;;
+          opencode) printf 'Upstream source: https://github.com/anomalyco/opencode\n' ;;
+          *) printf 'No upstream source configured for %s.\n' "$package" ;;
         esac
         ;;
-      [Cc]) die "Cancelado antes de omitir $package." ;;
-      *) warn 'Seleccione o, c o f.' ;;
+      [Cc]) die "Cancelled before skipping $package." ;;
+      *) warn 'Choose s, c, or u.' ;;
     esac
   done
 }
@@ -173,14 +164,14 @@ handle_unavailable_package() {
 install_kmos_packages() {
   local repository_dir=$1 package package_lines package_summary=""
   local -a packages=()
-  package_lines=$(load_kmos_packages "$repository_dir/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD") || die 'No se pudo leer el manifiesto headless.'
-  [[ -n "$package_lines" ]] || die 'KMOS no definio paquetes headless.'
+  package_lines=$(load_kmos_packages "$repository_dir/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD") || die 'Could not read the headless package manifest.'
+  [[ -n "$package_lines" ]] || die 'KMOS does not define headless packages.'
   mapfile -t packages <<< "$package_lines"
-  ((${#packages[@]} > 0)) || die 'KMOS no definio paquetes headless.'
+  ((${#packages[@]} > 0)) || die 'KMOS does not define headless packages.'
   printf -v package_summary '%s ' "${packages[@]}"
-  info "Conjunto KMOS actual: ${package_summary% }"
+  info "KMOS headless package set: ${package_summary% }"
   for package in "${packages[@]}"; do
-    [[ "$package" =~ ^[a-zA-Z0-9@._+:-]+$ ]] || die "Nombre de paquete invalido en KMOS: $package"
+    [[ "$package" =~ ^[a-zA-Z0-9@._+:-]+$ ]] || die "Invalid KMOS package name: $package"
     if pacman -Si "$package" >/dev/null 2>&1; then
       AVAILABLE_PACKAGES+=("$package")
     else
@@ -191,7 +182,7 @@ install_kmos_packages() {
   ((${#AVAILABLE_PACKAGES[@]} == 0)) || pacman -S --needed --noconfirm "${AVAILABLE_PACKAGES[@]}"
   if ((${#SKIPPED_PACKAGES[@]} > 0)); then
     printf -v package_summary '%s ' "${SKIPPED_PACKAGES[@]}"
-    warn "Paquetes omitidos por decision del usuario: ${package_summary% }"
+    warn "Packages skipped by your choice: ${package_summary% }"
   fi
 }
 
@@ -223,13 +214,13 @@ resolve_kde_metapackage() {
   for previous in "${KDE_METAPACKAGES[@]}"; do
     [[ "$previous" != "$name" ]] || return 0
   done
-  relative=$(kde_metapackage_path "$name") || die "Metapaquete KDE desconocido: $name"
+  relative=$(kde_metapackage_path "$name") || die "Unknown KDE metapackage: $name"
   manifest="$REPOSITORY_DIR/platforms/archlinux/packages/metapackages/$relative"
-  package_lines=$(load_kmos_packages "$manifest") || die "No se pudo leer $manifest"
+  package_lines=$(load_kmos_packages "$manifest") || die "Could not read $manifest"
   if [[ -n "$package_lines" ]]; then mapfile -t dependencies <<< "$package_lines"; fi
   KDE_METAPACKAGES+=("$name")
   for dependency in "${dependencies[@]}"; do
-    [[ "$dependency" =~ ^[a-zA-Z0-9@._+:-]+$ ]] || die "Dependencia KDE invalida: $dependency"
+    [[ "$dependency" =~ ^[a-zA-Z0-9@._+:-]+$ ]] || die "Invalid KDE dependency: $dependency"
     if [[ "$dependency" == kmos-* ]]; then
       resolve_kde_metapackage "$dependency"
     else
@@ -247,19 +238,19 @@ offer_kde_desktop() {
   local -a available=() missing=()
   local -a full=(kmos-audio kmos-browsers kmos-devices kmos-docs kmos-filesystems kmos-fonts kmos-graphics kmos-kde-base kmos-kde-multimedia kmos-kde-utils kmos-maintenance kmos-network kmos-privacy)
   local metapackage
-  ask_yes_no 'Instalar un escritorio KDE ahora?' no || return 0
+  ask_yes_no 'Install a KDE desktop now?' no || return 0
   for graphics_device in /dev/dri/card[0-9]*; do
     [[ -e "$graphics_device" ]] && break
   done
-  [[ -e "$graphics_device" ]] || { warn 'No se detecto un dispositivo DRM en /dev/dri; KDE no se instalara hasta verificar graficos en Quartz64.'; return 0; }
-  read -r -p 'Perfil KDE [noapps/full] (noapps): ' profile
+  [[ -e "$graphics_device" ]] || { warn 'No DRM device found in /dev/dri; KDE will not be installed until Quartz64 graphics are verified.'; return 0; }
+  read -r -p 'KDE profile [noapps/full] (noapps): ' profile
   profile=${profile:-noapps}
   case "$profile" in
     noapps) resolve_kde_metapackage kmos-kde-noapps ;;
     full)
       for metapackage in "${full[@]}"; do resolve_kde_metapackage "$metapackage"; done
       ;;
-    *) die 'Perfil KDE invalido; se conserva el sistema headless.' ;;
+    *) die 'Invalid KDE profile; the headless system remains available.' ;;
   esac
   for package in "${KDE_PACKAGES[@]}"; do
     if pacman -Si "$package" >/dev/null 2>&1; then
@@ -270,35 +261,35 @@ offer_kde_desktop() {
   done
   for package in plasma-desktop plasma-workspace kwin sddm networkmanager; do
     if ! pacman -Si "$package" >/dev/null 2>&1; then
-      warn "Componente KDE esencial no disponible para ARM: $package. No se instalaran paquetes KDE."
+      warn "Essential KDE component unavailable on ARM: $package. No KDE packages will be installed."
       return 0
     fi
   done
   if ((${#missing[@]} > 0)); then
     printf -v missing_summary '%s ' "${missing[@]}"
-    warn "Dependencias KDE opcionales no disponibles en ARM: ${missing_summary% }."
-    info 'No se compilaran fuentes ni se usaran binarios x86 automaticamente.'
-    ask_yes_no 'Omitir esos paquetes y continuar con KDE?' no || { info 'KDE aplazado; el sistema headless sigue funcionando.'; return 0; }
+    warn "Optional KDE packages unavailable on ARM: ${missing_summary% }."
+    info 'Source builds and x86 binaries will not be used automatically.'
+    ask_yes_no 'Skip those packages and continue with KDE?' no || { info 'KDE deferred; the headless system remains available.'; return 0; }
   fi
-  ((${#available[@]} > 0)) || die 'No hay paquetes KDE disponibles.'
+  ((${#available[@]} > 0)) || die 'No KDE packages are available.'
   printf -v summary '%s ' "${available[@]}"
-  info "KDE $profile instalara: ${summary% }"
-  ask_yes_no 'Instalar KDE en el Quartz64?' no || return 0
+  info "KDE $profile will install: ${summary% }"
+  ask_yes_no 'Install KDE on the Quartz64?' no || return 0
   pacman -S --needed --noconfirm "${available[@]}"
   for package in plasma-desktop plasma-workspace kwin sddm networkmanager; do
-    pacman -Q "$package" >/dev/null || die "Falta componente KDE despues de instalar: $package"
+    pacman -Q "$package" >/dev/null || die "KDE component missing after installation: $package"
   done
   # Keep iwd + networkd in charge of Wi-Fi and Ethernet until NM migration is
   # verified on the physical board; never disable the working network here.
   systemctl enable sddm.service
   systemctl set-default graphical.target
-  info 'KDE instalado. La red headless sigue activa; NetworkManager no se iniciara hasta validar la migracion en el board.'
+  info 'KDE installed. Headless networking remains active; NetworkManager will not start until migration is validated on the board.'
 }
 
 configure_kmos_terminal() {
   local repository_dir=$1
   local preset="$repository_dir/platforms/archlinux/assets/starship-presets/tty-term.toml"
-  [[ -r "$preset" ]] || die 'No se encontro el preset tty de KMOS.'
+  [[ -r "$preset" ]] || die 'KMOS TTY preset not found.'
   install -Dm0644 "$preset" /usr/share/kmos/starship-presets/tty-term.toml
   install -Dm0644 /dev/stdin /etc/profile.d/10-kmos-starship.sh <<'EOF'
 export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/tty-term.toml
@@ -324,21 +315,21 @@ EOF
 
 configure_identity() {
   local timezone locale keymap
-  read -r -p 'Hostname nuevo: ' HOSTNAME_VALUE
-  [[ "$HOSTNAME_VALUE" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || die 'Hostname invalido.'
+  read -r -p 'New hostname: ' HOSTNAME_VALUE
+  [[ "$HOSTNAME_VALUE" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || die 'Invalid hostname.'
   read -r -p 'Timezone [Europe/Zurich]: ' timezone
   timezone=${timezone:-Europe/Zurich}
-  [[ "$timezone" =~ ^[a-zA-Z0-9_+/-]+$ && "$timezone" != *..* ]] || die 'Timezone invalida.'
-  [[ -e "/usr/share/zoneinfo/$timezone" ]] || die "Timezone inexistente: $timezone"
+  [[ "$timezone" =~ ^[a-zA-Z0-9_+/-]+$ && "$timezone" != *..* ]] || die 'Invalid timezone.'
+  [[ -e "/usr/share/zoneinfo/$timezone" ]] || die "Timezone does not exist: $timezone"
   read -r -p 'Locale [en_US.UTF-8]: ' locale
   locale=${locale:-en_US.UTF-8}
-  [[ "$locale" =~ ^[a-zA-Z_]+\.UTF-8$ ]] || die 'Locale invalida.'
-  read -r -p 'Keymap de consola [us]: ' keymap
+  [[ "$locale" =~ ^[a-zA-Z_]+\.UTF-8$ ]] || die 'Invalid locale.'
+  read -r -p 'Console keymap [us]: ' keymap
   keymap=${keymap:-us}
-  [[ "$keymap" =~ ^[a-zA-Z0-9_-]+$ ]] || die 'Keymap invalido.'
+  [[ "$keymap" =~ ^[a-zA-Z0-9_-]+$ ]] || die 'Invalid keymap.'
   ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
   if [[ -e /dev/rtc0 ]]; then
-    hwclock --systohc || warn 'No se pudo actualizar el reloj de hardware; se conservara la hora del sistema.'
+    hwclock --systohc || warn 'Could not update the hardware clock; system time remains unchanged.'
   fi
   grep -q "^$locale UTF-8" /etc/locale.gen || sed -i "s/^#$locale UTF-8/$locale UTF-8/" /etc/locale.gen
   grep -q "^$locale UTF-8" /etc/locale.gen || printf '%s UTF-8\n' "$locale" >> /etc/locale.gen
@@ -356,11 +347,11 @@ EOF
 create_administrator() {
   local username password additional add_password
   while true; do
-    read -r -p 'Usuario administrador principal: ' username
+    read -r -p 'Primary administrator username: ' username
     [[ "$username" =~ ^[a-z_][a-z0-9_-]*$ ]] && break
-    warn 'Nombre de usuario invalido.'
+    warn 'Invalid username.'
   done
-  password=$(prompt_secret "Contrasena de $username")
+  password=$(prompt_secret "Password for $username")
   if id "$username" >/dev/null 2>&1; then
     usermod -aG wheel "$username"
   else
@@ -370,16 +361,16 @@ create_administrator() {
   unset password
   PRIMARY_USER=$username
 
-  while ask_yes_no 'Crear otro usuario?' no; do
-    read -r -p 'Usuario adicional: ' additional
-    [[ "$additional" =~ ^[a-z_][a-z0-9_-]*$ ]] || { warn 'Nombre de usuario invalido.'; continue; }
-    add_password=$(prompt_secret "Contrasena de $additional")
+  while ask_yes_no 'Create another user?' no; do
+    read -r -p 'Additional username: ' additional
+    [[ "$additional" =~ ^[a-z_][a-z0-9_-]*$ ]] || { warn 'Invalid username.'; continue; }
+    add_password=$(prompt_secret "Password for $additional")
     if id "$additional" >/dev/null 2>&1; then
       usermod -aG users "$additional"
     else
       useradd -m -s /bin/bash "$additional"
     fi
-    if ask_yes_no "Dar sudo a $additional?" no; then
+    if ask_yes_no "Grant sudo access to $additional?" no; then
       usermod -aG wheel "$additional"
     fi
     printf '%s:%s\n' "$additional" "$add_password" | chpasswd
@@ -438,22 +429,22 @@ detect_wifi_adapter() {
 }
 
 configure_wifi() {
-  ask_yes_no 'Configurar Wi-Fi persistente ahora?' no || return
+  ask_yes_no 'Configure persistent Wi-Fi now?' no || return
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
-  [[ -n "$WIFI_ADAPTER" ]] || { warn 'No se detecto adaptador Wi-Fi. Se conserva Ethernet.'; return; }
+  [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter detected. Ethernet remains configured.'; return; }
   "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
-  info 'Wi-Fi configurado; iwd y systemd-networkd conservaran la conexion al reiniciar.'
+  info 'Wi-Fi configured; iwd and systemd-networkd will retain the connection after reboot.'
 }
 
 configure_swap() {
   local size
-  read -r -p 'Swapfile [4G, 0 para omitir]: ' size
+  read -r -p 'Swapfile size [4G, 0 to skip]: ' size
   size=${size:-4G}
   [[ "$size" == 0 ]] && return
-  [[ "$size" =~ ^[1-9][0-9]*[MG]$ ]] || die 'Swap invalido. Use 0, 512M o 4G.'
+  [[ "$size" =~ ^[1-9][0-9]*[MG]$ ]] || die 'Invalid swap size. Use 0, 512M, or 4G.'
   if [[ -e /swapfile || -L /swapfile ]]; then
-    if ! ask_yes_no 'Ya existe /swapfile. Reemplazarlo? Esto destruye su contenido.' no; then
-      info 'Swap existente conservado.'
+    if ! ask_yes_no '/swapfile already exists. Replace it? Its contents will be lost.' no; then
+      info 'Existing swapfile kept.'
       return 0
     fi
   fi
@@ -469,53 +460,46 @@ configure_swap() {
 
 remove_alarm() {
   getent passwd alarm >/dev/null || return
-  ask_yes_no 'Eliminar el usuario inicial alarm y su home?' yes || return
-  id "$PRIMARY_USER" >/dev/null || die 'El usuario administrador no existe; alarm no sera eliminado.'
+  ask_yes_no 'Remove the initial alarm user and its home directory?' yes || return
+  id "$PRIMARY_USER" >/dev/null || die 'Administrator account is missing; alarm will not be removed.'
   userdel -r alarm
 }
 
 configure_syncthing() {
-  pacman -Q syncthing >/dev/null 2>&1 || { warn 'Syncthing no esta instalado; se omite su servicio.'; return; }
-  ask_yes_no "Activar Syncthing para $PRIMARY_USER?" no || return
+  pacman -Q syncthing >/dev/null 2>&1 || { warn 'Syncthing is not installed; its service will be skipped.'; return; }
+  ask_yes_no "Enable Syncthing for $PRIMARY_USER?" no || return
   systemctl enable --now "syncthing@$PRIMARY_USER.service"
 }
 
 verify_installation() {
   local package
-  info 'Verificando configuracion.'
+  info 'Verifying configuration.'
   for package in iwd nano openssh sudo "${AVAILABLE_PACKAGES[@]}"; do
-    pacman -Q "$package" >/dev/null || die "Falta el paquete esperado: $package"
+    pacman -Q "$package" >/dev/null || die "Expected package missing: $package"
   done
   id "$PRIMARY_USER" >/dev/null
-  id -nG "$PRIMARY_USER" | grep -qw wheel || die "$PRIMARY_USER no pertenece a wheel."
+  id -nG "$PRIMARY_USER" | grep -qw wheel || die "$PRIMARY_USER is not in the wheel group."
   sudo -l -U "$PRIMARY_USER" >/dev/null
-  [[ $(cat /etc/hostname) == "$HOSTNAME_VALUE" ]] || die 'Hostname no coincide.'
+  [[ $(cat /etc/hostname) == "$HOSTNAME_VALUE" ]] || die 'Hostname does not match.'
   systemctl is-enabled sshd.service systemd-networkd.service systemd-resolved.service >/dev/null
-  [[ -f /usr/share/kmos/starship-presets/tty-term.toml ]] || die 'Falta preset de Starship.'
+  [[ -f /usr/share/kmos/starship-presets/tty-term.toml ]] || die 'Starship preset is missing.'
   if [[ -n "$WIFI_ADAPTER" ]]; then
     systemctl is-enabled iwd.service >/dev/null
-    iwctl station "$WIFI_ADAPTER" show || warn 'No se pudo consultar el estado Wi-Fi.'
+    iwctl station "$WIFI_ADAPTER" show || warn 'Could not query Wi-Fi status.'
   fi
 }
 
 main() {
   parse_arguments "$@"
+  REPOSITORY_DIR=$(find_local_repository)
   require_root_and_arm "$@"
-  info 'Se actualizara Arch Linux ARM, se descargara KMOS de GitHub y se configurara el sistema.'
-  ask_yes_no 'Continuar con el aprovisionamiento?' no || die 'Cancelado sin modificar el sistema.'
-  if [[ -n "${KMOS_PINNED_CHECKOUT:-}" ]]; then
-    REPOSITORY_DIR=$KMOS_PINNED_CHECKOUT
-    validate_repository "$REPOSITORY_DIR"
-  else
-    initialize_pacman
-    REPOSITORY_DIR=$(checkout_kmos)
-    if ! cmp -s -- "${BASH_SOURCE[0]}" "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh"; then
-      info 'El script descargado difiere; continuando con el provisionador del mismo commit que sus archivos.'
-      export KMOS_PINNED_CHECKOUT=$REPOSITORY_DIR
-      exec "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" "$@"
-    fi
+  info "KMOS checkout commit: $(git -C "$REPOSITORY_DIR" rev-parse HEAD)"
+  if [[ -n $(git -C "$REPOSITORY_DIR" status --porcelain --untracked-files=no) ]]; then
+    warn 'This checkout has local changes; the files used may differ from the displayed commit.'
   fi
-  info "KMOS commit usado: $(git -C "$REPOSITORY_DIR" rev-parse HEAD)"
+  info 'Arch Linux ARM will be updated and configured from this KMOS checkout.'
+  ask_yes_no 'Continue with provisioning?' no || die 'Cancelled without modifying the system.'
+  initialize_pacman
   install_kmos_packages "$REPOSITORY_DIR"
   configure_kmos_terminal "$REPOSITORY_DIR"
   configure_identity
@@ -527,9 +511,9 @@ main() {
   configure_syncthing
   remove_alarm
   verify_installation
-  info 'Provisionamiento KMOS headless completado.'
+  info 'KMOS headless provisioning complete.'
   offer_kde_desktop
-  info 'Reinicie cuando le convenga y compruebe red y sesion grafica localmente.'
+  info 'Reboot when convenient, then check networking and any graphical session locally.'
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
