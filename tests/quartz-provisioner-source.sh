@@ -7,6 +7,10 @@ repo=$(git rev-parse --show-toplevel)
 source "$repo/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh"
 
 [[ $(find_local_repository) == "$repo" ]]
+if LC_ALL=C grep -q '[^ -~]' "$repo/platforms/archlinux/assets/starship-presets/tty-term.toml"; then
+  printf 'Linux-console Starship preset contains non-ASCII glyphs.\n' >&2
+  exit 1
+fi
 REPOSITORY_DIR=$repo
 resolve_kde_metapackage kmos-kde-noapps
 printf '%s\n' "${KDE_PACKAGES[@]}" | grep -qx plasma-desktop
@@ -82,4 +86,59 @@ fi
 PRIMARY_USER=example
 configure_syncthing 2> "$fixture/syncthing-warning"
 grep -q 'Syncthing is not installed' "$fixture/syncthing-warning"
+
+# Stage KDE fonts and Konsole settings with a fake upstream clone and fake cache.
+# All destination paths are below the temporary fixture; never touch the host.
+git() {
+  if [[ "$1" == clone ]]; then
+    local target=${!#} style
+    mkdir -p "$target/fonts/kappa-mono/ttf"
+    for style in Regular Bold Italic BoldItalic; do
+      printf 'fixture font\n' > "$target/fonts/kappa-mono/ttf/KappaMono-$style.ttf"
+    done
+  elif [[ "$1" == -C && "$3" == sparse-checkout && "$4" == set ]]; then
+    [[ "$5" == fonts/kappa-mono/ttf ]]
+  elif [[ "$1" == -C && "$3" == rev-parse && "$4" == HEAD ]]; then
+    printf 'fixture-commit\n'
+  else
+    return 1
+  fi
+}
+fc-cache() { [[ "$1" == -f && "$2" == "$fixture/root/usr/local/share/fonts/kmos" ]]; }
+fc-match() { printf 'Kappa Mono\n'; }
+TMPDIR=$fixture
+install_kappa_mono_fonts "$fixture/root/usr/local/share/fonts/kmos"
+for style in Regular Bold Italic BoldItalic; do
+  [[ $(stat -c %a "$fixture/root/usr/local/share/fonts/kmos/KappaMono-$style.ttf") == 644 ]]
+done
+configure_kde_terminal "$repo" "$fixture/root"
+grep -Fxq 'Font=Kappa Mono,11,-1,5,50,0,0,0,0,0' "$fixture/root/usr/share/konsole/kmos.profile"
+grep -Fxq 'DefaultProfile=kmos.profile' "$fixture/root/etc/xdg/konsolerc"
+printf 'user settings\n' > "$fixture/root/etc/xdg/konsolerc"
+configure_kde_terminal "$repo" "$fixture/root" 2>/dev/null
+grep -Fxq 'user settings' "$fixture/root/etc/xdg/konsolerc"
+unset -f git fc-cache fc-match
+
+# Ethernet remains usable through KDE; Wi-Fi is the final configuration gate.
+(
+  parse_arguments() { :; }
+  find_local_repository() { printf '%s\n' "$repo"; }
+  require_root_and_arm() { :; }
+  ask_yes_no() { return 0; }
+  initialize_pacman() { :; }
+  install_kmos_packages() { :; }
+  configure_kmos_terminal() { :; }
+  configure_identity() { :; }
+  create_administrator() { :; }
+  configure_ssh() { :; }
+  configure_networkd() { :; }
+  configure_swap() { :; }
+  configure_syncthing() { :; }
+  remove_alarm() { :; }
+  offer_kde_desktop() { printf 'kde\n' >> "$fixture/steps"; }
+  configure_wifi() { printf 'wifi\n' >> "$fixture/steps"; }
+  verify_installation() { printf 'verify\n' >> "$fixture/steps"; }
+  main
+)
+[[ $(cat "$fixture/steps") == $'kde\nwifi\nverify' ]]
 printf 'Quartz provisioner uses local KMOS files and honors skipped packages: OK.\n'

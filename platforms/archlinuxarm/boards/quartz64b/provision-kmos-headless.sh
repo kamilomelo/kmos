@@ -102,6 +102,8 @@ validate_repository() {
   [[ $(git -C "$repository_dir" rev-parse --show-toplevel) == "$repository_dir" ]] || die 'The KMOS path does not match the Git checkout root.'
   [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD" ]] || die 'Headless package manifest missing. Clone the complete KMOS repository onto the Quartz64.'
   [[ -r "$repository_dir/platforms/archlinux/assets/starship-presets/tty-term.toml" ]] || die 'KMOS terminal presets missing. Clone the complete repository.'
+  [[ -r "$repository_dir/platforms/archlinux/assets/starship-presets/holow-light.toml" ]] || die 'KMOS KDE terminal preset missing.'
+  [[ -r "$repository_dir/platforms/archlinux/assets/konsole/kmos.colorscheme" ]] || die 'KMOS Konsole color scheme missing.'
   [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" ]] || die 'Quartz64 provisioner missing from the checkout.'
   [[ -x "$repository_dir/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" ]] || die 'Quartz64 Wi-Fi helper missing from the checkout.'
   [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/kde/noapps/PKGBUILD" ]] || die 'KMOS KDE manifest missing from the checkout.'
@@ -233,6 +235,51 @@ resolve_kde_metapackage() {
   done
 }
 
+install_kappa_mono_fonts() (
+  local target_dir=${1:-/usr/local/share/fonts/kmos} work_dir font source
+  command -v git >/dev/null 2>&1 || die 'Git is required to retrieve the Kappa Mono font repository.'
+  command -v fc-cache >/dev/null 2>&1 || die 'fontconfig is required for KDE font discovery.'
+  work_dir=$(mktemp -d "${TMPDIR:-/var/tmp}/kmos-kappa-mono.XXXXXXXX") || die 'Could not create a private font staging directory.'
+  trap 'rm -rf -- "$work_dir"' EXIT
+  git clone --quiet --depth 1 --filter=blob:none --sparse \
+    https://github.com/kamilomelo/kappa-type.git "$work_dir/kappa-type" || die 'Could not clone the Kappa Type font source.'
+  git -C "$work_dir/kappa-type" sparse-checkout set fonts/kappa-mono/ttf || die 'Could not select Kappa Mono font files.'
+  info "Kappa Type commit used: $(git -C "$work_dir/kappa-type" rev-parse HEAD)"
+  for font in Regular Bold Italic BoldItalic; do
+    source="$work_dir/kappa-type/fonts/kappa-mono/ttf/KappaMono-$font.ttf"
+    [[ -s "$source" ]] || die "Kappa Mono font missing: $source"
+  done
+  for font in Regular Bold Italic BoldItalic; do
+    install -Dm0644 "$work_dir/kappa-type/fonts/kappa-mono/ttf/KappaMono-$font.ttf" \
+      "$target_dir/KappaMono-$font.ttf"
+  done
+  fc-cache -f "$target_dir" || die 'Could not refresh the Kappa Mono font cache.'
+  fc-match -f '%{family}\n' 'Kappa Mono' | grep -Fqi 'Kappa Mono' || die 'fontconfig could not find Kappa Mono after installation.'
+  info 'Kappa Mono installed and visible to fontconfig.'
+)
+
+configure_kde_terminal() {
+  local repository_dir=$1 root=${2:-}
+  install -Dm0644 "$repository_dir/platforms/archlinux/assets/konsole/kmos.colorscheme" "$root/usr/share/konsole/kmos.colorscheme"
+  install -Dm0644 /dev/stdin "$root/usr/share/konsole/kmos.profile" <<'EOF'
+[Appearance]
+ColorScheme=kmos
+Font=Kappa Mono,11,-1,5,50,0,0,0,0,0
+
+[General]
+Name=kmos
+Parent=FALLBACK/
+EOF
+  if [[ ! -e "$root/etc/xdg/konsolerc" && ! -L "$root/etc/xdg/konsolerc" ]]; then
+    install -Dm0644 /dev/stdin "$root/etc/xdg/konsolerc" <<'EOF'
+[Desktop Entry]
+DefaultProfile=kmos.profile
+EOF
+  else
+    warn 'Existing system Konsole settings preserved. Select the kmos profile with Kappa Mono in Konsole if necessary.'
+  fi
+}
+
 offer_kde_desktop() {
   local profile package summary="" missing_summary="" graphics_device=""
   local -a available=() missing=()
@@ -279,6 +326,8 @@ offer_kde_desktop() {
   for package in plasma-desktop plasma-workspace kwin sddm networkmanager; do
     pacman -Q "$package" >/dev/null || die "KDE component missing after installation: $package"
   done
+  install_kappa_mono_fonts
+  configure_kde_terminal "$REPOSITORY_DIR"
   # Keep iwd + networkd in charge of Wi-Fi and Ethernet until NM migration is
   # verified on the physical board; never disable the working network here.
   systemctl enable sddm.service
@@ -287,18 +336,29 @@ offer_kde_desktop() {
 }
 
 configure_kmos_terminal() {
-  local repository_dir=$1
+  local repository_dir=$1 preset_file
   local preset="$repository_dir/platforms/archlinux/assets/starship-presets/tty-term.toml"
   [[ -r "$preset" ]] || die 'KMOS TTY preset not found.'
-  install -Dm0644 "$preset" /usr/share/kmos/starship-presets/tty-term.toml
+  for preset_file in "$repository_dir"/platforms/archlinux/assets/starship-presets/*.toml; do
+    install -Dm0644 "$preset_file" "/usr/share/kmos/starship-presets/${preset_file##*/}"
+  done
   install -Dm0644 /dev/stdin /etc/profile.d/10-kmos-starship.sh <<'EOF'
-export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/tty-term.toml
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
+  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/holow-light.toml
+else
+  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/tty-term.toml
+fi
 EOF
   touch /etc/bash.bashrc
   if ! grep -q '^# kmos headless shell$' /etc/bash.bashrc; then
     cat >> /etc/bash.bashrc <<'EOF'
 
 # kmos headless shell
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
+  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/holow-light.toml
+else
+  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/tty-term.toml
+fi
 if [[ $- == *i* ]] && command -v starship >/dev/null 2>&1; then
   eval "$(starship init bash)"
 fi
@@ -508,13 +568,13 @@ main() {
   create_administrator
   configure_ssh
   configure_networkd
-  configure_wifi
   configure_swap
   configure_syncthing
   remove_alarm
-  verify_installation
-  info 'KMOS headless provisioning complete.'
   offer_kde_desktop
+  configure_wifi
+  verify_installation
+  info 'KMOS provisioning complete.'
   info 'Reboot when convenient, then check networking and any graphical session locally.'
 }
 

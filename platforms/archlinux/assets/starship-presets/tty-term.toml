@@ -9,7 +9,7 @@
 # No Nerd Font, powerline, RGB, or Unicode drawing dependency.
 
 format = """
-[ ░▒▓█$sudo█▓▒░ ](backa)\
+[ KMOS $sudo ](backa)\
 $username\
 ${custom.cpu_temp}\
 $time\

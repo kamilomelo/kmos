@@ -101,15 +101,28 @@ skipping unavailable packages, configures terminal presets, hostname, timezone
 (default `Europe/Zurich`), locale, administrator and optional users, swap
 (default `4G`, `0` to omit), SSH (root login disabled), and DHCP Ethernet/DNS.
 Wi-Fi is optional; an existing iwd profile is kept if you decline to reconfigure
-it. Syncthing and removal of the default `alarm` account are optional. After
-verifying headless setup it asks whether to install KDE (`noapps` or `full`).
+it. Syncthing and removal of the default `alarm` account are optional. It
+offers KDE (`noapps` or `full`) before the final Wi-Fi prompt, so Ethernet can
+stay connected for package and font downloads. If you choose Wi-Fi at the end,
+it must pass the saved-profile reconnect test or provisioning stops incomplete.
 KDE is blocked if DRM hardware or essential ARM packages are missing, and
 missing optional packages require explicit consent to skip. It does not
 automatically build sources or run x86 KDE post-install tweaks. KDE uses the
 existing working `iwd`/`systemd-networkd` connection for now: NetworkManager
 is installed but **not activated** until a safe on-board network migration is
-validated. Reboot and verify the desktop and network locally. Neither stage
-changes the board's kernel, partitions, U-Boot, or extlinux boot files.
+validated. Reboot and verify the desktop and network locally. Provisioning does
+not rewrite partitions, U-Boot, or extlinux boot files, but its initial system
+update may update the board's kernel packages.
+
+The optional KDE stage fetches Kappa Mono from its own GitHub repository with
+the already installed `git` tool, installs its four TTF styles, refreshes the
+fontconfig cache, and sets a system Konsole profile using Kappa Mono. It reports
+the downloaded Kappa Type commit. KDE shells use the graphical Starship preset;
+the headless/console preset intentionally avoids Nerd Font icons. The Linux
+text console cannot render a desktop font such as Kappa Mono, even if it is
+installed. In an **SSH** session the terminal on your *other computer* renders
+the prompt: install/select Kappa Mono on that computer if you want Nerd Font
+icons there. Existing system Konsole settings are not overwritten.
 
 ## Current limitations
 
