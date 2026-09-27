@@ -84,7 +84,7 @@ working Ethernet address and route. This is **Ethernet-only**, not a claim that
 Wi-Fi works. Without that choice, provisioning stops rather than reporting a
 completed installation.
 
-## Provision KMOS headless, then optionally KDE
+## Provision KMOS headless
 
 After confirming internet access on the booted Quartz64, use `git` to clone
 the repository and run its executable provisioner. From the local root console:
@@ -108,28 +108,30 @@ skipping unavailable packages, configures terminal presets, hostname, timezone
 (default `Europe/Zurich`), locale, administrator and optional users, swap
 (default `4G`, `0` to omit), SSH (root login disabled), and DHCP Ethernet/DNS.
 Wi-Fi is optional; an existing iwd profile is kept if you decline to reconfigure
-it. Syncthing and removal of the default `alarm` account are optional. It
-offers KDE (`noapps` or `full`) before the final Wi-Fi prompt, so Ethernet can
-stay connected for package and font downloads. If you choose Wi-Fi at the end,
-it must pass the saved-profile reconnect test or provisioning stops incomplete.
-KDE is blocked if DRM hardware or essential ARM packages are missing, and
-missing optional packages require explicit consent to skip. It does not
-automatically build sources or run x86 KDE post-install tweaks. KDE uses the
-existing working `iwd`/`systemd-networkd` connection for now: NetworkManager
-is installed but **not activated** until a safe on-board network migration is
-validated. Reboot and verify the desktop and network locally. Provisioning does
-not rewrite partitions, U-Boot, or extlinux boot files, but its initial system
+it. Syncthing and removal of the default `alarm` account are optional. Wi-Fi
+is the last configuration prompt; keep Ethernet connected for package downloads.
+If you choose Wi-Fi at the end, it must pass the saved-profile reconnect test.
+Cancelling Wi-Fi can finish the installation **Ethernet-only** with explicit
+confirmation; this does not claim that Wi-Fi works. Provisioning does not
+rewrite partitions, U-Boot, or extlinux boot files, but its initial system
 update may update the board's kernel packages.
 
-The optional KDE stage fetches Kappa Mono from its own GitHub repository with
-the already installed `git` tool, installs its four TTF styles, refreshes the
-fontconfig cache, and sets a system Konsole profile using Kappa Mono. It reports
-the downloaded Kappa Type commit. KDE shells use the graphical Starship preset;
-the headless/console preset intentionally avoids Nerd Font icons. The Linux
-text console cannot render a desktop font such as Kappa Mono, even if it is
-installed. In an **SSH** session the terminal on your *other computer* renders
-the prompt: install/select Kappa Mono on that computer if you want Nerd Font
-icons there. Existing system Konsole settings are not overwritten.
+**KDE is not offered on Quartz64.** The earlier experimental stage failed on
+physical hardware and has been disabled pending a separate diagnosis. Headless
+Starship now uses `starship-headless.toml`: an ASCII-only preset without Nerd
+Font glyphs or graphical-terminal detection, including over SSH. Existing
+graphical Starship themes and Kappa Mono are not required for this installation.
+
+On a board provisioned by an older version, repair **only** the prompt without
+reinstalling or repeating system updates. From the existing KMOS checkout:
+
+```bash
+git pull --ff-only
+./platforms/archlinuxarm/boards/quartz64b/repair-headless-prompt.sh
+```
+
+Start a new SSH session to check the prompt. This command does not install KDE,
+change networking, or rerun the headless provisioner.
 
 ## Current limitations
 
@@ -147,6 +149,7 @@ icons there. Existing system Konsole settings are not overwritten.
   wireless adapter and firmware; offline package installation and association
   have only been mocked, not tested on physical wireless hardware yet. If an
   official package changes dependencies, SD preparation stops for review.
-- The availability of headless and KDE packages in the AArch64 repositories,
-  the GPU/DRM stack, and the KDE session must be checked on the actual board.
-  Source builds and NetworkManager migration are **not automated** yet.
+- Headless package availability on AArch64 still depends on the repositories.
+  The GPU/DRM stack and KDE session require separate on-board diagnosis; KDE
+  is not part of this provisioner. Source builds and NetworkManager migration
+  are **not automated**.

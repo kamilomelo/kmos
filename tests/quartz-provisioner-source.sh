@@ -7,8 +7,8 @@ repo=$(git rev-parse --show-toplevel)
 source "$repo/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh"
 
 [[ $(find_local_repository) == "$repo" ]]
-if LC_ALL=C grep -q '[^ -~]' "$repo/platforms/archlinux/assets/starship-presets/tty-term.toml"; then
-  printf 'Linux-console Starship preset contains non-ASCII glyphs.\n' >&2
+if LC_ALL=C grep -q '[^ -~]' "$repo/platforms/archlinuxarm/boards/quartz64b/starship-headless.toml"; then
+  printf 'Quartz64 headless Starship preset contains non-ASCII glyphs.\n' >&2
   exit 1
 fi
 REPOSITORY_DIR=$repo
@@ -142,7 +142,28 @@ configure_kde_terminal "$repo" "$fixture/root" 2>/dev/null
 grep -Fxq 'user settings' "$fixture/root/etc/xdg/konsolerc"
 unset -f git fc-cache fc-match
 
-# Ethernet remains usable through KDE; Wi-Fi is the final configuration gate.
+# A fresh SSH shell must use the same font-independent headless preset even
+# when the board already has KDE environment variables or older bashrc lines.
+mkdir -p "$fixture/headless/etc"
+printf '# kmos headless shell\nexport STARSHIP_CONFIG=/usr/share/kmos/starship-presets/holow-light.toml\n' > "$fixture/headless/etc/bash.bashrc"
+configure_kmos_terminal "$repo" "$fixture/headless"
+[[ -r "$fixture/headless/usr/share/kmos/starship-presets/quartz-headless.toml" ]]
+[[ $(grep -c '^# kmos headless shell$' "$fixture/headless/etc/bash.bashrc") == 1 ]]
+grep -q '^# kmos Quartz64 headless prompt$' "$fixture/headless/etc/bash.bashrc"
+bash -n "$fixture/headless/etc/bash.bashrc" "$fixture/headless/etc/profile.d/10-kmos-starship.sh"
+(
+  export XDG_CURRENT_DESKTOP=KDE SSH_CONNECTION='192.0.2.1 1234 192.0.2.2 22'
+  # shellcheck disable=SC1091
+  source "$fixture/headless/etc/profile.d/10-kmos-starship.sh"
+  [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/quartz-headless.toml ]]
+)
+if command -v starship >/dev/null 2>&1; then
+  STARSHIP_CONFIG="$fixture/headless/usr/share/kmos/starship-presets/quartz-headless.toml" \
+    STARSHIP_LOG=warn starship prompt >"$fixture/prompt" 2>"$fixture/prompt-errors"
+  [[ ! -s "$fixture/prompt-errors" && -s "$fixture/prompt" ]]
+fi
+
+# Ethernet remains usable; KDE must not run during headless provisioning.
 (
   parse_arguments() { :; }
   find_local_repository() { printf '%s\n' "$repo"; }
@@ -158,10 +179,11 @@ unset -f git fc-cache fc-match
   configure_swap() { :; }
   configure_syncthing() { :; }
   remove_alarm() { :; }
-  offer_kde_desktop() { printf 'kde\n' >> "$fixture/steps"; }
+  # shellcheck disable=SC2329 # An invocation here would fail this test.
+  offer_kde_desktop() { printf 'KDE ran during headless provisioning.\n' >&2; exit 1; }
   configure_wifi() { printf 'wifi\n' >> "$fixture/steps"; }
   verify_installation() { printf 'verify\n' >> "$fixture/steps"; }
   main
 )
-[[ $(cat "$fixture/steps") == $'kde\nwifi\nverify' ]]
+[[ $(cat "$fixture/steps") == $'wifi\nverify' ]]
 printf 'Quartz provisioner uses local KMOS files and honors skipped packages: OK.\n'

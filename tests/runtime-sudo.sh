@@ -46,6 +46,7 @@ expect_prompt() {
 expect_prompt platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh --device /not-a-device
 expect_prompt platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
 expect_prompt platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh
+expect_prompt platforms/archlinuxarm/boards/quartz64b/repair-headless-prompt.sh
 expect_prompt platforms/archlinux/kmos-archlinux-install.sh --profile noapps
 expect_prompt platforms/archlinux/desktop/kde/kmos-kde-install.sh --profile noapps
 expect_prompt platforms/archlinux/desktop/kde/kmos-kde-post.sh --profile noapps
@@ -58,6 +59,8 @@ rm -f "$KMOS_SUDO_ARGS"
 [[ ! -e "$KMOS_SUDO_ARGS" ]] || { printf 'Help unexpectedly requested sudo.\n' >&2; exit 1; }
 "$repo/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --help > "$fixture/output"
 [[ ! -e "$KMOS_SUDO_ARGS" ]] || { printf 'Wi-Fi help unexpectedly requested sudo.\n' >&2; exit 1; }
+"$repo/platforms/archlinuxarm/boards/quartz64b/repair-headless-prompt.sh" --help > "$fixture/output"
+[[ ! -e "$KMOS_SUDO_ARGS" ]] || { printf 'Prompt repair help unexpectedly requested sudo.\n' >&2; exit 1; }
 
 # shellcheck disable=SC1091
 source "$repo/platforms/archlinux/tools/kmos-usb-flasher.sh"

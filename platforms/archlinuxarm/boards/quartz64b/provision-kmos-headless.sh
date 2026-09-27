@@ -101,12 +101,9 @@ validate_repository() {
   [[ -d "$repository_dir/.git" ]] || die 'A complete KMOS Git checkout is required.'
   [[ $(git -C "$repository_dir" rev-parse --show-toplevel) == "$repository_dir" ]] || die 'The KMOS path does not match the Git checkout root.'
   [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD" ]] || die 'Headless package manifest missing. Clone the complete KMOS repository onto the Quartz64.'
-  [[ -r "$repository_dir/platforms/archlinux/assets/starship-presets/tty-term.toml" ]] || die 'KMOS terminal presets missing. Clone the complete repository.'
-  [[ -r "$repository_dir/platforms/archlinux/assets/starship-presets/holow-light.toml" ]] || die 'KMOS KDE terminal preset missing.'
-  [[ -r "$repository_dir/platforms/archlinux/assets/konsole/kmos.colorscheme" ]] || die 'KMOS Konsole color scheme missing.'
+  [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/starship-headless.toml" ]] || die 'Quartz64 headless Starship preset missing.'
   [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" ]] || die 'Quartz64 provisioner missing from the checkout.'
   [[ -x "$repository_dir/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" ]] || die 'Quartz64 Wi-Fi helper missing from the checkout.'
-  [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/kde/noapps/PKGBUILD" ]] || die 'KMOS KDE manifest missing from the checkout.'
 }
 
 configure_pacman() {
@@ -336,29 +333,21 @@ offer_kde_desktop() {
 }
 
 configure_kmos_terminal() {
-  local repository_dir=$1 preset_file
-  local preset="$repository_dir/platforms/archlinux/assets/starship-presets/tty-term.toml"
-  [[ -r "$preset" ]] || die 'KMOS TTY preset not found.'
-  for preset_file in "$repository_dir"/platforms/archlinux/assets/starship-presets/*.toml; do
-    install -Dm0644 "$preset_file" "/usr/share/kmos/starship-presets/${preset_file##*/}"
-  done
-  install -Dm0644 /dev/stdin /etc/profile.d/10-kmos-starship.sh <<'EOF'
-if [[ "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
-  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/holow-light.toml
-else
-  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/tty-term.toml
-fi
+  local repository_dir=$1 root=${2:-}
+  local preset="$repository_dir/platforms/archlinuxarm/boards/quartz64b/starship-headless.toml"
+  [[ -r "$preset" ]] || die 'Quartz64 headless Starship preset not found.'
+  install -Dm0644 "$preset" "$root/usr/share/kmos/starship-presets/quartz-headless.toml"
+  # Do not choose a graphical/Nerd Font preset for an SSH session. Its glyphs
+  # would need to be installed on the SSH client's terminal, not this board.
+  install -Dm0644 /dev/stdin "$root/etc/profile.d/10-kmos-starship.sh" <<'EOF'
+export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/quartz-headless.toml
 EOF
-  touch /etc/bash.bashrc
-  if ! grep -q '^# kmos headless shell$' /etc/bash.bashrc; then
-    cat >> /etc/bash.bashrc <<'EOF'
+  install -d -m 0755 "$root/etc"
+  touch "$root/etc/bash.bashrc"
+  if ! grep -q '^# kmos headless shell$' "$root/etc/bash.bashrc"; then
+    cat >> "$root/etc/bash.bashrc" <<'EOF'
 
 # kmos headless shell
-if [[ "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
-  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/holow-light.toml
-else
-  export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/tty-term.toml
-fi
 if [[ $- == *i* ]] && command -v starship >/dev/null 2>&1; then
   eval "$(starship init bash)"
 fi
@@ -369,8 +358,17 @@ export EDITOR=nano
 export VISUAL=nano
 EOF
   fi
-  install -d -m 0755 /opt/kmos/assets/starship-presets
-  cp -a "$repository_dir/platforms/archlinux/assets/starship-presets/." /opt/kmos/assets/starship-presets/
+  # Reapply for interactive non-login Bash, and override older KMOS KDE/SSH
+  # selection blocks on machines provisioned by a previous version.
+  if ! grep -q '^# kmos Quartz64 headless prompt$' "$root/etc/bash.bashrc"; then
+    cat >> "$root/etc/bash.bashrc" <<'EOF'
+
+# kmos Quartz64 headless prompt
+if [[ $- == *i* && -r /etc/profile.d/10-kmos-starship.sh ]]; then
+  source /etc/profile.d/10-kmos-starship.sh
+fi
+EOF
+  fi
 }
 
 configure_identity() {
@@ -562,7 +560,7 @@ verify_installation() {
   sudo -l -U "$PRIMARY_USER" >/dev/null
   [[ $(cat /etc/hostname) == "$HOSTNAME_VALUE" ]] || die 'Hostname does not match.'
   systemctl is-enabled sshd.service systemd-networkd.service systemd-resolved.service >/dev/null
-  [[ -f /usr/share/kmos/starship-presets/tty-term.toml ]] || die 'Starship preset is missing.'
+  [[ -f /usr/share/kmos/starship-presets/quartz-headless.toml ]] || die 'Headless Starship preset is missing.'
   if [[ -n "$WIFI_ADAPTER" ]]; then
     systemctl is-enabled iwd.service >/dev/null
     iwctl station "$WIFI_ADAPTER" show || warn 'Could not query Wi-Fi status.'
@@ -589,7 +587,7 @@ main() {
   configure_swap
   configure_syncthing
   remove_alarm
-  offer_kde_desktop
+  info 'Quartz64 KDE provisioning is disabled until it can be validated on physical hardware.'
   configure_wifi
   verify_installation
   info 'KMOS provisioning complete.'

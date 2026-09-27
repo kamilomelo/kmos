@@ -1,0 +1,25 @@
+# Quartz64 headless prompt: plain ASCII and standard terminal colors only.
+# Works at the Linux console and in SSH without a patched client-side font.
+format = '$username@$hostname $directory$git_branch$git_status $character'
+add_newline = false
+
+[username]
+show_always = true
+format = '$user'
+
+[hostname]
+ssh_only = false
+format = '$hostname'
+
+[directory]
+format = '[$path](blue)'
+
+[git_branch]
+format = ' [git:$branch](cyan)'
+
+[git_status]
+format = ' [$all_status$ahead_behind](yellow)'
+
+[character]
+success_symbol = '[>](green)'
+error_symbol = '[!](red)'
