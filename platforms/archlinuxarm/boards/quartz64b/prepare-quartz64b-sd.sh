@@ -11,6 +11,7 @@ IFS=$'\n\t'
 # The rootfs remains PGP-verified after downloading from this official mirror.
 readonly ALARM_ROOTFS_URL="https://ca.us.mirror.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
 readonly ALARM_SIGNING_FINGERPRINT="68B3537F39A313B3E574D06777193F152BDBE6A6"
+readonly ALARM_EXTRA_URL="https://ca.us.mirror.archlinuxarm.org/aarch64/extra"
 # This is the exact CI artifact linked by Pine64's Quartz64 Arch Linux ARM guide.
 readonly DEFAULT_BOOTLOADER_URL="https://gitlab.com/pgwipeout/quartz64_ci/-/jobs/3293568184/artifacts/download?file_type=archive"
 
@@ -31,6 +32,7 @@ FIRST_BOOT_WIFI=0
 WIFI_SSID=""
 WIFI_PASSPHRASE=""
 WIFI_HIDDEN=false
+WIFI_PACKAGE_DIR=""
 MOUNT_DIR=""
 BOOT_PARTITION=""
 ROOT_PARTITION=""
@@ -71,9 +73,10 @@ Options:
   -h, --help                    Show this help.
 
 The artifact must contain idblock.bin and uboot.img, normally under artifacts/.
-First-boot Wi-Fi is offered interactively. It requires iwd in the verified ARM
-rootfs and a supported wireless adapter on the board. No Wi-Fi credentials are
-passed on command lines. Ethernet remains available as a fallback.
+First-boot Wi-Fi is offered interactively. If the verified ARM rootfs lacks
+iwd, signed ARM iwd and ell packages are staged for native installation on
+the board at first boot. A supported wireless adapter is still required.
+No Wi-Fi credentials are passed on command lines. Ethernet remains available.
 The default artifact is the unmaintained one linked by Pine64. Unlike the rootfs,
 it has no upstream cryptographic signature. Prefer --bootloader-archive together
 with --bootloader-sha256 after you have recorded a trusted digest.
@@ -313,12 +316,86 @@ collect_first_boot_wifi() {
 verify_first_boot_wifi_support() {
   local rootfs=$1
   ((FIRST_BOOT_WIFI)) || return 0
-  info 'Checking the verified ARM rootfs for iwd before writing the SD card.'
-  tar -tf "$rootfs" | awk '
+  info 'Checking the verified ARM rootfs for wireless packages before writing the SD card.'
+  if tar -tf "$rootfs" | awk '
     /(^|\/)usr\/bin\/iwctl$/ { iwctl=1 }
     /(^|\/)usr\/lib\/systemd\/system\/iwd.service$/ { service=1 }
     END { exit !(iwctl && service) }
-  ' || die 'The ARM rootfs lacks iwd. SD card untouched; use Ethernet/USB tethering or arrange verified offline ARM packages before first-boot Wi-Fi.'
+  '; then
+    info 'iwd is present in the verified ARM rootfs.'
+    return 0
+  fi
+  # This is deliberately narrow: a changed dependency set must be reviewed
+  # before it can be written to the SD, rather than guessed from the x86 host.
+  tar -tf "$rootfs" | awk '
+    /^\.\/var\/lib\/pacman\/local\/glibc-[^/]+\/$/ { glibc=1 }
+    /^\.\/var\/lib\/pacman\/local\/libgcc-[^/]+\/$/ { libgcc=1 }
+    /^\.\/var\/lib\/pacman\/local\/readline-8\.[^/]+\/$/ { readline=1 }
+    /^\.\/usr\/lib\/libreadline\.so\.8$/ { soname=1 }
+    END { exit !(glibc && libgcc && readline && soname) }
+  ' || die 'The verified rootfs lacks a required iwd base dependency; SD card untouched.'
+  stage_offline_wifi_packages "$rootfs"
+}
+
+extra_package_desc() {
+  local db=$1 package=$2 entry
+  entry=$(bsdtar -tf "$db" | awk -v pkg="$package" '
+    $0 ~ "^(\\./)?" pkg "-[^/]+/desc$" { found=$0 }
+    END { if (found != "") print found }
+  ')
+  [[ -n "$entry" ]] || die "Package $package was not found in the ARM extra repository."
+  bsdtar -xOf "$db" "$entry"
+}
+
+desc_value() {
+  local section=$1
+  awk -v section="%$section%" '$0 == section { getline; print; exit }'
+}
+
+verify_wifi_package() {
+  local directory=$1 package=$2 db=$3 gpg_home=$4
+  local description filename digest url status version
+  description=$(extra_package_desc "$db" "$package")
+  filename=$(printf '%s\n' "$description" | desc_value FILENAME)
+  digest=$(printf '%s\n' "$description" | desc_value SHA256SUM)
+  version=$(printf '%s\n' "$description" | desc_value VERSION)
+  [[ "$filename" =~ ^${package}-[a-zA-Z0-9.+:_-]+-aarch64\.pkg\.tar\.(xz|zst)$ ]] || die "Unexpected ARM package filename: $filename"
+  [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]] || die "Missing SHA-256 for $package in ARM repository metadata."
+  url="$ALARM_EXTRA_URL/$filename"
+  download "$url" "$directory/$filename"
+  download "$url.sig" "$directory/$filename.sig"
+  printf '%s  %s\n' "$digest" "$directory/$filename" | sha256sum --check --status || die "SHA-256 mismatch for $filename."
+  status=$(gpg --homedir "$gpg_home" --batch --status-fd 1 --verify "$directory/$filename.sig" "$directory/$filename" 2>/dev/null) || die "Invalid official ARM signature for $filename."
+  printf '%s\n' "$status" | awk -v fingerprint="$ALARM_SIGNING_FINGERPRINT" '
+    $1 == "[GNUPG:]" && $2 == "VALIDSIG" && $NF == fingerprint { good=1 }
+    END { exit !good }
+  ' || die "Unexpected signing key for $filename."
+  [[ $(bsdtar -xOf "$directory/$filename" .PKGINFO | awk -F' = ' '$1 == "pkgname" {print $2; exit}') == "$package" ]] || die "Unexpected package contents: $filename"
+  [[ $(bsdtar -xOf "$directory/$filename" .PKGINFO | awk -F' = ' '$1 == "arch" {print $2; exit}') == aarch64 ]] || die "$filename is not an ARM package."
+  [[ $(bsdtar -xOf "$directory/$filename" .PKGINFO | awk -F' = ' '$1 == "pkgver" {print $2; exit}') == "$version" ]] || die "Version mismatch for $filename."
+  case "$package" in
+    ell) bsdtar -xOf "$directory/$filename" .PKGINFO | awk -F' = ' '$1 == "depend" { print $2 }' | LC_ALL=C sort | diff -u <(printf 'glibc\nlibgcc\n') - || die 'ell dependencies changed; review before flashing.' ;;
+    iwd) bsdtar -xOf "$directory/$filename" .PKGINFO | awk -F' = ' '$1 == "depend" { print $2 }' | LC_ALL=C sort | diff -u <(printf 'ell\nglibc\nlibgcc\nlibreadline.so=8-64\nreadline\n') - || die 'iwd dependencies changed; review before flashing.' ;;
+  esac
+  info "Verified $filename (SHA-256, ARM package signature, architecture and dependencies)."
+}
+
+stage_offline_wifi_packages() {
+  local rootfs=$1 gpg_home db trusted
+  WIFI_PACKAGE_DIR=$(mktemp -d "$WORK_DIR/wifi-packages.XXXXXXXX") || die 'Could not create a Wi-Fi package directory.'
+  gpg_home=$(mktemp -d "$WIFI_PACKAGE_DIR/keyring.XXXXXXXX") || die 'Could not create a temporary verification keyring.'
+  chmod 0700 "$gpg_home"
+  db="$WIFI_PACKAGE_DIR/extra.db"
+  info 'Downloading official AArch64 repository metadata and offline Wi-Fi packages.'
+  download "$ALARM_EXTRA_URL/extra.db" "$db"
+  bsdtar -xOf "$rootfs" ./usr/share/pacman/keyrings/archlinuxarm.gpg | gpg --homedir "$gpg_home" --batch --import >/dev/null 2>&1 \
+    || die 'Unable to import the ARM keyring from the verified rootfs.'
+  trusted=$(bsdtar -xOf "$rootfs" ./usr/share/pacman/keyrings/archlinuxarm-trusted)
+  printf '%s\n' "$trusted" | grep -qx "$ALARM_SIGNING_FINGERPRINT:4:" || die 'Verified rootfs does not trust the pinned ARM build key.'
+  verify_wifi_package "$WIFI_PACKAGE_DIR" ell "$db" "$gpg_home"
+  verify_wifi_package "$WIFI_PACKAGE_DIR" iwd "$db" "$gpg_home"
+  rm -rf -- "$gpg_home"
+  info 'Signed offline ARM Wi-Fi packages are ready; nothing has been written to the SD yet.'
 }
 
 download() {
@@ -513,7 +590,32 @@ IPv6AcceptRA=yes
 [DHCPv4]
 RouteMetric=600
 WIFI_NETWORK
-    enable_unit iwd.service multi-user.target
+    if [[ -n "$WIFI_PACKAGE_DIR" ]]; then
+      local package_file
+      install -d -m 0755 "$MOUNT_DIR/var/lib/kmos/wifi-packages"
+      for package_file in "$WIFI_PACKAGE_DIR"/*.pkg.tar.xz "$WIFI_PACKAGE_DIR"/*.pkg.tar.xz.sig \
+                          "$WIFI_PACKAGE_DIR"/*.pkg.tar.zst "$WIFI_PACKAGE_DIR"/*.pkg.tar.zst.sig; do
+        [[ -f "$package_file" ]] || continue
+        install -m 0644 "$package_file" "$MOUNT_DIR/var/lib/kmos/wifi-packages/"
+      done
+      install -Dm0755 "$SCRIPT_DIR/first-boot-wifi.sh" "$MOUNT_DIR/usr/local/libexec/kmos-first-boot-wifi.sh"
+      install -Dm0644 /dev/stdin "$MOUNT_DIR/usr/lib/systemd/system/kmos-first-boot-wifi.service" <<'WIFI_UNIT'
+[Unit]
+Description=Install verified offline ARM Wi-Fi packages on first boot
+After=local-fs.target
+ConditionPathExists=!/var/lib/kmos/quartz64b-wifi-packages-installed
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/kmos-first-boot-wifi.sh
+
+[Install]
+WantedBy=multi-user.target
+WIFI_UNIT
+      enable_unit kmos-first-boot-wifi.service multi-user.target
+    else
+      enable_unit iwd.service multi-user.target
+    fi
   fi
   ln -sfn /run/systemd/resolve/stub-resolv.conf "$MOUNT_DIR/etc/resolv.conf"
 
@@ -533,6 +635,20 @@ verify_target() {
   grep -q 'DHCP=yes' "$MOUNT_DIR/etc/systemd/network/20-ethernet-dhcp.network" || die 'DHCP configuration is missing.'
   [[ -L "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/systemd-networkd.service" ]] || die 'systemd-networkd was not enabled.'
   [[ -s "$MOUNT_DIR/boot/Image" && -s "$MOUNT_DIR/boot/initramfs-linux.img" ]] || die 'Boot files are incomplete.'
+  if ((FIRST_BOOT_WIFI)); then
+    [[ -s "$MOUNT_DIR/var/lib/iwd/$WIFI_SSID.psk" ]] || die 'The first-boot Wi-Fi profile is missing.'
+    if [[ -n "$WIFI_PACKAGE_DIR" ]]; then
+      [[ -L "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/kmos-first-boot-wifi.service" ]] || die 'Offline Wi-Fi installer was not enabled.'
+      local staged
+      for staged in "$WIFI_PACKAGE_DIR"/*.pkg.tar.xz "$WIFI_PACKAGE_DIR"/*.pkg.tar.zst; do
+        [[ -f "$staged" ]] || continue
+        [[ -s "$MOUNT_DIR/var/lib/kmos/wifi-packages/${staged##*/}" &&
+           -s "$MOUNT_DIR/var/lib/kmos/wifi-packages/${staged##*/}.sig" ]] || die 'Signed ARM Wi-Fi packages were not staged completely.'
+      done
+    else
+      [[ -L "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/iwd.service" ]] || die 'iwd was not enabled.'
+    fi
+  fi
 }
 
 cleanup_workdir_prompt() {
