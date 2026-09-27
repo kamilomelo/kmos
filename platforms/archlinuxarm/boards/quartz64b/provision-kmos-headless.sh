@@ -102,6 +102,7 @@ validate_repository() {
   [[ $(git -C "$repository_dir" rev-parse --show-toplevel) == "$repository_dir" ]] || die 'The KMOS path does not match the Git checkout root.'
   [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD" ]] || die 'Headless package manifest missing. Clone the complete KMOS repository onto the Quartz64.'
   [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/starship-headless.toml" ]] || die 'Quartz64 headless Starship preset missing.'
+  [[ -r "$repository_dir/platforms/archlinux/assets/starship-presets/holow-light.toml" ]] || die 'KMOS SSH Starship preset missing.'
   [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" ]] || die 'Quartz64 provisioner missing from the checkout.'
   [[ -x "$repository_dir/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" ]] || die 'Quartz64 Wi-Fi helper missing from the checkout.'
 }
@@ -342,12 +343,21 @@ offer_kde_desktop() {
 configure_kmos_terminal() {
   local repository_dir=$1 root=${2:-}
   local preset="$repository_dir/platforms/archlinuxarm/boards/quartz64b/starship-headless.toml"
+  local ssh_preset="$repository_dir/platforms/archlinux/assets/starship-presets/holow-light.toml"
   [[ -r "$preset" ]] || die 'Quartz64 headless Starship preset not found.'
+  [[ -r "$ssh_preset" ]] || die 'KMOS SSH Starship preset not found.'
   install -Dm0644 "$preset" "$root/usr/share/kmos/starship-presets/quartz-headless.toml"
-  # Do not choose a graphical/Nerd Font preset for an SSH session. Its glyphs
-  # would need to be installed on the SSH client's terminal, not this board.
+  install -Dm0644 "$ssh_preset" "$root/usr/share/kmos/starship-presets/holow-light.toml"
+  # The SSH client renders the Nerd Font glyphs; the physical TTY remains ASCII.
   install -Dm0644 /dev/stdin "$root/etc/profile.d/10-kmos-starship.sh" <<'EOF'
-export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/quartz-headless.toml
+if [ "${TERM:-}" = linux ]; then
+  STARSHIP_CONFIG=/usr/share/kmos/starship-presets/quartz-headless.toml
+elif [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}${SSH_CLIENT:-}" ]; then
+  STARSHIP_CONFIG=/usr/share/kmos/starship-presets/holow-light.toml
+else
+  STARSHIP_CONFIG=/usr/share/kmos/starship-presets/quartz-headless.toml
+fi
+export STARSHIP_CONFIG
 # SSH login shells read /etc/profile.d, even if they do not read bash.bashrc.
 if [ -n "${BASH_VERSION:-}" ]; then
   case $- in
@@ -393,21 +403,30 @@ EOF
 
 verify_headless_prompt() {
   local config=/usr/share/kmos/starship-presets/quartz-headless.toml
+  local ssh_config=/usr/share/kmos/starship-presets/holow-light.toml
   command -v starship >/dev/null 2>&1 || die 'Starship binary is missing; the headless prompt cannot work.'
   [[ -r "$config" ]] || die 'Headless Starship preset is missing.'
+  [[ -r "$ssh_config" ]] || die 'SSH Starship preset is missing.'
   bash -n /etc/bash.bashrc /etc/profile.d/10-kmos-starship.sh || die 'Headless Bash startup configuration has a syntax error.'
   STARSHIP_CONFIG="$config" starship prompt >/dev/null || die 'Starship could not render the headless prompt.'
+  SSH_CONNECTION='192.0.2.1 1234 192.0.2.2 22' STARSHIP_CONFIG="$ssh_config" starship prompt >/dev/null || die 'Starship could not render the SSH prompt.'
   # shellcheck disable=SC2016 # These expressions expand inside the child Bash.
-  if ! env -u STARSHIP_CONFIG bash --noprofile --rcfile /etc/bash.bashrc -ic \
-    '[[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/quartz-headless.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
+  if ! env -u STARSHIP_CONFIG SSH_CONNECTION='192.0.2.1 1234 192.0.2.2 22' TERM=xterm-256color bash --noprofile --rcfile /etc/bash.bashrc -ic \
+    '[[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/holow-light.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
     >/dev/null 2>&1; then
     die 'Interactive Bash did not load the headless Starship prompt.'
   fi
   # shellcheck disable=SC2016 # These expressions expand inside the child Bash.
-  if ! env -u STARSHIP_CONFIG bash --noprofile --norc -ic \
-    'source /etc/profile.d/10-kmos-starship.sh; [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/quartz-headless.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
+  if ! env -u STARSHIP_CONFIG SSH_CONNECTION='192.0.2.1 1234 192.0.2.2 22' TERM=xterm-256color bash --noprofile --norc -ic \
+    'source /etc/profile.d/10-kmos-starship.sh; [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/holow-light.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
     >/dev/null 2>&1; then
     die 'SSH-style login Bash did not initialize the headless Starship prompt.'
+  fi
+  # shellcheck disable=SC2016 # Expressions expand inside the child Bash.
+  if ! env -u STARSHIP_CONFIG -u SSH_CONNECTION -u SSH_TTY -u SSH_CLIENT TERM=linux bash --noprofile --norc -ic \
+    'source /etc/profile.d/10-kmos-starship.sh; [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/quartz-headless.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
+    >/dev/null 2>&1; then
+    die 'Linux console Bash did not initialize the ASCII Starship prompt.'
   fi
 }
 

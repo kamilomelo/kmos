@@ -157,17 +157,27 @@ configure_kde_terminal "$repo" "$fixture/root" 2>/dev/null
 grep -Fxq 'user settings' "$fixture/root/etc/xdg/konsolerc"
 unset -f git fc-cache fc-match
 
-# A fresh SSH shell must use the same font-independent headless preset even
-# when the board already has KDE environment variables or older bashrc lines.
+# SSH uses the x86 KMOS Nerd Font preset; the physical TTY keeps ASCII.
+# Existing bashrc lines must not override the new selection.
 mkdir -p "$fixture/headless/etc"
 printf '# kmos headless shell\nexport STARSHIP_CONFIG=/usr/share/kmos/starship-presets/holow-light.toml\n' > "$fixture/headless/etc/bash.bashrc"
 configure_kmos_terminal "$repo" "$fixture/headless"
 [[ -r "$fixture/headless/usr/share/kmos/starship-presets/quartz-headless.toml" ]]
+[[ -r "$fixture/headless/usr/share/kmos/starship-presets/holow-light.toml" ]]
 [[ $(grep -c '^# kmos headless shell$' "$fixture/headless/etc/bash.bashrc") == 1 ]]
 grep -q '^# kmos Quartz64 headless prompt$' "$fixture/headless/etc/bash.bashrc"
 bash -n "$fixture/headless/etc/bash.bashrc" "$fixture/headless/etc/profile.d/10-kmos-starship.sh"
 (
-  export XDG_CURRENT_DESKTOP=KDE SSH_CONNECTION='192.0.2.1 1234 192.0.2.2 22'
+  # shellcheck disable=SC2030 # TERM is intentionally isolated for SSH.
+  export XDG_CURRENT_DESKTOP=KDE SSH_CONNECTION='192.0.2.1 1234 192.0.2.2 22' TERM=xterm-256color
+  # shellcheck disable=SC1091
+  source "$fixture/headless/etc/profile.d/10-kmos-starship.sh"
+  [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/holow-light.toml ]]
+)
+(
+  unset SSH_CONNECTION SSH_TTY SSH_CLIENT
+  # shellcheck disable=SC2031 # This subshell deliberately tests a different TERM.
+  export TERM=linux
   # shellcheck disable=SC1091
   source "$fixture/headless/etc/profile.d/10-kmos-starship.sh"
   [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/quartz-headless.toml ]]
@@ -176,9 +186,18 @@ if command -v starship >/dev/null 2>&1; then
   STARSHIP_CONFIG="$fixture/headless/usr/share/kmos/starship-presets/quartz-headless.toml" \
     STARSHIP_LOG=warn starship prompt >"$fixture/prompt" 2>"$fixture/prompt-errors"
   [[ ! -s "$fixture/prompt-errors" && -s "$fixture/prompt" ]]
+  SSH_CONNECTION='192.0.2.1 1234 192.0.2.2 22' \
+    STARSHIP_CONFIG="$fixture/headless/usr/share/kmos/starship-presets/holow-light.toml" \
+    STARSHIP_LOG=warn starship prompt >"$fixture/ssh-prompt" 2>"$fixture/ssh-prompt-errors"
+  [[ ! -s "$fixture/ssh-prompt-errors" && -s "$fixture/ssh-prompt" ]]
+  if cmp -s "$fixture/prompt" "$fixture/ssh-prompt"; then
+    printf 'SSH prompt unexpectedly matched the ASCII TTY prompt.\n' >&2
+    exit 1
+  fi
   KMOS_PROFILE_TEST="$fixture/headless/etc/profile.d/10-kmos-starship.sh" \
+    SSH_CONNECTION='192.0.2.1 1234 192.0.2.2 22' TERM=xterm-256color \
     bash --noprofile --norc -ic \
-    'source "$KMOS_PROFILE_TEST"; [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/quartz-headless.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
+    'source "$KMOS_PROFILE_TEST"; [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/holow-light.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
     >"$fixture/login-output" 2>&1
 fi
 

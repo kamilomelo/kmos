@@ -114,15 +114,17 @@ rewrite partitions, U-Boot, or extlinux boot files, but its initial system
 update may update the board's kernel packages.
 
 **KDE is not offered on Quartz64.** The earlier experimental stage failed on
-physical hardware and has been disabled pending a separate diagnosis. Headless
-Starship uses `starship-headless.toml`: a conservative ASCII-only default
-including over SSH. **Kappa Mono is still installed as part of headless KMOS**;
-the ASCII preset is a fallback choice, not a reason to omit the Nerd Font.
+physical hardware and has been disabled pending a separate diagnosis. Over
+**SSH**, headless Starship uses KMOS's icon-based `holow-light.toml` preset,
+as the x86_64 installer does. The physical Linux text console instead uses
+the ASCII-only `starship-headless.toml` preset. **Kappa Mono is installed as
+part of headless KMOS**; the ASCII console fallback does not omit the font.
 No extra host package or board `fontconfig` package is required: if fontconfig
 is already present, its cache and font-family lookup are checked. The Linux
 text console cannot render desktop fonts, and an SSH session is rendered by
 the terminal on your *other computer*: select Kappa Mono there to display
-Nerd glyphs in an icon-based prompt.
+the prompt's Nerd glyphs. The provisioner checks that both Starship presets
+render and that a fresh SSH-style Bash selects the icon preset.
 
 On a board provisioned by an older version, repair **only** the prompt without
 reinstalling or repeating system updates. From the existing KMOS checkout:
