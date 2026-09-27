@@ -78,7 +78,7 @@ gpg() {
     [[ "$argument" != --import ]] || import=1
     [[ "$argument" != --verify ]] || verify=1
   done
-  if ((import)); then cat >/dev/null; return 0; fi
+  if ((import)); then return 0; fi
   ((verify)) || return 1
   printf '[GNUPG:] VALIDSIG %s 2026-01-01 0 0 0 0 0 0 00 %s\n' "$ALARM_SIGNING_FINGERPRINT" "$ALARM_SIGNING_FINGERPRINT"
 }

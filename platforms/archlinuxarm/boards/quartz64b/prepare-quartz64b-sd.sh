@@ -33,6 +33,7 @@ WIFI_SSID=""
 WIFI_PASSPHRASE=""
 WIFI_HIDDEN=false
 WIFI_PACKAGE_DIR=""
+VERIFY_KEYRING_DIR=""
 MOUNT_DIR=""
 BOOT_PARTITION=""
 ROOT_PARTITION=""
@@ -87,6 +88,7 @@ cleanup() {
   local status=$?
   trap - EXIT INT TERM
   [[ -z "$BOOTLOADER_DIR" ]] || rm -rf "$BOOTLOADER_DIR"
+  [[ -z "$VERIFY_KEYRING_DIR" ]] || rm -rf -- "$VERIFY_KEYRING_DIR"
   if [[ -n "$MOUNT_DIR" && "$KEEP_MOUNTS" -eq 0 ]]; then
     if mountpoint -q "$MOUNT_DIR/boot"; then
       umount "$MOUNT_DIR/boot" || true
@@ -381,20 +383,27 @@ verify_wifi_package() {
 }
 
 stage_offline_wifi_packages() {
-  local rootfs=$1 gpg_home db trusted
+  local rootfs=$1 gpg_home db trusted keyfile
   WIFI_PACKAGE_DIR=$(mktemp -d "$WORK_DIR/wifi-packages.XXXXXXXX") || die 'Could not create a Wi-Fi package directory.'
-  gpg_home=$(mktemp -d "$WIFI_PACKAGE_DIR/keyring.XXXXXXXX") || die 'Could not create a temporary verification keyring.'
-  chmod 0700 "$gpg_home"
+  VERIFY_KEYRING_DIR=$(mktemp -d "${TMPDIR:-/tmp}/kmos-wifi-keyring.XXXXXXXX") || die 'Could not create a temporary verification keyring.'
+  gpg_home=$VERIFY_KEYRING_DIR
+  keyfile="$gpg_home/archlinuxarm.gpg"
   db="$WIFI_PACKAGE_DIR/extra.db"
   info 'Downloading official AArch64 repository metadata and offline Wi-Fi packages.'
   download "$ALARM_EXTRA_URL/extra.db" "$db"
-  bsdtar -xOf "$rootfs" ./usr/share/pacman/keyrings/archlinuxarm.gpg | gpg --homedir "$gpg_home" --batch --import >/dev/null 2>&1 \
-    || die 'Unable to import the ARM keyring from the verified rootfs.'
-  trusted=$(bsdtar -xOf "$rootfs" ./usr/share/pacman/keyrings/archlinuxarm-trusted)
+  bsdtar -xOf "$rootfs" ./usr/share/pacman/keyrings/archlinuxarm.gpg > "$keyfile" \
+    || die 'Unable to extract the ARM keyring from the verified rootfs.'
+  [[ -s "$keyfile" ]] || die 'The ARM public keyring in the verified rootfs is empty.'
+  gpg --homedir "$gpg_home" --batch --import "$keyfile" \
+    || die 'Unable to import the ARM keyring; see the GPG diagnostic above.'
+  rm -f -- "$keyfile"
+  trusted=$(bsdtar -xOf "$rootfs" ./usr/share/pacman/keyrings/archlinuxarm-trusted) \
+    || die 'Unable to extract trusted ARM fingerprints from the verified rootfs.'
   printf '%s\n' "$trusted" | grep -qx "$ALARM_SIGNING_FINGERPRINT:4:" || die 'Verified rootfs does not trust the pinned ARM build key.'
   verify_wifi_package "$WIFI_PACKAGE_DIR" ell "$db" "$gpg_home"
   verify_wifi_package "$WIFI_PACKAGE_DIR" iwd "$db" "$gpg_home"
   rm -rf -- "$gpg_home"
+  VERIFY_KEYRING_DIR=""
   info 'Signed offline ARM Wi-Fi packages are ready; nothing has been written to the SD yet.'
 }
 
