@@ -53,7 +53,8 @@ cd /root
 The helper first detects a wireless interface. If `iwd` is missing, it asks
 before installing the staged ARM `ell` and `iwd` packages locally with
 `pacman -U` and **required signature verification**. Then it scans, asks for
-your Wi-Fi SSID and passphrase, stores a root-only WPA-Personal profile, and
+your Wi-Fi network number (or the exact SSID) and passphrase, stores a root-only
+WPA-Personal profile, and
 enables persistent `iwd` plus DHCP through `systemd-networkd`. The passphrase
 is never passed as a process argument. Failed association or missing Wi-Fi DHCP
 route returns to the SSID prompt, removes the failed profile, and restores any
@@ -61,7 +62,8 @@ existing profile it temporarily replaced. Type `CANCEL` at the SSID prompt to
 stop explicitly. An already connected Wi-Fi link is accepted only when its
 matching root-only auto-connect profile, DHCP address, Wi-Fi default route, and
 persistent services can be verified. It restarts `iwd` to reload the saved
-profile and reconnect Wi-Fi, so **run it from the local console**, not
+profile, scans again after that restart, and reconnects Wi-Fi, so **run it from
+the local console**, not
 over SSH. Even a successful reconnect **cannot prove it will work after reboot**.
 Check `networkctl status` and verify the
 connection survives a reboot before provisioning KMOS. If the adapter or

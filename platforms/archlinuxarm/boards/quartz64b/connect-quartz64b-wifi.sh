@@ -4,6 +4,7 @@ set -Eeuo pipefail
 SCRIPT_DIR=$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")
 # shellcheck source=platforms/archlinuxarm/boards/quartz64b/wifi-profile.sh
 source "$SCRIPT_DIR/wifi-profile.sh"
+NETWORK_NAMES=()
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*" >&2; }
@@ -29,6 +30,42 @@ detect_wifi_adapter() {
     return 0
   done
   return 1
+}
+
+scan_wifi_networks() {
+  local adapter=$1 output line name existing duplicate index=1
+  NETWORK_NAMES=()
+  if ! iwctl station "$adapter" scan; then
+    info 'Wi-Fi scan failed. You may still enter an SSID manually.'
+    return 1
+  fi
+  # iwd scans asynchronously; an immediate get-networks can show stale results.
+  sleep 2
+  if ! output=$(iwctl station "$adapter" get-networks 2>&1); then
+    info 'Could not list Wi-Fi networks. You may still enter an SSID manually.'
+    return 1
+  fi
+  while IFS= read -r line; do
+    line=$(printf '%s\n' "$line" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g; s/^[[:space:]>]+//; s/[[:space:]]+$//')
+    [[ -n "$line" && "$line" != 'Available networks'* && "$line" != 'Network name'* && "$line" != 'Security'* && "$line" != --* ]] || continue
+    name=$(printf '%s\n' "$line" | sed -E 's/[[:space:]]{2,}.*$//')
+    [[ -n "$name" ]] || continue
+    duplicate=0
+    for existing in "${NETWORK_NAMES[@]}"; do
+      [[ "$existing" != "$name" ]] || { duplicate=1; break; }
+    done
+    ((duplicate == 1)) || NETWORK_NAMES+=("$name")
+  done <<< "$output"
+  if ((${#NETWORK_NAMES[@]} > 0)); then
+    info 'Available Wi-Fi networks (choose a number, or enter an SSID):'
+    for name in "${NETWORK_NAMES[@]}"; do
+      printf '  %d) %s\n' "$index" "$name" >&2
+      ((index++))
+    done
+  else
+    printf '%s\n' "$output" >&2
+    info 'No network names could be parsed; enter the SSID manually.'
+  fi
 }
 
 configure_wifi_network() {
@@ -90,23 +127,33 @@ wait_for_wifi() {
 }
 
 reconnect_saved_wifi() {
-  local adapter=$1 state_dir=$2 ssid=$3 current
+  local adapter=$1 state_dir=$2 ssid=$3 current command=connect
   current=$(connected_wifi_ssid "$adapter") || true
   if [[ -n "$current" ]]; then
     [[ -z "${SSH_CONNECTION:-}" ]] || die 'Testing saved credentials requires restarting Wi-Fi. Run this helper from the local console, not over SSH.'
   fi
   info 'Restarting iwd to reload the saved profile and test reconnection; Ethernet is unaffected.'
   systemctl restart iwd.service || return 1
-  # AutoConnect may have associated before the explicit connect command.
-  iwctl station "$adapter" connect "$ssid" || true
+  # Restarting iwd clears its scan cache. Scan again before connecting, as in
+  # the Arch ISO helper; otherwise iwctl can report "Invalid network name".
+  scan_wifi_networks "$adapter" || true
+  if grep -Fxq 'Hidden=true' "$state_dir/$ssid.psk"; then command=connect-hidden; fi
+  # AutoConnect may already have associated while the scan was running.
+  if ! iwctl station "$adapter" "$command" "$ssid"; then
+    [[ $(connected_wifi_ssid "$adapter") == "$ssid" ]] || return 1
+  fi
   wait_for_wifi "$adapter" "$state_dir" "$ssid"
 }
 
 connect_wifi_with_retries() {
   local adapter=$1 state_dir=$2 ssid passphrase hidden answer profile backup_dir
   while true; do
-    read -r -p 'Wi-Fi SSID (or type CANCEL): ' ssid || return 1
+    read -r -p 'Wi-Fi network number or SSID (or type CANCEL): ' ssid || return 1
     [[ "$ssid" != CANCEL ]] || return 1
+    if [[ "$ssid" =~ ^[1-9][0-9]*$ ]] && ((ssid <= ${#NETWORK_NAMES[@]})); then
+      ssid=${NETWORK_NAMES[$((ssid - 1))]}
+      info "Selected network: $ssid"
+    fi
     [[ "$ssid" =~ ^[a-zA-Z0-9_\ -]{1,32}$ ]] || { info 'SSID must be 1-32 ASCII letters, digits, spaces, underscores or hyphens.'; continue; }
     if [[ -n "${SSH_CONNECTION:-}" && -n $(connected_wifi_ssid "$adapter") ]]; then
       die 'Testing saved credentials requires restarting Wi-Fi. Run this helper from the local console, not over SSH.'
@@ -157,6 +204,7 @@ connect_wifi_with_retries() {
       info 'Previous profile restored.'
     fi
     info 'Try again, or type CANCEL at the SSID prompt to stop without claiming success.'
+    scan_wifi_networks "$adapter" || true
   done
 }
 
@@ -189,8 +237,6 @@ main() {
     command -v iwctl >/dev/null 2>&1 || die 'iwd installation did not provide iwctl.'
   fi
   systemctl start iwd.service
-  iwctl station "$adapter" scan || true
-  iwctl station "$adapter" get-networks || true
   configure_wifi_network "$adapter"
   ssid=$(connected_wifi_ssid "$adapter") || true
   if [[ -n "$ssid" ]] && wifi_connection_ready "$adapter" /var/lib/iwd "$ssid"; then
@@ -203,6 +249,7 @@ main() {
   else
     info 'The current Wi-Fi connection is not verified as persistent; credentials must be checked.'
   fi
+  scan_wifi_networks "$adapter" || true
   connect_wifi_with_retries "$adapter" /var/lib/iwd || { info 'Wi-Fi setup cancelled; previously saved profiles were preserved.'; return 1; }
 }
 

@@ -93,6 +93,10 @@ iwctl() {
   [[ "$1" == station && "$2" == wlan0 ]] || return 1
   if [[ "$3" == show ]]; then
     printf '  Connected network    Good Wifi\n'
+  elif [[ "$3" == scan ]]; then
+    printf 'scanned\n' >> "$fixture/attempts"
+  elif [[ "$3" == get-networks ]]; then
+    printf 'Network name                 Security\n  Bad Wifi                    psk\n  Good Wifi                   psk\n'
   else
     [[ "$3" == connect ]] || return 1
     printf '%s\n' "$4" >> "$fixture/attempts"
@@ -117,11 +121,13 @@ systemctl() {
 }
 sleep() { :; }
 mkdir -m 700 "$fixture/retry-profiles"
+scan_wifi_networks wlan0 >/dev/null
+[[ "${NETWORK_NAMES[1]}" == 'Good Wifi' ]]
 if wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'; then
   printf 'An IP address without a saved profile was accepted as persistent.\n' >&2
   exit 1
 fi
-if ! printf 'Bad Wifi\nwrong password\n\nGood Wifi\ncorrect password\n\n' \
+if ! printf '1\nwrong password\n\n2\ncorrect password\n\n' \
   | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/retry-output" 2>&1; then
   cat "$fixture/retry-output" >&2
   exit 1
@@ -129,10 +135,10 @@ fi
 [[ ! -e "$fixture/retry-profiles/Bad Wifi.psk" ]]
 grep -qx 'Passphrase=correct password' "$fixture/retry-profiles/Good Wifi.psk"
 [[ $(stat -c %a "$fixture/retry-profiles/Good Wifi.psk") == 600 ]]
-[[ $(cat "$fixture/attempts") == $'restarted\nBad Wifi\nrestarted\nGood Wifi' ]]
+[[ $(cat "$fixture/attempts") == $'scanned\nrestarted\nscanned\nBad Wifi\nscanned\nrestarted\nscanned\nGood Wifi' ]]
 wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'
 reconnect_saved_wifi wlan0 "$fixture/retry-profiles" 'Good Wifi'
-[[ $(tail -n 2 "$fixture/attempts") == $'restarted\nGood Wifi' ]]
+[[ $(tail -n 3 "$fixture/attempts") == $'restarted\nscanned\nGood Wifi' ]]
 
 # A failed replacement must restore the original profile, even if the user stops.
 write_iwd_profile "$fixture/retry-profiles" 'Old Wifi' 'original password' false
@@ -170,4 +176,30 @@ printf 'CANCEL\n' | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >/
   exit 1
 }
 cmp "$fixture/original-profile" "$fixture/retry-profiles/Old Wifi.psk"
+
+# Regression: the displayed KASA SSID must still be found after iwd restarts.
+(
+  # Invoked by functions sourced from the board helper.
+  # shellcheck disable=SC2329
+  iwctl() {
+    [[ "$1" == station && "$2" == wlan0 ]] || return 1
+    case "$3" in
+      scan) printf 'scanned\n' >> "$fixture/kasa-attempts" ;;
+      get-networks) printf 'Network name      Security\nKASA              psk\n' ;;
+      show) printf '  Connected network    KASA\n' ;;
+      connect) [[ "$4" == KASA ]] && printf 'connected KASA\n' >> "$fixture/kasa-attempts" ;;
+      *) return 1 ;;
+    esac
+  }
+  # shellcheck disable=SC2329
+  ip() {
+    if [[ "$2" == -o ]]; then printf 'wlan0 192.0.2.10\n';
+    else printf 'default via 192.0.2.1 dev wlan0\n'; fi
+  }
+  scan_wifi_networks wlan0 >/dev/null
+  printf 'KASA\ncorrect password\n\n' \
+    | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/kasa-output" 2>&1
+  [[ $(tail -n 3 "$fixture/kasa-attempts") == $'scanned\nscanned\nconnected KASA' ]]
+  grep -Fxq 'Passphrase=correct password' "$fixture/retry-profiles/KASA.psk"
+)
 printf 'Quartz first-boot Wi-Fi profile and rootfs preflight: OK (offline fixtures).\n'
