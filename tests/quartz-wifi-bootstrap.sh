@@ -85,4 +85,56 @@ if (install_offline_wifi "$fixture/board-cache" "$fixture/board-state/should-not
   exit 1
 fi
 [[ ! -e "$fixture/board-state/should-not-exist" ]]
+
+# Exercise the board-side retry loop with mocked association and DHCP only.
+# shellcheck disable=SC1091
+source "$repo/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
+iwctl() {
+  [[ "$1" == station && "$2" == wlan0 && "$3" == connect ]] || return 1
+  printf '%s\n' "$4" >> "$fixture/attempts"
+  [[ "$4" == 'Good Wifi' ]]
+}
+ip() { [[ "$*" == '-4 -o address show dev wlan0 scope global' ]] && printf 'wlan0 192.0.2.10\n'; }
+sleep() { :; }
+mkdir -m 700 "$fixture/retry-profiles"
+printf 'Bad Wifi\nwrong password\n\n\nGood Wifi\ncorrect password\n\n' \
+  | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/retry-output" 2>&1
+[[ ! -e "$fixture/retry-profiles/Bad Wifi.psk" ]]
+grep -qx 'Passphrase=correct password' "$fixture/retry-profiles/Good Wifi.psk"
+[[ $(stat -c %a "$fixture/retry-profiles/Good Wifi.psk") == 600 ]]
+[[ $(cat "$fixture/attempts") == $'Bad Wifi\nGood Wifi' ]]
+
+# A failed replacement must restore the original profile, even if the user stops.
+write_iwd_profile "$fixture/retry-profiles" 'Old Wifi' 'original password' false
+cp "$fixture/retry-profiles/Old Wifi.psk" "$fixture/original-profile"
+printf 'Old Wifi\nincorrect password\n\ny\nn\n' \
+  | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/restore-output" 2>&1 && {
+    printf 'Cancelling Wi-Fi retries incorrectly succeeded.\n' >&2
+    exit 1
+  }
+cmp "$fixture/original-profile" "$fixture/retry-profiles/Old Wifi.psk"
+[[ $(stat -c %a "$fixture/retry-profiles/Old Wifi.psk") == 600 ]]
+[[ $(find "$fixture/retry-profiles" -maxdepth 1 -name '.kmos-wifi-backup.*' | wc -l) == 0 ]]
+
+# Declining replacement keeps the old profile and allows a clean cancellation.
+printf 'Old Wifi\nunused password\n\nn\nCANCEL\n' \
+  | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >/dev/null 2>&1 && {
+    printf 'Declining replacement incorrectly succeeded.\n' >&2
+    exit 1
+  }
+cmp "$fixture/original-profile" "$fixture/retry-profiles/Old Wifi.psk"
+
+# Association success with slow DHCP must not discard valid credentials.
+ip() { [[ "$*" == '-4 -o address show dev wlan0 scope global' ]]; }
+printf 'Good Wifi\ncorrect password\n\ny\n' \
+  | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/dhcp-output" 2>&1
+grep -q 'DHCP has not assigned an IPv4 address yet' "$fixture/dhcp-output"
+grep -qx 'Passphrase=correct password' "$fixture/retry-profiles/Good Wifi.psk"
+
+# Explicit cancellation before credential entry must leave profiles untouched.
+printf 'CANCEL\n' | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >/dev/null 2>&1 && {
+  printf 'Cancelling before entry incorrectly succeeded.\n' >&2
+  exit 1
+}
+cmp "$fixture/original-profile" "$fixture/retry-profiles/Old Wifi.psk"
 printf 'Quartz first-boot Wi-Fi profile and rootfs preflight: OK (offline fixtures).\n'

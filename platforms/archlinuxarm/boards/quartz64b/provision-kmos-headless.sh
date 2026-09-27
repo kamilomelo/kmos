@@ -432,7 +432,10 @@ configure_wifi() {
   ask_yes_no 'Configure persistent Wi-Fi now?' no || return
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
   [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter detected. Ethernet remains configured.'; return; }
-  "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
+  if ! "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
+    warn 'Wi-Fi setup was cancelled or did not complete. Continuing with headless provisioning; check networking before reboot.'
+    return 0
+  fi
   info 'Wi-Fi configured; iwd and systemd-networkd will retain the connection after reboot.'
 }
 

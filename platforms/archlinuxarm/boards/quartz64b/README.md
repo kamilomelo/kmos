@@ -55,10 +55,21 @@ before installing the staged ARM `ell` and `iwd` packages locally with
 `pacman -U` and **required signature verification**. Then it scans, asks for
 your Wi-Fi SSID and passphrase, stores a root-only WPA-Personal profile, and
 enables persistent `iwd` plus DHCP through `systemd-networkd`. The passphrase
-is never passed as a process argument. Check `networkctl status` and verify the
+is never passed as a process argument. A failed association offers another try,
+removes the failed profile, and restores any existing profile it temporarily
+replaced. Type `CANCEL` at the SSID prompt to leave previously saved profiles
+alone. An already active persistent Wi-Fi connection is kept unless you
+explicitly choose to reconfigure it. Check `networkctl status` and verify the
 connection survives a reboot before provisioning KMOS. If the adapter or
 firmware is missing, the helper stops before installing packages; temporary
 networking or a compatible adapter will be necessary.
+
+If provisioning already reached the Wi-Fi prompt and failed there, do **not**
+reflash or rerun the entire provisioner just to fix the credentials. With
+Ethernet connected if necessary, update your existing KMOS checkout and run
+`./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh` from it.
+If the board remains online after a Wi-Fi association error, verify whether
+Ethernet or Wi-Fi carries the connection before rebooting.
 
 ## Provision KMOS headless, then optionally KDE
 
