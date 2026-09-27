@@ -32,6 +32,7 @@ FINAL_SUCCESS_ICON="✔"
 TARGET_DISK=""
 ROOT_PARTITION=""
 BOOT_PARTITION=""
+BOOT_PARTITION_ACTION=""
 ROOT_FILESYSTEM="xfs"
 TIMEZONE="Europe/Zurich"
 LOCALE="en_US.UTF-8"
@@ -390,12 +391,15 @@ prompt_secret() {
 }
 
 require_root() {
-  [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Run this script as root from the Arch ISO."
+  ((EUID == 0)) && return
+  command -v sudo >/dev/null 2>&1 || die "Root access is required, but sudo is not installed."
+  info "Root access is needed for Arch installation; sudo will prompt for your password."
+  exec sudo -- "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
 }
 
 require_tools() {
   local missing=()
-  local tools=(arch-chroot awk blkid cat cfdisk chmod cp dd df dirname find findmnt fsck.fat genfstab grep head install ln lspci lsblk mkdir mkfs.fat mount pacstrap partprobe rm rmdir sed sort timedatectl touch udevadm umount)
+  local tools=(arch-chroot awk blkid cat cfdisk chmod cp dd df dirname find findmnt fsck.fat genfstab grep head install ln lspci lsblk mkdir mkfs.fat mktemp mount pacstrap partprobe readlink rm rmdir sed sort timedatectl touch tr udevadm umount)
   local tool
 
   for tool in "${tools[@]}"; do
@@ -626,6 +630,7 @@ choose_partitions() {
     select_root_partition
 
     if validate_partitions; then
+      choose_boot_partition_action
       return 0
     fi
 
@@ -635,11 +640,60 @@ choose_partitions() {
 }
 
 validate_partitions() {
+  [[ -n "$TARGET_DISK" ]] || return 1
+  block_device "$TARGET_DISK" || return 1
+  [[ "$(lsblk -dnro TYPE "$TARGET_DISK" 2>/dev/null)" == "disk" ]] || return 1
   [[ -n "$BOOT_PARTITION" && -n "$ROOT_PARTITION" ]] || return 1
-  [[ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]] || return 1
-  [[ -b "$BOOT_PARTITION" && -b "$ROOT_PARTITION" ]] || return 1
+  [[ "$(readlink -f -- "$BOOT_PARTITION")" != "$(readlink -f -- "$ROOT_PARTITION")" ]] || return 1
+  block_device "$BOOT_PARTITION" && block_device "$ROOT_PARTITION" || return 1
   [[ "$(partition_type "$BOOT_PARTITION")" == "part" ]] || return 1
   [[ "$(partition_type "$ROOT_PARTITION")" == "part" ]] || return 1
+  partition_on_target_disk "$BOOT_PARTITION" || return 1
+  partition_on_target_disk "$ROOT_PARTITION" || return 1
+  [[ "$(lsblk -dnro PARTTYPE "$BOOT_PARTITION" 2>/dev/null | tr '[:upper:]' '[:lower:]')" == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" ]] || return 1
+  [[ "$(lsblk -dnro PARTTYPE "$ROOT_PARTITION" 2>/dev/null | tr '[:upper:]' '[:lower:]')" != "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" ]] || return 1
+  case "$(partition_fstype "$ROOT_PARTITION")" in
+    ''|ext4|xfs|btrfs) ;;
+    *) return 1 ;;
+  esac
+}
+
+block_device() {
+  [[ -b "$1" ]]
+}
+
+partition_on_target_disk() {
+  local selected=""
+  local name=""
+  local type=""
+
+  selected="$(readlink -f -- "$1")" || return 1
+  [[ -n "$selected" ]] || return 1
+  while read -r name type; do
+    if [[ "$type" == "part" && "$(readlink -f -- "$name")" == "$selected" ]]; then
+      return 0
+    fi
+  done < <(lsblk -nrpo NAME,TYPE "$TARGET_DISK")
+  return 1
+}
+
+choose_boot_partition_action() {
+  local fstype=""
+
+  fstype="$(partition_fstype "$BOOT_PARTITION")"
+  if [[ "$fstype" == "vfat" ]]; then
+    warn "Existing FAT32 EFI partition detected: $BOOT_PARTITION. Reuse preserves its files; formatting erases them."
+    if ask_yes_no "Reuse this EFI partition without formatting?" "yes"; then
+      BOOT_PARTITION_ACTION="reuse"
+    else
+      BOOT_PARTITION_ACTION="format"
+    fi
+  elif [[ -z "$fstype" ]]; then
+    BOOT_PARTITION_ACTION="format"
+    info "Unformatted EFI partition $BOOT_PARTITION will be formatted as FAT32."
+  else
+    die "EFI partition $BOOT_PARTITION has filesystem $fstype; refusing to reformat an unexpected filesystem."
+  fi
 }
 
 detect_other_os_candidate() {
@@ -871,11 +925,13 @@ confirm_install_plan() {
   local extra_user_summary=""
   local extra_sudo_summary=""
   local idx=0
+  local confirmation=""
 
   printf '\n' >&2
   info "Install plan:"
   detail "Disk" "$TARGET_DISK"
   detail "Boot" "$BOOT_PARTITION -> /boot"
+  detail "Boot action" "$BOOT_PARTITION_ACTION"
   detail "Root" "$ROOT_PARTITION -> /"
   detail "Root fs" "$ROOT_FILESYSTEM"
   detail "Bootloader" "$KRUB_ID"
@@ -912,25 +968,69 @@ confirm_install_plan() {
 
   printf '\n%b%s%b\n' "${UI_DANGER}${UI_BOLD}" "Destructive action" "$UI_RESET" >&2
   log "The root partition will be formatted. Data on $ROOT_PARTITION will be erased."
-  log "The boot partition will be formatted as FAT32. Data on $BOOT_PARTITION will be erased."
+  if [[ "$BOOT_PARTITION_ACTION" == "format" ]]; then
+    log "The boot partition will be formatted as FAT32. Data on $BOOT_PARTITION will be erased."
+    confirmation="FORMAT $ROOT_PARTITION $BOOT_PARTITION"
+  else
+    log "The existing EFI filesystem on $BOOT_PARTITION will NOT be formatted; Arch and GRUB will add files to it."
+    confirmation="FORMAT $ROOT_PARTITION KEEP $BOOT_PARTITION"
+  fi
   while true; do
-    read -r -p "Type FORMAT to continue or EXIT to cancel: " confirm
+    read -r -p "Type '$confirmation' to continue or EXIT to cancel: " confirm
     case "$confirm" in
-      FORMAT)
-        break
-        ;;
       EXIT)
         die "Install cancelled."
         ;;
-      *)
-        warn "Type FORMAT to continue or EXIT to cancel."
-        ;;
     esac
+    [[ "$confirm" == "$confirmation" ]] && break
+    warn "Confirmation did not match the target partitions and action."
   done
 }
 
+preflight_partitions() {
+  local partition=""
+  local mounted=""
+  local fstype=""
+  local size=""
+
+  validate_partitions || die "Partitions no longer match the selected disk or the EFI partition is invalid. Nothing was formatted."
+  case "$BOOT_PARTITION_ACTION" in
+    format|reuse) ;;
+    *) die "No EFI action selected. Nothing was formatted." ;;
+  esac
+
+  for partition in "$ROOT_PARTITION" "$BOOT_PARTITION"; do
+    mounted="$(lsblk -dnro MOUNTPOINTS "$partition" 2>/dev/null)"
+    [[ -z "$mounted" ]] || die "$partition is mounted or active ($mounted). Unmount it before installation."
+  done
+
+  fstype="$(partition_fstype "$BOOT_PARTITION")"
+  if [[ "$BOOT_PARTITION_ACTION" == "reuse" ]]; then
+    [[ "$fstype" == "vfat" ]] || die "EFI partition $BOOT_PARTITION is no longer FAT. Nothing was formatted."
+    check_reused_efi_space || die "Existing EFI partition has insufficient free space or cannot be mounted read-only. Nothing was formatted."
+  else
+    [[ -z "$fstype" || "$fstype" == "vfat" ]] || die "EFI partition $BOOT_PARTITION has an unexpected filesystem ($fstype). Nothing was formatted."
+    size="$(lsblk -bdnro SIZE "$BOOT_PARTITION")"
+    [[ "$size" =~ ^[0-9]+$ ]] || die "Could not read EFI partition size. Nothing was formatted."
+    ((size >= 536870912)) || die "EFI partition must be at least 512 MiB. Nothing was formatted."
+  fi
+}
+
+check_reused_efi_space() (
+  local temp_mount=""
+  local available_kb=""
+
+  temp_mount="$(mktemp -d /tmp/kmos-efi.XXXXXXXX)" || return 1
+  trap 'if findmnt -rn --mountpoint "$temp_mount" >/dev/null 2>&1; then umount "$temp_mount"; fi; rmdir "$temp_mount"' EXIT
+  mount -o ro,nosuid,nodev,noexec "$BOOT_PARTITION" "$temp_mount" || return 1
+  available_kb="$(df -Pk "$temp_mount" | awk 'NR==2 {print $4}')"
+  [[ "$available_kb" =~ ^[0-9]+$ ]] && ((available_kb >= 524288))
+)
+
 format_and_mount() {
   local detected_root_fstype=""
+
+  preflight_partitions
 
   case "$ROOT_FILESYSTEM" in
     ext4)
@@ -952,9 +1052,11 @@ format_and_mount() {
   detected_root_fstype="$(blkid -o value -s TYPE "$ROOT_PARTITION" 2>/dev/null || true)"
   [[ "$detected_root_fstype" == "$ROOT_FILESYSTEM" ]] || die "Expected $ROOT_PARTITION to be formatted as $ROOT_FILESYSTEM, but detected: ${detected_root_fstype:-unknown}"
 
-  run_cmd mkfs.fat -F 32 "$BOOT_PARTITION"
-  run_cmd partprobe "$TARGET_DISK" || true
-  udevadm settle || true
+  if [[ "$BOOT_PARTITION_ACTION" == "format" ]]; then
+    run_cmd mkfs.fat -F 32 "$BOOT_PARTITION"
+    run_cmd partprobe "$TARGET_DISK" || true
+    udevadm settle || true
+  fi
 
   if findmnt -rn "$MOUNT_POINT" >/dev/null 2>&1; then
     umount -R "$MOUNT_POINT" || die "$MOUNT_POINT is already mounted and could not be unmounted."
@@ -1650,7 +1752,7 @@ main() {
   init_ui
   parse_args "$@"
   print_banner
-  require_root
+  require_root "$@"
   require_tools
 
   advance_step "Verifying live environment"
@@ -1662,6 +1764,7 @@ main() {
 
   advance_step "Collecting base configuration"
   collect_system_config
+  preflight_partitions
   confirm_install_plan
 
   advance_step "Formatting and mounting"
@@ -1686,4 +1789,6 @@ main() {
   final_reboot
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

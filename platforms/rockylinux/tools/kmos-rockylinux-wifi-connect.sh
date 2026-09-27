@@ -37,7 +37,10 @@ die() {
 }
 
 require_root() {
-  [[ $EUID -eq 0 ]] || die "Run this script as root."
+  ((EUID == 0)) && return
+  command -v sudo >/dev/null 2>&1 || die "Root access is required, but sudo is not installed."
+  info "Root access is needed to configure Wi-Fi; sudo will prompt for your password."
+  exec sudo -- "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
 }
 
 require_tools() {
@@ -214,7 +217,7 @@ main() {
   local hidden=0
 
   init_ui
-  require_root
+  require_root "$@"
   require_tools
   require_wifi_stack
 

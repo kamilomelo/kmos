@@ -23,9 +23,6 @@ detect_linux_id() {
 main() {
   local os_id=""
 
-  [[ -x "$ARCH_INSTALLER" ]] || die "Missing Arch Linux installer: $ARCH_INSTALLER"
-  [[ -x "$ROCKY_INSTALLER" ]] || die "Missing Rocky Linux installer: $ROCKY_INSTALLER"
-
   case "${OSTYPE:-}" in
     msys*|cygwin*|win32*)
       die "Windows support is not implemented yet. Planned platform path: platforms/windows/"
@@ -34,10 +31,15 @@ main() {
 
   os_id="$(detect_linux_id || true)"
   case "$os_id" in
-    arch|archarm)
+    arch)
+      [[ -x "$ARCH_INSTALLER" ]] || die "Missing Arch Linux installer: $ARCH_INSTALLER"
       exec bash "$ARCH_INSTALLER" "$@"
       ;;
+    archarm)
+      die "Arch Linux ARM uses board-specific SD preparation and post-boot provisioning. See platforms/archlinuxarm/boards/; the x86 installer cannot run on ARM."
+      ;;
     rocky)
+      [[ -x "$ROCKY_INSTALLER" ]] || die "Missing Rocky Linux installer: $ROCKY_INSTALLER"
       exec bash "$ROCKY_INSTALLER" "$@"
       ;;
     "")
@@ -49,4 +51,6 @@ main() {
   esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

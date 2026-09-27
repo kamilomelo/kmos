@@ -133,7 +133,10 @@ ask_yes_no() {
 }
 
 require_root() {
-  [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Run this script as root from the Arch ISO."
+  ((EUID == 0)) && return
+  command -v sudo >/dev/null 2>&1 || die "Root access is required, but sudo is not installed."
+  info "Root access is needed for KDE installation; sudo will prompt for your password."
+  exec sudo -- "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
 }
 
 require_tools() {
@@ -674,7 +677,7 @@ main() {
   init_ui
   parse_args "$@"
   print_banner
-  require_root
+  require_root "$@"
   require_tools
   verify_target
   select_kde_metapackages

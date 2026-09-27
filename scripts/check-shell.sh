@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+if ! command -v shellcheck >/dev/null 2>&1; then
+  printf 'ShellCheck is required (version 0.11.0).\n' >&2
+  exit 1
+fi
+if [[ "$(shellcheck --version | awk '/^version:/ {print $2}')" != "0.11.0" ]]; then
+  printf 'ShellCheck 0.11.0 is required to compare the diagnostic baseline.\n' >&2
+  exit 1
+fi
+
+# Limit the scope explicitly to platform entry points, their tests, and this checker.
+# Never lint or execute unrelated or untracked work in this repository.
+mapfile -d '' -t scripts < <(git ls-files -z -- 'kmos-install.sh' 'platforms/archlinux/*.sh' 'platforms/rockylinux/*.sh')
+if ((${#scripts[@]} == 0)); then
+  printf 'No tracked shell scripts found.\n' >&2
+  exit 1
+fi
+scripts+=(
+  platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh
+  platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
+  scripts/check-shell.sh
+  tests/archarm-dispatch.sh
+  tests/arch-partition-safety.sh
+  tests/quartz-disk-safety.sh
+  tests/quartz-bootloader-extraction.sh
+  tests/quartz-workdir-safety.sh
+  tests/quartz-provisioner-source.sh
+  tests/runtime-sudo.sh
+)
+
+for script in "${scripts[@]}"; do
+  bash -n "$script"
+done
+
+diagnostics=$(mktemp)
+normalized=$(mktemp)
+trap 'rm -f "$diagnostics" "$normalized"' EXIT
+
+status=0
+shellcheck --shell=bash --format=gcc "${scripts[@]}" > "$diagnostics" || status=$?
+if ((status > 1)); then
+  cat "$diagnostics" >&2
+  exit "$status"
+fi
+
+# Ignore line/column movement, but not the file, severity, code or message.
+sed -E 's/:[0-9]+:[0-9]+: /: /' "$diagnostics" | LC_ALL=C sort > "$normalized"
+if ! diff -u scripts/shellcheck-baseline.txt "$normalized"; then
+  printf '\nShellCheck diagnostics changed. Fix new findings, then update the baseline only for intentional existing findings.\n' >&2
+  exit 1
+fi
+
+printf 'Bash syntax and ShellCheck passed for %d scoped scripts (%d known diagnostics).\n' \
+  "${#scripts[@]}" "$(wc -l < "$normalized")"
+
+bash tests/arch-partition-safety.sh
+bash tests/archarm-dispatch.sh
+bash tests/quartz-disk-safety.sh
+bash tests/quartz-bootloader-extraction.sh
+bash tests/quartz-workdir-safety.sh
+bash tests/quartz-provisioner-source.sh
+bash tests/runtime-sudo.sh

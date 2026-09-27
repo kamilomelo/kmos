@@ -97,7 +97,10 @@ parse_args() {
 }
 
 require_root() {
-  [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Run this script as root."
+  ((EUID == 0)) && return
+  command -v sudo >/dev/null 2>&1 || die "Root access is required, but sudo is not installed."
+  log "Root access is needed for KDE configuration; sudo will prompt for your password."
+  exec sudo -- "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
 }
 
 verify_target() {
@@ -1056,7 +1059,7 @@ apply_post_tweaks() {
 main() {
   init_ui
   parse_args "$@"
-  require_root
+  require_root "$@"
   verify_target
   apply_post_tweaks
   final_success "KDE post-install stage complete."

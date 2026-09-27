@@ -144,7 +144,10 @@ print_banner() {
 }
 
 require_root() {
-  [[ $EUID -eq 0 ]] || die "Run this script as root."
+  ((EUID == 0)) && return
+  command -v sudo >/dev/null 2>&1 || die "Root access is required, but sudo is not installed."
+  info "Root access is needed for Rocky provisioning; sudo will prompt for your password."
+  exec sudo -- "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
 }
 
 require_tools() {
@@ -638,7 +641,7 @@ next_steps() {
 main() {
   init_ui
   print_banner
-  require_root
+  require_root "$@"
   require_tools
   is_rocky || die "This installer only supports Rocky Linux."
   configure_hostname

@@ -2,13 +2,10 @@
 
 kmos is a practical operating-system provisioning toolkit.
 
-Today the primary implemented platform is:
-- `archlinux`
-
-The project is structured so additional platforms can be added later, especially:
-- `rocky`
-
-There is also a minimal Windows guide under `platforms/windows/`, but the main focus of this repository is the Linux path.
+The primary implemented platform is Arch Linux x86_64. Rocky Linux has a
+post-install workflow; Arch Linux ARM has a Quartz64 Model B workflow. Other
+ARM boards remain future work. Windows has a manual guide under
+`platforms/windows/`. The main focus of this repository is the Linux path.
 
 ## How To Use It
 
@@ -60,6 +57,16 @@ cd kmos
 
 The dispatcher will route to the Arch installer.
 
+The Arch installer requires a GPT EFI System Partition and a root partition on
+the selected disk. An existing FAT EFI partition can be **reused without
+formatting** if it has at least 512 MiB free; this preserves existing boot
+files but adds Arch and GRUB files to it. Alternatively, choose to format an
+EFI partition of at least 512 MiB (which erases its existing contents).
+The root partition is always formatted. Both partitions must be unmounted,
+and the final confirmation names the exact devices and EFI action. Back up
+important data before installing; reusing an EFI partition does not make the
+root-formatting step reversible.
+
 #### 4) If Ethernet Is NOT Available
 
 Use the repository from external media, then run Wi-Fi setup first:
@@ -88,6 +95,17 @@ Use:
 ```bash
 ./kmos-install.sh --profile noapps
 ```
+
+## Arch Linux ARM
+
+ARM boards require board-specific SD preparation, followed by provisioning on
+the booted board. The x86_64 Arch installer is **not** usable on ARM; the root
+dispatcher refuses `archarm` rather than sending it to the x86_64 UEFI flow.
+Arch Linux ARM has separate AArch64 and ARMv7 package repositories, so not all
+x86_64 packages or KDE features can be assumed available. Currently the
+[Quartz64 Model B workflow](./platforms/archlinuxarm/boards/quartz64b/README.md)
+implements SD preparation and headless post-boot provisioning. Other boards
+and an ARM KDE stage remain future work.
 
 ## Rocky Linux
 
@@ -131,6 +149,7 @@ The Rocky script now blocks if a newer kernel is installed but not yet running, 
 
 ```text
 .
+├── .github/workflows/shell-validation.yml # Non-destructive CI
 ├── kmos-install.sh                         # Root platform dispatcher
 ├── platforms/
 │   ├── archlinux/
@@ -146,6 +165,9 @@ The Rocky script now blocks if a newer kernel is installed but not yet running, 
 │   │   └── tools/                          # Arch helper scripts
 │   │       ├── kmos-wifi-connect.sh
 │   │       └── kmos-usb-flasher.sh
+│   ├── archlinuxarm/
+│   │   ├── README.md
+│   │   └── boards/quartz64b/              # Quartz64 SD preparation + headless provisioning
 │   ├── rockylinux/
 │   │   ├── kmos-rockylinux-install.sh     # Rocky minimal post-install entry point
 │   │   └── tools/
@@ -153,6 +175,8 @@ The Rocky script now blocks if a newer kernel is installed but not yet running, 
 │   └── windows/
 │       ├── WINDOWS_SETUP.md                # Manual Windows setup workflow
 │       └── assets/                         # Windows-specific runtime assets
+├── scripts/                                # Local shell validation and baseline
+├── tests/                                  # Mocked, non-destructive safety tests
 ├── LICENSE
 └── README.md
 ```
@@ -163,7 +187,16 @@ The Rocky script now blocks if a newer kernel is installed but not yet running, 
 - The Rocky platform currently starts from a manually installed Rocky Minimal base.
 - Platform-specific assets are mirrored into `/opt/kmos/assets/` during installation.
 - Windows reuses assets directly from `platforms/windows/assets/` through the Markdown guide.
-- Future Rocky Linux support should live beside Arch and Windows under `platforms/`.
+
+## Non-destructive validation
+
+Install ShellCheck 0.11.0, then run `bash scripts/check-shell.sh`. The check runs
+`bash -n` and ShellCheck on Arch, Arch Linux ARM, and Rocky Bash entry points and the
+validation scripts, then runs mocked partition-safety tests. It does not run
+the installers, write to disks, or inspect other untracked work. CI runs the same
+check on pushes and pull requests. Existing diagnostics are recorded in
+`scripts/shellcheck-baseline.txt`; new diagnostics fail the check. When fixing
+an existing diagnostic, remove its matching baseline entry as part of the fix.
 
 ## Windows
 

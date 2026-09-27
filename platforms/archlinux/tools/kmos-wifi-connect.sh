@@ -120,6 +120,13 @@ print_banner() {
   #log "Then clone or pull kmos scripts from GitHub."
 }
 
+require_root() {
+  ((EUID == 0)) && return
+  command -v sudo >/dev/null 2>&1 || die "Root access is required, but sudo is not installed."
+  info "Root access is needed to configure Wi-Fi; sudo will prompt for your password."
+  exec sudo -- "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
+}
+
 require_tools() {
   local missing=()
   local tools=(chmod cp ip iwctl mkdir rfkill ping sed timedatectl)
@@ -409,6 +416,7 @@ main() {
 
   init_ui
   print_banner
+  require_root "$@"
   require_tools
 
   unblock_wireless

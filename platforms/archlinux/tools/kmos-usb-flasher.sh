@@ -206,7 +206,7 @@ resolve_base_url() {
 
 require_tools() {
   local missing=()
-  local tools=(curl awk sed grep sort lsblk findmnt sha256sum b2sum dd sudo)
+  local tools=(curl awk sed grep sort lsblk findmnt sha256sum b2sum dd)
   local t
   for t in "${tools[@]}"; do
     command -v "$t" >/dev/null 2>&1 || missing+=("$t")
@@ -506,9 +506,19 @@ unmount_target_partitions() {
 
   while read -r part mp; do
     if [[ -n "$mp" ]]; then
-      sudo umount "/dev/$part" || die "Failed to unmount /dev/$part"
+      run_privileged umount "/dev/$part" || die "Failed to unmount /dev/$part"
     fi
   done < <(lsblk -nr -o NAME,MOUNTPOINT "$disk")
+}
+
+run_privileged() {
+  if ((EUID == 0)); then
+    "$@"
+  else
+    command -v sudo >/dev/null 2>&1 || die "Root access is required, but sudo is not installed."
+    info "Root access is needed to write installation media; sudo will prompt for your password."
+    sudo -- "$@"
+  fi
 }
 
 flash_iso() {
@@ -526,7 +536,7 @@ flash_iso() {
   unmount_target_partitions "$target_disk"
 
   info "Writing image to USB. This can take several minutes."
-  sudo dd if="$iso_path" of="$target_disk" bs=4M status=progress oflag=sync conv=fsync
+  run_privileged dd if="$iso_path" of="$target_disk" bs=4M status=progress oflag=sync conv=fsync
   sync
   success "USB should be ready."
 }
@@ -598,4 +608,6 @@ main() {
   final_success "All steps completed."
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
