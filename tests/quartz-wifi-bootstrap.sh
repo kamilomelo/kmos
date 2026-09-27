@@ -7,6 +7,8 @@ fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 # shellcheck disable=SC1091
 source "$repo/platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh"
+# shellcheck disable=SC1091
+source "$repo/platforms/archlinuxarm/boards/quartz64b/wifi-profile.sh"
 
 write_iwd_profile "$fixture/iwd" 'Test Wifi' 'safe secret 123' false
 [[ $(stat -c %a "$fixture/iwd") == 700 ]]
@@ -23,29 +25,8 @@ if write_iwd_profile "$fixture/iwd" '../outside' 'safe secret 123' false; then
   exit 1
 fi
 
-mkdir -p "$fixture/root/usr/bin" "$fixture/root/usr/lib/systemd/system"
-touch "$fixture/root/usr/bin/iwctl" "$fixture/root/usr/lib/systemd/system/iwd.service"
-tar -cf "$fixture/iwd.tar" -C "$fixture/root" .
-FIRST_BOOT_WIFI=1
-verify_first_boot_wifi_support "$fixture/iwd.tar"
-tar -cf "$fixture/no-iwd.tar" -C "$fixture" root/usr/bin/iwctl
-if (verify_first_boot_wifi_support "$fixture/no-iwd.tar") >/dev/null 2>&1; then
-  printf 'Rootfs missing the iwd service was accepted.\n' >&2
-  exit 1
-fi
-
-# Mock a signed ARM rootfs and repository for the offline package-staging
-# control flow. The mock GPG checks arguments; actual upstream signatures were
-# also inspected separately, but CI never needs network access or a real SD.
-mkdir -p "$fixture/offline-root/var/lib/pacman/local" "$fixture/offline-root/usr/lib" \
-  "$fixture/offline-root/usr/share/pacman/keyrings" "$fixture/repo"
-for dependency in glibc-1 libgcc-1 readline-8.3-1; do
-  mkdir -p "$fixture/offline-root/var/lib/pacman/local/$dependency"
-done
-touch "$fixture/offline-root/usr/lib/libreadline.so.8"
-printf 'test key\n' > "$fixture/offline-root/usr/share/pacman/keyrings/archlinuxarm.gpg"
-printf '%s:4:\n' "$ALARM_SIGNING_FINGERPRINT" > "$fixture/offline-root/usr/share/pacman/keyrings/archlinuxarm-trusted"
-tar -cf "$fixture/offline-rootfs.tar" -C "$fixture/offline-root" .
+# Fake ARM repository contents, with no external network or actual card.
+mkdir -p "$fixture/repo"
 
 for package in ell iwd; do
   version=0.83-1
@@ -61,7 +42,7 @@ for package in ell iwd; do
     while IFS= read -r dependency; do printf 'depend = %s\n' "$dependency"; done <<< "$dependencies"
   } > "$fixture/package-content/.PKGINFO"
   bsdtar -cJf "$fixture/repo/$filename" -C "$fixture/package-content" .PKGINFO
-  touch "$fixture/repo/$filename.sig"
+  printf 'test signature\n' > "$fixture/repo/$filename.sig"
   mkdir -p "$fixture/repo-db/$package-$version"
   {
     printf '%%FILENAME%%\n%s\n\n' "$filename"
@@ -71,36 +52,15 @@ for package in ell iwd; do
 done
 bsdtar -cf "$fixture/repo/extra.db" -C "$fixture/repo-db" .
 download() { cp -- "$fixture/repo/${1##*/}" "$2"; }
-# shellcheck disable=SC2329
-gpg() {
-  local argument import=0 verify=0
-  for argument in "$@"; do
-    [[ "$argument" != --import ]] || import=1
-    [[ "$argument" != --verify ]] || verify=1
-  done
-  if ((import)); then return 0; fi
-  ((verify)) || return 1
-  printf '[GNUPG:] VALIDSIG %s 2026-01-01 0 0 0 0 0 0 00 %s\n' "$ALARM_SIGNING_FINGERPRINT" "$ALARM_SIGNING_FINGERPRINT"
-}
 WORK_DIR="$fixture/work"
 mkdir "$WORK_DIR"
-verify_first_boot_wifi_support "$fixture/offline-rootfs.tar"
+stage_offline_wifi_packages
 [[ -f "$WIFI_PACKAGE_DIR/ell-0.83-1-aarch64.pkg.tar.xz" ]]
 [[ -f "$WIFI_PACKAGE_DIR/iwd-3.12-2-aarch64.pkg.tar.xz.sig" ]]
-# shellcheck disable=SC2329
-gpg() {
-  printf '[GNUPG:] VALIDSIG %s 2026-01-01 0 0 0 0 0 0 00 %s\n' \
-    "$ALARM_SIGNING_FINGERPRINT" '0000000000000000000000000000000000000000'
-}
-mkdir "$fixture/bad-signer"
-if (verify_wifi_package "$fixture/bad-signer" iwd "$fixture/repo/extra.db" "$fixture") >/dev/null 2>&1; then
-  printf 'Package signed by an unexpected key was accepted.\n' >&2
-  exit 1
-fi
 
 # Mock the native first-boot pacman transaction; no real packages are installed.
 # shellcheck disable=SC1091
-source "$repo/platforms/archlinuxarm/boards/quartz64b/first-boot-wifi.sh"
+source "$repo/platforms/archlinuxarm/boards/quartz64b/wifi-offline-packages.sh"
 mkdir "$fixture/board-cache"
 cp "$WIFI_PACKAGE_DIR"/*.pkg.tar.xz "$WIFI_PACKAGE_DIR"/*.pkg.tar.xz.sig "$fixture/board-cache/"
 printf '[options]\nLocalFileSigLevel = Optional\n' > "$fixture/pacman.conf"

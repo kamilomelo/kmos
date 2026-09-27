@@ -56,6 +56,8 @@ expect_prompt platforms/archlinux/tools/kmos-wifi-connect.sh
 rm -f "$KMOS_SUDO_ARGS"
 "$repo/platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh" --help > "$fixture/output"
 [[ ! -e "$KMOS_SUDO_ARGS" ]] || { printf 'Help unexpectedly requested sudo.\n' >&2; exit 1; }
+"$repo/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --help > "$fixture/output"
+[[ ! -e "$KMOS_SUDO_ARGS" ]] || { printf 'Wi-Fi help unexpectedly requested sudo.\n' >&2; exit 1; }
 
 # shellcheck disable=SC1091
 source "$repo/platforms/archlinux/tools/kmos-usb-flasher.sh"

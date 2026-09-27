@@ -3,7 +3,7 @@
 Arch Linux ARM is a separate port of Arch Linux with AArch64 and ARMv7
 repositories; it does not use the official x86_64 Arch binary repositories.
 Board boot media must be prepared with the matching board recipe. Once the
-board boots with a working network (Ethernet or prepared Wi-Fi), run its
+board boots and has a working network (Ethernet or manually configured Wi-Fi), run its
 post-boot provisioner to apply kmos packages and defaults.
 Do not run the x86_64 `platforms/archlinux/kmos-archlinux-install.sh` on ARM.
 

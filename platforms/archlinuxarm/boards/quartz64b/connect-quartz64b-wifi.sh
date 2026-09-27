@@ -13,9 +13,8 @@ usage() {
 Usage: ./connect-quartz64b-wifi.sh [--help]
 
 Connect a detected Wi-Fi adapter using iwd and systemd-networkd, saving a
-root-only WPA-Personal profile for later boots. Requires iwd already installed;
-if it is absent and Ethernet is unavailable, use USB tethering or transfer
-verified Arch Linux ARM packages before running this helper.
+root-only WPA-Personal profile for later boots. If iwd is not installed, offer
+to install the signed offline ARM packages staged during SD preparation.
 EOF
 }
 
@@ -66,9 +65,21 @@ main() {
     info 'Root access is needed to configure Wi-Fi; sudo will prompt for your password.'
     exec sudo -- "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
   fi
-  command -v iwctl >/dev/null 2>&1 || die 'iwd is not installed. Use USB tethering or transfer verified Arch Linux ARM packages first.'
   adapter=$(detect_wifi_adapter) || die 'No wireless interface found. Check your adapter and its firmware.'
   info "Detected Wi-Fi interface: $adapter"
+  if ! command -v iwctl >/dev/null 2>&1; then
+    local answer
+    [[ -r "$SCRIPT_DIR/wifi-offline-packages.sh" && -d /var/lib/kmos/wifi-packages ]] \
+      || die 'iwd is missing and no offline packages were staged. Use temporary networking to install the ARM iwd package.'
+    read -r -p 'Install signed offline ARM ell and iwd packages now? [Y/n]: ' answer
+    [[ ! "$answer" =~ ^[Nn]$ ]] || die 'Cancelled; Wi-Fi remains unconfigured.'
+    (
+      # shellcheck source=platforms/archlinuxarm/boards/quartz64b/wifi-offline-packages.sh
+      source "$SCRIPT_DIR/wifi-offline-packages.sh"
+      install_offline_wifi /var/lib/kmos/wifi-packages /var/lib/kmos/quartz64b-wifi-packages-installed
+    )
+    command -v iwctl >/dev/null 2>&1 || die 'iwd installation did not provide iwctl.'
+  fi
   systemctl start iwd.service
   iwctl station "$adapter" scan || true
   iwctl station "$adapter" get-networks || true

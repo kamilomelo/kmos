@@ -17,7 +17,7 @@ missing command, check why it is needed before installing anything new.
 ./prepare-quartz64b-sd.sh
 ```
 
-The script asks for root access through the system `sudo` password prompt. It then lists removable/SD disks, with size, model and transport. If only one is found, confirm that it is your card; otherwise choose its number. A separate erase confirmation defaults to `N`. It asks for a new `root` password and optionally for first-boot WPA-Personal Wi-Fi credentials. If Wi-Fi is selected and the PGP-verified ARM rootfs lacks `iwd`, the host downloads official AArch64 `ell` and `iwd` packages, checks their hashes, detached signatures against the pinned Arch Linux ARM key from the verified rootfs, architecture and expected dependencies **before writing to the card**. It stages the packages for a one-time native installation on the Quartz64's first boot. Unexpected dependencies or verification failures stop before erasure; no ARM package is installed on the x86 host. The script installs U-Boot, configures the Model B device tree, and enables DHCP Ethernet, DNS, and SSH. Wi-Fi credentials, when provided, are saved in an `0600` iwd profile, with DHCP handled by `systemd-networkd`. The normal workflow needs no `--device` argument.
+The script asks for root access through the system `sudo` password prompt. It then lists removable/SD disks, with size, model and transport. If only one is found, confirm that it is your card; otherwise choose its number. A separate erase confirmation defaults to `N`. It asks for a new `root` password, then offers to include offline Wi-Fi packages (default: yes). It prepares the normal bootable card and copies a manual Wi-Fi helper into `/root/`. When staging is selected, it downloads official AArch64 `ell` and `iwd` packages plus signatures, checks repository SHA-256 hashes, architecture and expected dependencies, and copies them onto the card. **The host does not install them or configure Wi-Fi.** Pacman verifies the package signatures against the Arch Linux ARM keyring when you choose to install them on the board. The script also installs U-Boot, configures the Model B device tree, and enables DHCP Ethernet, DNS, and SSH. The normal workflow needs no `--device` argument.
 
 Downloads, the rootfs signature and U-Boot artifact are stored in `work/` next to the script. The temporary PGP keyring is removed after verification. At the end of a successful run, choose whether to keep the default work directory for another SD card or delete it. The directory is retained automatically after a failure. A custom `--work-dir` is always preserved and must be removed manually after inspection.
 
@@ -35,27 +35,30 @@ sha256sum quartz64-artifact.zip
 
 ## First boot
 
-Connect UART at `1500000` baud if you need the boot console, connect Ethernet, insert the card, and power the board. Log in as `root` using the password chosen during card preparation. DHCP should provide networking automatically.
+Connect UART at `1500000` baud if you need the boot console, insert the card, and power the board. Log in as `root` using the password chosen during card preparation. If Ethernet is connected, DHCP should provide networking automatically. If not, use the local console to run the Wi-Fi helper below.
 
 The KMOS headless provisioner runs on this initialized Arch Linux ARM system; it does not replace the Quartz64 bootloader or kernel.
 
 ## Network before provisioning
 
-Ethernet is not required if the first-boot Wi-Fi option was selected and the
-board has a working wireless adapter and firmware. The first boot may pause
-while `kmos-first-boot-wifi.service` initializes the ARM pacman keyring,
-installs the staged signed packages and enables `iwd`. From the local console,
-check `systemctl status kmos-first-boot-wifi.service iwd.service` and
-`networkctl status`; if it fails, inspect
-`journalctl -u kmos-first-boot-wifi.service -b` before changing network
-settings. To configure a different
-network on a newly prepared card, log in locally as root and run the helper
-already on the card: `cd /root && ./connect-quartz64b-wifi.sh`. It requires
-`iwd` already installed, never puts the passphrase in a command argument, and
-does not replace a saved profile. Cards prepared before this option was added
-will not have this helper. If the adapter/firmware or `iwd` is missing, use
-Ethernet or temporary USB tethering, or obtain the necessary verified ARM
-packages offline. Check DHCP/DNS and reboot persistence before fetching KMOS.
+Ethernet is **not** required to run the helper if the board has a supported
+wireless adapter and firmware and the signed offline packages were staged.
+From the Quartz64's local root console:
+
+```bash
+cd /root
+./connect-quartz64b-wifi.sh
+```
+
+The helper first detects a wireless interface. If `iwd` is missing, it asks
+before installing the staged ARM `ell` and `iwd` packages locally with
+`pacman -U` and **required signature verification**. Then it scans, asks for
+your Wi-Fi SSID and passphrase, stores a root-only WPA-Personal profile, and
+enables persistent `iwd` plus DHCP through `systemd-networkd`. The passphrase
+is never passed as a process argument. Check `networkctl status` and verify the
+connection survives a reboot before provisioning KMOS. If the adapter or
+firmware is missing, the helper stops before installing packages; temporary
+networking or a compatible adapter will be necessary.
 
 ## Provision KMOS headless, then optionally KDE
 
@@ -104,9 +107,9 @@ changes the board's kernel, partitions, U-Boot, or extlinux boot files.
 - The default legacy U-Boot artifact has no trusted upstream signature. A
   SHA-256 provided with `--bootloader-sha256` only helps if the expected value
   was obtained from a trusted source.
-- First-boot Wi-Fi supports only WPA-Personal SSIDs with ASCII letters,
+- Manual first-boot Wi-Fi supports only WPA-Personal SSIDs with ASCII letters,
   digits, spaces, underscores and hyphens. The board must have a working
-  wireless adapter and firmware; package staging and boot-time installation
+  wireless adapter and firmware; offline package installation and association
   have only been mocked, not tested on physical wireless hardware yet. If an
   official package changes dependencies, SD preparation stops for review.
 - The availability of headless and KDE packages in the AArch64 repositories,

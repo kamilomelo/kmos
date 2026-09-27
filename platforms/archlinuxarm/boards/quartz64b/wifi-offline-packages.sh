@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs natively on the Quartz64 at first boot; never on the x86 SD writer host.
+# Sourced by connect-quartz64b-wifi.sh on the Quartz64; never run on the host.
 set -Eeuo pipefail
 
 install_offline_wifi() (
@@ -28,12 +28,3 @@ install_offline_wifi() (
   touch "$marker"
   printf 'Offline ARM Wi-Fi packages installed; iwd enabled. Check Wi-Fi association and DHCP.\n'
 )
-
-main() {
-  [[ $(uname -m) == aarch64 ]] || { printf 'Wi-Fi package install requires AArch64.\n' >&2; exit 1; }
-  install_offline_wifi /var/lib/kmos/wifi-packages /var/lib/kmos/quartz64b-wifi-packages-installed
-}
-
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-  main "$@"
-fi

@@ -104,7 +104,7 @@ dispatcher refuses `archarm` rather than sending it to the x86_64 UEFI flow.
 Arch Linux ARM has separate AArch64 and ARMv7 package repositories, so not all
 x86_64 packages or KDE features can be assumed available. Currently the
 [Quartz64 Model B workflow](./platforms/archlinuxarm/boards/quartz64b/README.md)
-implements SD preparation (including optional first-boot Wi-Fi), headless
+implements SD preparation (including a manual first-boot Wi-Fi helper), headless
 post-boot provisioning from a pinned GitHub checkout, and an experimental KDE
 offer gated by ARM package and graphics checks. Other boards remain future work.
 
