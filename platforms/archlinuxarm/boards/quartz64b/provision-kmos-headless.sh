@@ -433,10 +433,9 @@ configure_wifi() {
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
   [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter detected. Ethernet remains configured.'; return; }
   if ! "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
-    warn 'Wi-Fi setup was cancelled or did not complete. Continuing with headless provisioning; check networking before reboot.'
-    return 0
+    die 'Wi-Fi setup was cancelled or did not complete. Provisioning is incomplete; check networking before reboot. Do not rerun the full provisioner just to fix Wi-Fi.'
   fi
-  info 'Wi-Fi configured; iwd and systemd-networkd will retain the connection after reboot.'
+  info 'Wi-Fi works now with a saved profile; verify reconnecting after a real reboot before depending on it.'
 }
 
 configure_swap() {

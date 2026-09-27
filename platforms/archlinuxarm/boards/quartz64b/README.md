@@ -55,11 +55,15 @@ before installing the staged ARM `ell` and `iwd` packages locally with
 `pacman -U` and **required signature verification**. Then it scans, asks for
 your Wi-Fi SSID and passphrase, stores a root-only WPA-Personal profile, and
 enables persistent `iwd` plus DHCP through `systemd-networkd`. The passphrase
-is never passed as a process argument. A failed association offers another try,
-removes the failed profile, and restores any existing profile it temporarily
-replaced. Type `CANCEL` at the SSID prompt to leave previously saved profiles
-alone. An already active persistent Wi-Fi connection is kept unless you
-explicitly choose to reconfigure it. Check `networkctl status` and verify the
+is never passed as a process argument. Failed association or missing Wi-Fi DHCP
+route returns to the SSID prompt, removes the failed profile, and restores any
+existing profile it temporarily replaced. Type `CANCEL` at the SSID prompt to
+stop explicitly. An already connected Wi-Fi link is accepted only when its
+matching root-only auto-connect profile, DHCP address, Wi-Fi default route, and
+persistent services can be verified. It restarts `iwd` to reload the saved
+profile and reconnect Wi-Fi, so **run it from the local console**, not
+over SSH. Even a successful reconnect **cannot prove it will work after reboot**.
+Check `networkctl status` and verify the
 connection survives a reboot before provisioning KMOS. If the adapter or
 firmware is missing, the helper stops before installing packages; temporary
 networking or a compatible adapter will be necessary.
@@ -69,7 +73,9 @@ reflash or rerun the entire provisioner just to fix the credentials. With
 Ethernet connected if necessary, update your existing KMOS checkout and run
 `./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh` from it.
 If the board remains online after a Wi-Fi association error, verify whether
-Ethernet or Wi-Fi carries the connection before rebooting.
+Ethernet or Wi-Fi carries the connection before rebooting. If the Wi-Fi helper
+fails or you cancel it during provisioning, provisioning stops rather than
+reporting a completed installation.
 
 ## Provision KMOS headless, then optionally KDE
 

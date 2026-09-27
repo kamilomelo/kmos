@@ -90,24 +90,54 @@ fi
 # shellcheck disable=SC1091
 source "$repo/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
 iwctl() {
-  [[ "$1" == station && "$2" == wlan0 && "$3" == connect ]] || return 1
-  printf '%s\n' "$4" >> "$fixture/attempts"
-  [[ "$4" == 'Good Wifi' ]]
+  [[ "$1" == station && "$2" == wlan0 ]] || return 1
+  if [[ "$3" == show ]]; then
+    printf '  Connected network    Good Wifi\n'
+  else
+    [[ "$3" == connect ]] || return 1
+    printf '%s\n' "$4" >> "$fixture/attempts"
+    [[ "$4" == 'Good Wifi' ]]
+  fi
 }
-ip() { [[ "$*" == '-4 -o address show dev wlan0 scope global' ]] && printf 'wlan0 192.0.2.10\n'; }
+ip() {
+  if [[ "$1" == -4 && "$2" == -o && "$3" == address ]]; then
+    printf 'wlan0 192.0.2.10\n'
+  elif [[ "$1" == -4 && "$2" == route && "$3" == show ]]; then
+    printf 'default via 192.0.2.1 dev wlan0\n'
+  else
+    return 1
+  fi
+}
+systemctl() {
+  if [[ "$1" == restart && "$2" == iwd.service ]]; then
+    printf 'restarted\n' >> "$fixture/attempts"
+  else
+    [[ "$1" == is-active || "$1" == is-enabled ]] && [[ "$2" == --quiet ]]
+  fi
+}
 sleep() { :; }
 mkdir -m 700 "$fixture/retry-profiles"
-printf 'Bad Wifi\nwrong password\n\n\nGood Wifi\ncorrect password\n\n' \
-  | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/retry-output" 2>&1
+if wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'; then
+  printf 'An IP address without a saved profile was accepted as persistent.\n' >&2
+  exit 1
+fi
+if ! printf 'Bad Wifi\nwrong password\n\nGood Wifi\ncorrect password\n\n' \
+  | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/retry-output" 2>&1; then
+  cat "$fixture/retry-output" >&2
+  exit 1
+fi
 [[ ! -e "$fixture/retry-profiles/Bad Wifi.psk" ]]
 grep -qx 'Passphrase=correct password' "$fixture/retry-profiles/Good Wifi.psk"
 [[ $(stat -c %a "$fixture/retry-profiles/Good Wifi.psk") == 600 ]]
-[[ $(cat "$fixture/attempts") == $'Bad Wifi\nGood Wifi' ]]
+[[ $(cat "$fixture/attempts") == $'restarted\nBad Wifi\nrestarted\nGood Wifi' ]]
+wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'
+reconnect_saved_wifi wlan0 "$fixture/retry-profiles" 'Good Wifi'
+[[ $(tail -n 2 "$fixture/attempts") == $'restarted\nGood Wifi' ]]
 
 # A failed replacement must restore the original profile, even if the user stops.
 write_iwd_profile "$fixture/retry-profiles" 'Old Wifi' 'original password' false
 cp "$fixture/retry-profiles/Old Wifi.psk" "$fixture/original-profile"
-printf 'Old Wifi\nincorrect password\n\ny\nn\n' \
+printf 'Old Wifi\nincorrect password\n\ny\nCANCEL\n' \
   | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/restore-output" 2>&1 && {
     printf 'Cancelling Wi-Fi retries incorrectly succeeded.\n' >&2
     exit 1
@@ -124,11 +154,14 @@ printf 'Old Wifi\nunused password\n\nn\nCANCEL\n' \
   }
 cmp "$fixture/original-profile" "$fixture/retry-profiles/Old Wifi.psk"
 
-# Association success with slow DHCP must not discard valid credentials.
-ip() { [[ "$*" == '-4 -o address show dev wlan0 scope global' ]]; }
-printf 'Good Wifi\ncorrect password\n\ny\n' \
-  | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/dhcp-output" 2>&1
-grep -q 'DHCP has not assigned an IPv4 address yet' "$fixture/dhcp-output"
+# Association success with no DHCP route cannot be reported as success.
+ip() { [[ "$1" == -4 && "$2" == -o && "$3" == address ]] && printf 'wlan0 192.0.2.10\n'; }
+printf 'Good Wifi\ncorrect password\n\ny\nCANCEL\n' \
+  | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/dhcp-output" 2>&1 && {
+    printf 'Wi-Fi without a DHCP route incorrectly succeeded.\n' >&2
+    exit 1
+  }
+grep -q 'Wi-Fi is not ready' "$fixture/dhcp-output"
 grep -qx 'Passphrase=correct password' "$fixture/retry-profiles/Good Wifi.psk"
 
 # Explicit cancellation before credential entry must leave profiles untouched.

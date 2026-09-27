@@ -16,6 +16,8 @@ Connect a detected Wi-Fi adapter using iwd and systemd-networkd, saving a
 root-only WPA-Personal profile for later boots. If iwd is not installed, offer
 to install the signed offline ARM packages staged during SD preparation.
 Incorrect credentials can be retried without keeping the failed profile.
+Success requires the saved profile, Wi-Fi association, DHCP, and a Wi-Fi route.
+Only a real reboot can verify that it reconnects on a later boot.
 EOF
 }
 
@@ -52,19 +54,63 @@ EOF
   networkctl reconfigure "$adapter" || true
 }
 
-wifi_already_configured() {
+connected_wifi_ssid() {
   local adapter=$1
-  systemctl is-active --quiet iwd.service || return 1
-  systemctl is-enabled --quiet iwd.service || return 1
-  ip -4 -o address show dev "$adapter" scope global | grep -q .
+  iwctl station "$adapter" show | awk '
+    /^[[:space:]]*Connected network[[:space:]]+/ {
+      sub(/^[[:space:]]*Connected network[[:space:]]+/, "")
+      sub(/[[:space:]]+$/, "")
+      print
+      exit
+    }'
+}
+
+wifi_connection_ready() {
+  local adapter=$1 state_dir=$2 ssid=$3 profile service
+  profile="$state_dir/$ssid.psk"
+  [[ -f "$profile" && ! -L "$profile" ]] || return 1
+  [[ $(stat -c %a -- "$profile") == 600 ]] || return 1
+  grep -Fxq 'AutoConnect=true' "$profile" || return 1
+  for service in iwd.service systemd-networkd.service systemd-resolved.service; do
+    systemctl is-active --quiet "$service" || return 1
+    systemctl is-enabled --quiet "$service" || return 1
+  done
+  [[ $(connected_wifi_ssid "$adapter") == "$ssid" ]] || return 1
+  ip -4 -o address show dev "$adapter" scope global | grep -q . || return 1
+  ip -4 route show default dev "$adapter" | grep -q .
+}
+
+wait_for_wifi() {
+  local adapter=$1 state_dir=$2 ssid=$3 attempt
+  for ((attempt=0; attempt<15; attempt++)); do
+    wifi_connection_ready "$adapter" "$state_dir" "$ssid" && return 0
+    sleep 2
+  done
+  return 1
+}
+
+reconnect_saved_wifi() {
+  local adapter=$1 state_dir=$2 ssid=$3 current
+  current=$(connected_wifi_ssid "$adapter") || true
+  if [[ -n "$current" ]]; then
+    [[ -z "${SSH_CONNECTION:-}" ]] || die 'Testing saved credentials requires restarting Wi-Fi. Run this helper from the local console, not over SSH.'
+  fi
+  info 'Restarting iwd to reload the saved profile and test reconnection; Ethernet is unaffected.'
+  systemctl restart iwd.service || return 1
+  # AutoConnect may have associated before the explicit connect command.
+  iwctl station "$adapter" connect "$ssid" || true
+  wait_for_wifi "$adapter" "$state_dir" "$ssid"
 }
 
 connect_wifi_with_retries() {
-  local adapter=$1 state_dir=$2 ssid passphrase hidden answer profile backup_dir attempt
+  local adapter=$1 state_dir=$2 ssid passphrase hidden answer profile backup_dir
   while true; do
     read -r -p 'Wi-Fi SSID (or type CANCEL): ' ssid || return 1
     [[ "$ssid" != CANCEL ]] || return 1
     [[ "$ssid" =~ ^[a-zA-Z0-9_\ -]{1,32}$ ]] || { info 'SSID must be 1-32 ASCII letters, digits, spaces, underscores or hyphens.'; continue; }
+    if [[ -n "${SSH_CONNECTION:-}" && -n $(connected_wifi_ssid "$adapter") ]]; then
+      die 'Testing saved credentials requires restarting Wi-Fi. Run this helper from the local console, not over SSH.'
+    fi
     read -r -s -p 'WPA passphrase: ' passphrase || return 1
     printf '\n' >&2
     if ! validate_wifi_credentials "$ssid" "$passphrase"; then
@@ -96,21 +142,12 @@ connect_wifi_with_retries() {
       die 'Could not write the Wi-Fi profile; any previous profile was restored.'
     fi
     unset passphrase
-    if iwctl station "$adapter" connect "$ssid"; then
-      for ((attempt=0; attempt<5; attempt++)); do
-        if ip -4 -o address show dev "$adapter" scope global | grep -q .; then
-          [[ -z "$backup_dir" ]] || info "Previous profile backed up at $backup_dir/original.psk"
-          info 'Wi-Fi connected and DHCP assigned an IPv4 address; profile saved for future boots.'
-          return 0
-        fi
-        sleep 2
-      done
+    if reconnect_saved_wifi "$adapter" "$state_dir" "$ssid"; then
       [[ -z "$backup_dir" ]] || info "Previous profile backed up at $backup_dir/original.psk"
-      info 'Wi-Fi associated, but DHCP has not assigned an IPv4 address yet. The profile was saved; check networkctl status.'
+      info 'Saved Wi-Fi profile, association, DHCP, and Wi-Fi route verified. Reboot persistence still requires a real reboot test.'
       return 0
-    else
-      info 'Wi-Fi connection failed; check the SSID and passphrase.'
     fi
+    info 'Wi-Fi is not ready on this adapter (association, DHCP, route, or persistent services failed).'
 
     rm -f -- "$profile"
     if [[ -n "$backup_dir" ]]; then
@@ -119,13 +156,12 @@ connect_wifi_with_retries() {
       rmdir -- "$backup_dir"
       info 'Previous profile restored.'
     fi
-    read -r -p 'Try Wi-Fi credentials again? [Y/n]: ' answer || return 1
-    [[ ! "$answer" =~ ^[Nn]$ ]] || return 1
+    info 'Try again, or type CANCEL at the SSID prompt to stop without claiming success.'
   done
 }
 
 main() {
-  local adapter answer
+  local adapter ssid answer
   case "${1:-}" in
     -h|--help) usage; return ;;
     '') ;;
@@ -141,7 +177,6 @@ main() {
   adapter=$(detect_wifi_adapter) || die 'No wireless interface found. Check your adapter and its firmware.'
   info "Detected Wi-Fi interface: $adapter"
   if ! command -v iwctl >/dev/null 2>&1; then
-    local answer
     [[ -r "$SCRIPT_DIR/wifi-offline-packages.sh" && -d /var/lib/kmos/wifi-packages ]] \
       || die 'iwd is missing and no offline packages were staged. Use temporary networking to install the ARM iwd package.'
     read -r -p 'Install signed offline ARM ell and iwd packages now? [Y/n]: ' answer
@@ -153,14 +188,21 @@ main() {
     )
     command -v iwctl >/dev/null 2>&1 || die 'iwd installation did not provide iwctl.'
   fi
-  if wifi_already_configured "$adapter"; then
-    read -r -p 'Wi-Fi is already active and persistent. Reconfiguring may interrupt it. Continue? [y/N]: ' answer
-    [[ "$answer" =~ ^[Yy]$ ]] || { info 'Existing Wi-Fi connection kept.'; return 0; }
-  fi
   systemctl start iwd.service
   iwctl station "$adapter" scan || true
   iwctl station "$adapter" get-networks || true
   configure_wifi_network "$adapter"
+  ssid=$(connected_wifi_ssid "$adapter") || true
+  if [[ -n "$ssid" ]] && wifi_connection_ready "$adapter" /var/lib/iwd "$ssid"; then
+    info "The current Wi-Fi link ($ssid) looks ready, but the saved credentials have not been retested."
+    if reconnect_saved_wifi "$adapter" /var/lib/iwd "$ssid"; then
+      info 'Saved credentials reconnected, Wi-Fi DHCP and route verified. A real reboot test is still required.'
+      return 0
+    fi
+    info 'The saved profile did not reconnect. Please enter corrected credentials or type CANCEL.'
+  else
+    info 'The current Wi-Fi connection is not verified as persistent; credentials must be checked.'
+  fi
   connect_wifi_with_retries "$adapter" /var/lib/iwd || { info 'Wi-Fi setup cancelled; previously saved profiles were preserved.'; return 1; }
 }
 
