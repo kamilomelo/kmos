@@ -104,7 +104,9 @@ replaces files in your clone. Its initial `pacman -Syu` can update the board
 kernel, so back up the working card before confirming provisioning.
 
 Headless provisioning installs available ARM CLI packages, asks before
-skipping unavailable packages, configures terminal presets, hostname, timezone
+skipping unavailable packages, installs the four Kappa Mono Nerd Font TTF
+styles from the Kappa Type GitHub repository using `git`, and configures
+terminal presets, hostname, timezone
 (default `Europe/Zurich`), locale, administrator and optional users, swap
 (default `4G`, `0` to omit), SSH (root login disabled), and DHCP Ethernet/DNS.
 Wi-Fi is optional; an existing iwd profile is kept if you decline to reconfigure
@@ -118,9 +120,14 @@ update may update the board's kernel packages.
 
 **KDE is not offered on Quartz64.** The earlier experimental stage failed on
 physical hardware and has been disabled pending a separate diagnosis. Headless
-Starship now uses `starship-headless.toml`: an ASCII-only preset without Nerd
-Font glyphs or graphical-terminal detection, including over SSH. Existing
-graphical Starship themes and Kappa Mono are not required for this installation.
+Starship uses `starship-headless.toml`: a conservative ASCII-only default
+including over SSH. **Kappa Mono is still installed as part of headless KMOS**;
+the ASCII preset is a fallback choice, not a reason to omit the Nerd Font.
+No extra host package or board `fontconfig` package is required: if fontconfig
+is already present, its cache and font-family lookup are checked. The Linux
+text console cannot render desktop fonts, and an SSH session is rendered by
+the terminal on your *other computer*: select Kappa Mono there to display
+Nerd glyphs in an icon-based prompt.
 
 On a board provisioned by an older version, repair **only** the prompt without
 reinstalling or repeating system updates. From the existing KMOS checkout:
@@ -132,6 +139,13 @@ git pull --ff-only
 
 Start a new SSH session to check the prompt. This command does not install KDE,
 change networking, or rerun the headless provisioner.
+
+To add Kappa Mono to an **existing** headless board without repeating the
+system update or provisioning, run from the KMOS checkout:
+
+```bash
+./platforms/archlinuxarm/boards/quartz64b/install-kappa-mono-fonts.sh
+```
 
 ## Current limitations
 

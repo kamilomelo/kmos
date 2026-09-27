@@ -110,7 +110,7 @@ PRIMARY_USER=example
 configure_syncthing 2> "$fixture/syncthing-warning"
 grep -q 'Syncthing is not installed' "$fixture/syncthing-warning"
 
-# Stage KDE fonts and Konsole settings with a fake upstream clone and fake cache.
+# Stage headless Kappa Mono fonts with a fake upstream clone and fake cache.
 # All destination paths are below the temporary fixture; never touch the host.
 git() {
   if [[ "$1" == clone ]]; then
@@ -134,6 +134,17 @@ install_kappa_mono_fonts "$fixture/root/usr/local/share/fonts/kmos"
 for style in Regular Bold Italic BoldItalic; do
   [[ $(stat -c %a "$fixture/root/usr/local/share/fonts/kmos/KappaMono-$style.ttf") == 644 ]]
 done
+(
+  # Headless boards need the TTFs, but must not require a new fontconfig package.
+  # shellcheck disable=SC2329 # Invoked indirectly by the sourced installer.
+  command() {
+    if [[ "$1" == -v && ( "$2" == fc-cache || "$2" == fc-match ) ]]; then return 1; fi
+    builtin command "$@"
+  }
+  install_kappa_mono_fonts "$fixture/no-fontconfig/fonts" >"$fixture/no-fontconfig-output" 2>&1
+)
+[[ -s "$fixture/no-fontconfig/fonts/KappaMono-Regular.ttf" ]]
+grep -q 'no extra package was added' "$fixture/no-fontconfig-output"
 configure_kde_terminal "$repo" "$fixture/root"
 grep -Fxq 'Font=Kappa Mono,11,-1,5,50,0,0,0,0,0' "$fixture/root/usr/share/konsole/kmos.profile"
 grep -Fxq 'DefaultProfile=kmos.profile' "$fixture/root/etc/xdg/konsolerc"
@@ -171,7 +182,8 @@ fi
   ask_yes_no() { return 0; }
   initialize_pacman() { :; }
   install_kmos_packages() { :; }
-  configure_kmos_terminal() { :; }
+  install_kappa_mono_fonts() { printf 'fonts\n' >> "$fixture/steps"; }
+  configure_kmos_terminal() { printf 'terminal\n' >> "$fixture/steps"; }
   configure_identity() { :; }
   create_administrator() { :; }
   configure_ssh() { :; }
@@ -185,5 +197,5 @@ fi
   verify_installation() { printf 'verify\n' >> "$fixture/steps"; }
   main
 )
-[[ $(cat "$fixture/steps") == $'wifi\nverify' ]]
+[[ $(cat "$fixture/steps") == $'fonts\nterminal\nwifi\nverify' ]]
 printf 'Quartz provisioner uses local KMOS files and honors skipped packages: OK.\n'

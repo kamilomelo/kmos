@@ -235,7 +235,6 @@ resolve_kde_metapackage() {
 install_kappa_mono_fonts() (
   local target_dir=${1:-/usr/local/share/fonts/kmos} work_dir font source
   command -v git >/dev/null 2>&1 || die 'Git is required to retrieve the Kappa Mono font repository.'
-  command -v fc-cache >/dev/null 2>&1 || die 'fontconfig is required for KDE font discovery.'
   work_dir=$(mktemp -d "${TMPDIR:-/var/tmp}/kmos-kappa-mono.XXXXXXXX") || die 'Could not create a private font staging directory.'
   trap 'rm -rf -- "$work_dir"' EXIT
   git clone --quiet --depth 1 --filter=blob:none --sparse \
@@ -250,9 +249,13 @@ install_kappa_mono_fonts() (
     install -Dm0644 "$work_dir/kappa-type/fonts/kappa-mono/ttf/KappaMono-$font.ttf" \
       "$target_dir/KappaMono-$font.ttf"
   done
-  fc-cache -f "$target_dir" || die 'Could not refresh the Kappa Mono font cache.'
-  fc-match -f '%{family}\n' 'Kappa Mono' | grep -Fqi 'Kappa Mono' || die 'fontconfig could not find Kappa Mono after installation.'
-  info 'Kappa Mono installed and visible to fontconfig.'
+  if command -v fc-cache >/dev/null 2>&1 && command -v fc-match >/dev/null 2>&1; then
+    fc-cache -f "$target_dir" || die 'Could not refresh the Kappa Mono font cache.'
+    fc-match -f '%{family}\n' 'Kappa Mono' | grep -Fqi 'Kappa Mono' || die 'fontconfig could not find Kappa Mono after installation.'
+    info 'Kappa Mono installed and visible to fontconfig.'
+  else
+    info 'Kappa Mono installed. fontconfig is not installed on this headless system; no extra package was added.'
+  fi
 )
 
 configure_kde_terminal() {
@@ -579,6 +582,7 @@ main() {
   ask_yes_no 'Continue with provisioning?' no || die 'Cancelled without modifying the system.'
   initialize_pacman
   install_kmos_packages "$REPOSITORY_DIR"
+  install_kappa_mono_fonts
   configure_kmos_terminal "$REPOSITORY_DIR"
   configure_identity
   create_administrator

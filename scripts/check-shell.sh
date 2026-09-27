@@ -24,6 +24,7 @@ scripts+=(
   platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
   platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh
   platforms/archlinuxarm/boards/quartz64b/repair-headless-prompt.sh
+  platforms/archlinuxarm/boards/quartz64b/install-kappa-mono-fonts.sh
   platforms/archlinuxarm/boards/quartz64b/wifi-offline-packages.sh
   platforms/archlinuxarm/boards/quartz64b/wifi-profile.sh
   scripts/check-shell.sh
