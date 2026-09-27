@@ -22,6 +22,8 @@ fi
 scripts+=(
   platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh
   platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
+  platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh
+  platforms/archlinuxarm/boards/quartz64b/wifi-profile.sh
   scripts/check-shell.sh
   tests/archarm-dispatch.sh
   tests/arch-partition-safety.sh
@@ -29,6 +31,7 @@ scripts+=(
   tests/quartz-bootloader-extraction.sh
   tests/quartz-workdir-safety.sh
   tests/quartz-provisioner-source.sh
+  tests/quartz-wifi-bootstrap.sh
   tests/runtime-sudo.sh
 )
 
@@ -63,4 +66,5 @@ bash tests/quartz-disk-safety.sh
 bash tests/quartz-bootloader-extraction.sh
 bash tests/quartz-workdir-safety.sh
 bash tests/quartz-provisioner-source.sh
+bash tests/quartz-wifi-bootstrap.sh
 bash tests/runtime-sudo.sh

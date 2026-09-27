@@ -17,7 +17,7 @@ missing command, check why it is needed before installing anything new.
 ./prepare-quartz64b-sd.sh
 ```
 
-The script asks for root access through the system `sudo` password prompt. It then lists removable/SD disks, with size, model and transport. If only one is found, confirm that it is your card; otherwise choose its number. A separate erase confirmation defaults to `N`. It then asks for a new `root` password. It erases the selected card, verifies the Arch Linux ARM rootfs PGP signature, installs U-Boot, configures the Model B device tree, and enables DHCP Ethernet, DNS, and SSH. The normal workflow needs no `--device` argument.
+The script asks for root access through the system `sudo` password prompt. It then lists removable/SD disks, with size, model and transport. If only one is found, confirm that it is your card; otherwise choose its number. A separate erase confirmation defaults to `N`. It asks for a new `root` password and optionally for first-boot WPA-Personal Wi-Fi credentials. If Wi-Fi is selected, it verifies that the PGP-checked ARM rootfs already contains `iwd` **before writing to the card**; otherwise it stops, rather than promising offline networking it cannot provide. It erases the selected card, installs U-Boot, configures the Model B device tree, and enables DHCP Ethernet, DNS, and SSH. Wi-Fi credentials, when provided, are saved in an `0600` iwd profile, with DHCP handled by `systemd-networkd`. The normal workflow needs no `--device` argument.
 
 Downloads, the rootfs signature and U-Boot artifact are stored in `work/` next to the script. The temporary PGP keyring is removed after verification. At the end of a successful run, choose whether to keep the default work directory for another SD card or delete it. The directory is retained automatically after a failure. A custom `--work-dir` is always preserved and must be removed manually after inspection.
 
@@ -39,57 +39,53 @@ Connect UART at `1500000` baud if you need the boot console, connect Ethernet, i
 
 The KMOS headless provisioner runs on this initialized Arch Linux ARM system; it does not replace the Quartz64 bootloader or kernel.
 
-## Provision KMOS headless
+## Network before provisioning
 
-Transfer a **matching copy of the local kmos files** to the booted Quartz64
-using a USB drive or your local network. Keep these paths together:
-`platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh`,
-`platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD`, and
-`platforms/archlinux/assets/starship-presets/`. Copying the script alone, or
-cloning remote `main` while these changes are not published, will not work.
-The provisioner does not fetch a different repository revision. It checks the
-local files **before** updating packages or changing system configuration.
+Ethernet is not required if the first-boot Wi-Fi option was selected and the
+board has a working wireless adapter and firmware. To configure a different
+network on a newly prepared card, log in locally as root and run the helper
+already on the card: `cd /root && ./connect-quartz64b-wifi.sh`. It requires
+`iwd` already installed, never puts the passphrase in a command argument, and
+does not replace a saved profile. Cards prepared before this option was added
+will not have this helper. If the adapter/firmware or `iwd` is missing, use
+Ethernet or temporary USB tethering, or obtain the necessary verified ARM
+packages offline. Check DHCP/DNS and reboot persistence before fetching KMOS.
 
-For example, on the host create a small archive on an already-mounted USB
-drive (replace the paths with your actual kmos and USB mount points):
+## Provision KMOS headless, then optionally KDE
 
-```bash
-tar -C /path/to/local/kmos -czf /path/to/mounted-usb/kmos-quartz.tar.gz \
-  platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh \
-  platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD \
-  platforms/archlinux/assets/starship-presets
-```
-
-Safely unmount the drive, connect it to the Quartz64, and mount it there.
-From the board's root console, extract it to a writable location (replace the
-USB path with its mount point on the board):
+After confirming internet access on the booted Quartz64, download the
+provisioner from the published GitHub `main` branch and run it from the local
+console (shown for a root login). The cloned checkout is pinned to the commit
+that GitHub returns when the run begins:
 
 ```bash
-mkdir -p /root/kmos
-tar -xzf /path/to/mounted-usb/kmos-quartz.tar.gz -C /root/kmos
-cd /root/kmos
+curl -fL -o provision-kmos-headless.sh \
+  https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
+chmod +x provision-kmos-headless.sh
+./provision-kmos-headless.sh
 ```
 
-From inside that copied tree on the Quartz64, run the script while Ethernet is
-connected. It asks for root access through `sudo` if you are not already root:
+It asks before any update, initializes Arch Linux ARM's keyring, updates the
+system, installs the base tools and `git`, then clones KMOS over HTTPS into a
+unique private directory under `/var/tmp`. It records the cloned commit and
+uses that checkout for all manifests and assets. If the downloaded entry point
+differs from the cloned commit, it restarts from the cloned version. The clone
+is retained for inspection; it is never silently replaced or deleted.
 
-```bash
-./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
-```
-
-It first asks permission to update Arch Linux ARM, initializes its package
-keyring, and installs `iwd`, `nano`, `openssh`, and `sudo` as needed. It reads
-the local `nodesktop` package set, checks AArch64 availability, and asks you
-whether to skip an unavailable package or cancel. Only selected packages are
-installed and checked afterward. Then it installs terminal presets, prompts
-for hostname, timezone (default `Europe/Zurich`), locale, administrator and
-optional users, and swap size (default `4G`, or `0` to skip). It configures
-SSH (root login disabled, password login for normal users allowed), DHCP
-Ethernet and DNS; Wi-Fi is **optional and defaults to no**. You may enable
-Syncthing and remove the default `alarm` account after the administrator is
-created. Ethernet has a lower route metric than Wi-Fi. It does **not** change
-the board's kernel, partitions, U-Boot or extlinux boot files, and it does not
-install KDE yet. Reboot when it reports completion.
+Headless provisioning installs available ARM CLI packages, asks before
+skipping unavailable packages, configures terminal presets, hostname, timezone
+(default `Europe/Zurich`), locale, administrator and optional users, swap
+(default `4G`, `0` to omit), SSH (root login disabled), and DHCP Ethernet/DNS.
+Wi-Fi is optional; an existing iwd profile is kept if you decline to reconfigure
+it. Syncthing and removal of the default `alarm` account are optional. After
+verifying headless setup it asks whether to install KDE (`noapps` or `full`).
+KDE is blocked if DRM hardware or essential ARM packages are missing, and
+missing optional packages require explicit consent to skip. It does not
+automatically build sources or run x86 KDE post-install tweaks. KDE uses the
+existing working `iwd`/`systemd-networkd` connection for now: NetworkManager
+is installed but **not activated** until a safe on-board network migration is
+validated. Reboot and verify the desktop and network locally. Neither stage
+changes the board's kernel, partitions, U-Boot, or extlinux boot files.
 
 ## Current limitations
 
@@ -102,13 +98,10 @@ install KDE yet. Reboot when it reports completion.
 - The default legacy U-Boot artifact has no trusted upstream signature. A
   SHA-256 provided with `--bootloader-sha256` only helps if the expected value
   was obtained from a trusted source.
-- First boot requires Ethernet: provisioning initializes pacman and installs
-  `iwd` **before** its interactive Wi-Fi setup. Offline first-boot Wi-Fi is
-  not implemented.
-- Bring the current local kmos files to the board before running the
-  provisioner. The availability of every package in the AArch64 repositories
-  must be checked at run time; no KDE stage is implemented for this board yet.
-- The post-boot Wi-Fi setup still passes its password to `iwctl` as a process
-  argument. Avoid production Wi-Fi credentials until this path can be tested
-  and hardened on the board. The provisioner no longer clones or removes
-  work directories.
+- First-boot Wi-Fi supports only WPA-Personal SSIDs with ASCII letters,
+  digits, spaces, underscores and hyphens. The rootfs must include `iwd` and
+  the board must have a working wireless adapter and firmware; this has not
+  been tested on physical wireless hardware yet.
+- The availability of headless and KDE packages in the AArch64 repositories,
+  the GPU/DRM stack, and the KDE session must be checked on the actual board.
+  Source builds and NetworkManager migration are **not automated** yet.

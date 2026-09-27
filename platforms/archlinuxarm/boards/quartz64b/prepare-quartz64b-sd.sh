@@ -14,7 +14,9 @@ readonly ALARM_SIGNING_FINGERPRINT="68B3537F39A313B3E574D06777193F152BDBE6A6"
 # This is the exact CI artifact linked by Pine64's Quartz64 Arch Linux ARM guide.
 readonly DEFAULT_BOOTLOADER_URL="https://gitlab.com/pgwipeout/quartz64_ci/-/jobs/3293568184/artifacts/download?file_type=archive"
 
-SCRIPT_DIR=$(dirname "$(readlink -f -- "$0")")
+SCRIPT_DIR=$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")
+# shellcheck source=platforms/archlinuxarm/boards/quartz64b/wifi-profile.sh
+source "$SCRIPT_DIR/wifi-profile.sh"
 DEVICE=""
 WORK_DIR="$SCRIPT_DIR/work"
 CUSTOM_WORK_DIR=0
@@ -25,6 +27,10 @@ BOOTLOADER_SHA256=""
 ROOT_PASSWORD_HASH=""
 ASSUME_YES=0
 KEEP_MOUNTS=0
+FIRST_BOOT_WIFI=0
+WIFI_SSID=""
+WIFI_PASSPHRASE=""
+WIFI_HIDDEN=false
 MOUNT_DIR=""
 BOOT_PARTITION=""
 ROOT_PARTITION=""
@@ -65,6 +71,9 @@ Options:
   -h, --help                    Show this help.
 
 The artifact must contain idblock.bin and uboot.img, normally under artifacts/.
+First-boot Wi-Fi is offered interactively. It requires iwd in the verified ARM
+rootfs and a supported wireless adapter on the board. No Wi-Fi credentials are
+passed on command lines. Ethernet remains available as a fallback.
 The default artifact is the unmaintained one linked by Pine64. Unlike the rootfs,
 it has no upstream cryptographic signature. Prefer --bootloader-archive together
 with --bootloader-sha256 after you have recorded a trusted digest.
@@ -284,6 +293,34 @@ create_root_password_hash() {
   done
 }
 
+collect_first_boot_wifi() {
+  local answer confirmation
+  read -r -p 'Preconfigure Wi-Fi for first boot (without Ethernet)? [y/N]: ' answer
+  [[ "$answer" =~ ^[Yy]$ ]] || return 0
+  FIRST_BOOT_WIFI=1
+  read -r -p 'Wi-Fi SSID (ASCII letters, digits, spaces, _ or -): ' WIFI_SSID
+  read -r -s -p 'WPA-Personal passphrase: ' WIFI_PASSPHRASE
+  printf '\n' >&2
+  read -r -s -p 'Confirm Wi-Fi passphrase: ' confirmation
+  printf '\n' >&2
+  [[ "$WIFI_PASSPHRASE" == "$confirmation" ]] || die 'Wi-Fi passphrases differ.'
+  unset confirmation
+  validate_wifi_credentials "$WIFI_SSID" "$WIFI_PASSPHRASE" || die 'SSID or passphrase is unsupported; see --help.'
+  read -r -p 'Hidden Wi-Fi network? [y/N]: ' answer
+  if [[ "$answer" =~ ^[Yy]$ ]]; then WIFI_HIDDEN=true; fi
+}
+
+verify_first_boot_wifi_support() {
+  local rootfs=$1
+  ((FIRST_BOOT_WIFI)) || return 0
+  info 'Checking the verified ARM rootfs for iwd before writing the SD card.'
+  tar -tf "$rootfs" | awk '
+    /(^|\/)usr\/bin\/iwctl$/ { iwctl=1 }
+    /(^|\/)usr\/lib\/systemd\/system\/iwd.service$/ { service=1 }
+    END { exit !(iwctl && service) }
+  ' || die 'The ARM rootfs lacks iwd. SD card untouched; use Ethernet/USB tethering or arrange verified offline ARM packages before first-boot Wi-Fi.'
+}
+
 download() {
   local url=$1 output=$2
   curl --fail --location --retry 4 --retry-delay 3 --continue-at - --output "$output" "$url"
@@ -449,10 +486,35 @@ Name=en* eth*
 [Network]
 DHCP=yes
 IPv6AcceptRA=yes
+
+[DHCPv4]
+RouteMetric=100
 EOF
   enable_unit systemd-networkd.service multi-user.target
   enable_unit systemd-resolved.service multi-user.target
   enable_unit sshd.service multi-user.target
+  install -Dm0755 "$SCRIPT_DIR/connect-quartz64b-wifi.sh" "$MOUNT_DIR/root/connect-quartz64b-wifi.sh"
+  install -Dm0644 "$SCRIPT_DIR/wifi-profile.sh" "$MOUNT_DIR/root/wifi-profile.sh"
+  if ((FIRST_BOOT_WIFI)); then
+    write_iwd_profile "$MOUNT_DIR/var/lib/iwd" "$WIFI_SSID" "$WIFI_PASSPHRASE" "$WIFI_HIDDEN" || die 'Could not save the first-boot Wi-Fi profile.'
+    unset WIFI_PASSPHRASE
+    install -Dm0644 /dev/stdin "$MOUNT_DIR/etc/iwd/main.conf" <<'IWD_CONFIG'
+[General]
+EnableNetworkConfiguration=false
+IWD_CONFIG
+    cat > "$MOUNT_DIR/etc/systemd/network/25-wifi-dhcp.network" <<'WIFI_NETWORK'
+[Match]
+Name=wl* wlan*
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+
+[DHCPv4]
+RouteMetric=600
+WIFI_NETWORK
+    enable_unit iwd.service multi-user.target
+  fi
   ln -sfn /run/systemd/resolve/stub-resolv.conf "$MOUNT_DIR/etc/resolv.conf"
 
   [[ -f "$MOUNT_DIR/etc/shadow" ]] || die 'The extracted rootfs does not contain /etc/shadow.'
@@ -508,12 +570,14 @@ main() {
   validate_device
   confirm_erase
   create_root_password_hash
+  collect_first_boot_wifi
   trap cleanup EXIT INT TERM
 
   local inputs rootfs artifact
   inputs=$(fetch_inputs)
   rootfs=$(printf '%s\n' "$inputs" | sed -n '1p')
   artifact=$(printf '%s\n' "$inputs" | sed -n '3p')
+  verify_first_boot_wifi_support "$rootfs"
   BOOTLOADER_DIR=$(mktemp -d)
   extract_bootloader "$artifact" "$BOOTLOADER_DIR"
   partition_and_format

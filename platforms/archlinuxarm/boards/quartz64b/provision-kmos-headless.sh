@@ -6,6 +6,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
+readonly KMOS_REPOSITORY='https://github.com/kamilomelo/kmos.git'
 SCRIPT_DIR=$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")
 REPOSITORY_DIR=""
 PRIMARY_USER=""
@@ -13,6 +14,8 @@ HOSTNAME_VALUE=""
 WIFI_ADAPTER=""
 AVAILABLE_PACKAGES=()
 SKIPPED_PACKAGES=()
+KDE_PACKAGES=()
+KDE_METAPACKAGES=()
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -31,9 +34,9 @@ usage() {
   cat <<'EOF'
 Usage: ./provision-kmos-headless.sh
 
-Run from a matching local kmos tree copied to an already booted Quartz64.
-Installs the headless package set and terminal configuration from that exact
-copy. No Git clone, remote main checkout, or board bootloader changes.
+Requires a working network connection on an already booted Quartz64. Clones
+KMOS from GitHub, records one commit, and uses that checkout for every package
+manifest, asset and helper. Does not modify the board's bootloader.
 EOF
 }
 
@@ -90,9 +93,26 @@ parse_arguments() {
 find_local_repository() {
   local repository_dir=""
   repository_dir=$(cd -- "$SCRIPT_DIR/../../../.." && pwd -P) || die 'No se pudo localizar la copia local de KMOS.'
+  validate_repository "$repository_dir"
+  printf '%s\n' "$repository_dir"
+}
+
+validate_repository() {
+  local repository_dir=$1
   [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD" ]] || die 'Falta el manifiesto headless. Copie el repositorio KMOS completo al Quartz64 antes de ejecutar el script.'
   [[ -r "$repository_dir/platforms/archlinux/assets/starship-presets/tty-term.toml" ]] || die 'Faltan los presets de KMOS. Copie el repositorio completo.'
   [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" ]] || die 'Falta el provisionador Quartz64 en la copia local.'
+  [[ -x "$repository_dir/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" ]] || die 'Falta el helper Wi-Fi de Quartz64.'
+  [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/kde/noapps/PKGBUILD" ]] || die 'Falta el manifiesto KDE de KMOS.'
+}
+
+checkout_kmos() {
+  local work_dir repository_dir
+  work_dir=$(mktemp -d "${TMPDIR:-/var/tmp}/kmos-quartz.XXXXXXXX") || die 'No se pudo crear un directorio de descarga privado.'
+  repository_dir="$work_dir/kmos"
+  info "Descargando KMOS de GitHub a $repository_dir"
+  git clone --depth 1 --branch main "$KMOS_REPOSITORY" "$repository_dir" || die "Fallo la descarga; se conserva $work_dir para inspeccion."
+  validate_repository "$repository_dir"
   printf '%s\n' "$repository_dir"
 }
 
@@ -112,7 +132,7 @@ initialize_pacman() {
   pacman-key --init
   pacman-key --populate archlinuxarm
   pacman -Syu --needed --noconfirm
-  pacman -S --needed --noconfirm iwd nano openssh sudo
+  pacman -S --needed --noconfirm git iwd nano openssh sudo
   configure_pacman
 }
 
@@ -175,6 +195,106 @@ install_kmos_packages() {
   fi
 }
 
+kde_metapackage_path() {
+  case "$1" in
+    kmos-audio) printf 'desktop-shared/audio/PKGBUILD\n' ;;
+    kmos-browsers) printf 'desktop-shared/browsers/PKGBUILD\n' ;;
+    kmos-devices) printf 'desktop-shared/devices/PKGBUILD\n' ;;
+    kmos-docs) printf 'desktop-shared/docs/PKGBUILD\n' ;;
+    kmos-filesystems) printf 'desktop-shared/filesystems/PKGBUILD\n' ;;
+    kmos-fonts) printf 'desktop-shared/fonts/PKGBUILD\n' ;;
+    kmos-graphics) printf 'desktop-shared/graphics/PKGBUILD\n' ;;
+    kmos-kde-base) printf 'kde/base/PKGBUILD\n' ;;
+    kmos-kde-multimedia) printf 'kde/multimedia/PKGBUILD\n' ;;
+    kmos-kde-utils) printf 'kde/utils/PKGBUILD\n' ;;
+    kmos-kde-noapps) printf 'kde/noapps/PKGBUILD\n' ;;
+    kmos-kde-plasma) printf 'kde/base/plasma/PKGBUILD\n' ;;
+    kmos-maintenance) printf 'desktop-shared/maintenance/PKGBUILD\n' ;;
+    kmos-network) printf 'desktop-shared/network/PKGBUILD\n' ;;
+    kmos-privacy) printf 'desktop-shared/privacy/PKGBUILD\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_kde_metapackage() {
+  local name=$1 relative dependency manifest package_lines seen=0
+  local -a dependencies=()
+  local previous
+  for previous in "${KDE_METAPACKAGES[@]}"; do
+    [[ "$previous" != "$name" ]] || return 0
+  done
+  relative=$(kde_metapackage_path "$name") || die "Metapaquete KDE desconocido: $name"
+  manifest="$REPOSITORY_DIR/platforms/archlinux/packages/metapackages/$relative"
+  package_lines=$(load_kmos_packages "$manifest") || die "No se pudo leer $manifest"
+  if [[ -n "$package_lines" ]]; then mapfile -t dependencies <<< "$package_lines"; fi
+  KDE_METAPACKAGES+=("$name")
+  for dependency in "${dependencies[@]}"; do
+    [[ "$dependency" =~ ^[a-zA-Z0-9@._+:-]+$ ]] || die "Dependencia KDE invalida: $dependency"
+    if [[ "$dependency" == kmos-* ]]; then
+      resolve_kde_metapackage "$dependency"
+    else
+      seen=0
+      for previous in "${KDE_PACKAGES[@]}"; do
+        if [[ "$previous" == "$dependency" ]]; then seen=1; break; fi
+      done
+      if ((seen == 0)); then KDE_PACKAGES+=("$dependency"); fi
+    fi
+  done
+}
+
+offer_kde_desktop() {
+  local profile package summary="" missing_summary="" graphics_device=""
+  local -a available=() missing=()
+  local -a full=(kmos-audio kmos-browsers kmos-devices kmos-docs kmos-filesystems kmos-fonts kmos-graphics kmos-kde-base kmos-kde-multimedia kmos-kde-utils kmos-maintenance kmos-network kmos-privacy)
+  local metapackage
+  ask_yes_no 'Instalar un escritorio KDE ahora?' no || return 0
+  for graphics_device in /dev/dri/card[0-9]*; do
+    [[ -e "$graphics_device" ]] && break
+  done
+  [[ -e "$graphics_device" ]] || { warn 'No se detecto un dispositivo DRM en /dev/dri; KDE no se instalara hasta verificar graficos en Quartz64.'; return 0; }
+  read -r -p 'Perfil KDE [noapps/full] (noapps): ' profile
+  profile=${profile:-noapps}
+  case "$profile" in
+    noapps) resolve_kde_metapackage kmos-kde-noapps ;;
+    full)
+      for metapackage in "${full[@]}"; do resolve_kde_metapackage "$metapackage"; done
+      ;;
+    *) die 'Perfil KDE invalido; se conserva el sistema headless.' ;;
+  esac
+  for package in "${KDE_PACKAGES[@]}"; do
+    if pacman -Si "$package" >/dev/null 2>&1; then
+      available+=("$package")
+    else
+      missing+=("$package")
+    fi
+  done
+  for package in plasma-desktop plasma-workspace kwin sddm networkmanager; do
+    if ! pacman -Si "$package" >/dev/null 2>&1; then
+      warn "Componente KDE esencial no disponible para ARM: $package. No se instalaran paquetes KDE."
+      return 0
+    fi
+  done
+  if ((${#missing[@]} > 0)); then
+    printf -v missing_summary '%s ' "${missing[@]}"
+    warn "Dependencias KDE opcionales no disponibles en ARM: ${missing_summary% }."
+    info 'No se compilaran fuentes ni se usaran binarios x86 automaticamente.'
+    ask_yes_no 'Omitir esos paquetes y continuar con KDE?' no || { info 'KDE aplazado; el sistema headless sigue funcionando.'; return 0; }
+  fi
+  ((${#available[@]} > 0)) || die 'No hay paquetes KDE disponibles.'
+  printf -v summary '%s ' "${available[@]}"
+  info "KDE $profile instalara: ${summary% }"
+  ask_yes_no 'Instalar KDE en el Quartz64?' no || return 0
+  pacman -S --needed --noconfirm "${available[@]}"
+  for package in plasma-desktop plasma-workspace kwin sddm networkmanager; do
+    pacman -Q "$package" >/dev/null || die "Falta componente KDE despues de instalar: $package"
+  done
+  # Keep iwd + networkd in charge of Wi-Fi and Ethernet until NM migration is
+  # verified on the physical board; never disable the working network here.
+  systemctl enable sddm.service
+  systemctl set-default graphical.target
+  info 'KDE instalado. La red headless sigue activa; NetworkManager no se iniciara hasta validar la migracion en el board.'
+}
+
 configure_kmos_terminal() {
   local repository_dir=$1
   local preset="$repository_dir/platforms/archlinux/assets/starship-presets/tty-term.toml"
@@ -208,11 +328,14 @@ configure_identity() {
   [[ "$HOSTNAME_VALUE" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || die 'Hostname invalido.'
   read -r -p 'Timezone [Europe/Zurich]: ' timezone
   timezone=${timezone:-Europe/Zurich}
+  [[ "$timezone" =~ ^[a-zA-Z0-9_+/-]+$ && "$timezone" != *..* ]] || die 'Timezone invalida.'
   [[ -e "/usr/share/zoneinfo/$timezone" ]] || die "Timezone inexistente: $timezone"
   read -r -p 'Locale [en_US.UTF-8]: ' locale
   locale=${locale:-en_US.UTF-8}
+  [[ "$locale" =~ ^[a-zA-Z_]+\.UTF-8$ ]] || die 'Locale invalida.'
   read -r -p 'Keymap de consola [us]: ' keymap
   keymap=${keymap:-us}
+  [[ "$keymap" =~ ^[a-zA-Z0-9_-]+$ ]] || die 'Keymap invalido.'
   ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
   if [[ -e /dev/rtc0 ]]; then
     hwclock --systohc || warn 'No se pudo actualizar el reloj de hardware; se conservara la hora del sistema.'
@@ -315,35 +438,11 @@ detect_wifi_adapter() {
 }
 
 configure_wifi() {
-  local ssid password hidden
   ask_yes_no 'Configurar Wi-Fi persistente ahora?' no || return
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
   [[ -n "$WIFI_ADAPTER" ]] || { warn 'No se detecto adaptador Wi-Fi. Se conserva Ethernet.'; return; }
-  info "Adaptador Wi-Fi detectado: $WIFI_ADAPTER"
-  rfkill unblock wlan || true
-  install -Dm0644 /dev/stdin /etc/iwd/main.conf <<'EOF'
-[General]
-EnableNetworkConfiguration=false
-EOF
-  systemctl enable --now iwd.service
-  iwctl station "$WIFI_ADAPTER" scan || warn 'No se pudo escanear; aun puede ingresar SSID manualmente.'
-  sleep 2
-  printf '\nRedes detectadas:\n'
-  iwctl station "$WIFI_ADAPTER" get-networks || true
-  read -r -p 'SSID (escribalo exactamente, incluso si aparece arriba): ' ssid
-  [[ -n "$ssid" ]] || die 'SSID no puede estar vacio.'
-  if ask_yes_no 'Es una red oculta?' no; then hidden=1; else hidden=0; fi
-  password=$(prompt_secret 'Contrasena Wi-Fi')
-  if [[ "$hidden" == 1 ]]; then
-    iwctl --passphrase "$password" station "$WIFI_ADAPTER" connect-hidden "$ssid"
-  else
-    iwctl --passphrase "$password" station "$WIFI_ADAPTER" connect "$ssid"
-  fi
-  unset password
-  networkctl reload
-  networkctl reconfigure "$WIFI_ADAPTER" || true
-  systemctl enable iwd.service
-  info 'Wi-Fi conectado. iwd conserva el perfil y systemd-networkd solicitara DHCP en cada reboot.'
+  "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
+  info 'Wi-Fi configurado; iwd y systemd-networkd conservaran la conexion al reiniciar.'
 }
 
 configure_swap() {
@@ -352,6 +451,12 @@ configure_swap() {
   size=${size:-4G}
   [[ "$size" == 0 ]] && return
   [[ "$size" =~ ^[1-9][0-9]*[MG]$ ]] || die 'Swap invalido. Use 0, 512M o 4G.'
+  if [[ -e /swapfile || -L /swapfile ]]; then
+    if ! ask_yes_no 'Ya existe /swapfile. Reemplazarlo? Esto destruye su contenido.' no; then
+      info 'Swap existente conservado.'
+      return 0
+    fi
+  fi
   swapoff /swapfile 2>/dev/null || true
   rm -f /swapfile
   fallocate -l "$size" /swapfile
@@ -395,12 +500,22 @@ verify_installation() {
 
 main() {
   parse_arguments "$@"
-  REPOSITORY_DIR=$(find_local_repository)
   require_root_and_arm "$@"
-  info "Usando la copia local de KMOS: $REPOSITORY_DIR"
-  info 'Se actualizara Arch Linux ARM y se instalaran herramientas base antes de configurar usuarios y servicios.'
+  info 'Se actualizara Arch Linux ARM, se descargara KMOS de GitHub y se configurara el sistema.'
   ask_yes_no 'Continuar con el aprovisionamiento?' no || die 'Cancelado sin modificar el sistema.'
-  initialize_pacman
+  if [[ -n "${KMOS_PINNED_CHECKOUT:-}" ]]; then
+    REPOSITORY_DIR=$KMOS_PINNED_CHECKOUT
+    validate_repository "$REPOSITORY_DIR"
+  else
+    initialize_pacman
+    REPOSITORY_DIR=$(checkout_kmos)
+    if ! cmp -s -- "${BASH_SOURCE[0]}" "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh"; then
+      info 'El script descargado difiere; continuando con el provisionador del mismo commit que sus archivos.'
+      export KMOS_PINNED_CHECKOUT=$REPOSITORY_DIR
+      exec "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" "$@"
+    fi
+  fi
+  info "KMOS commit usado: $(git -C "$REPOSITORY_DIR" rev-parse HEAD)"
   install_kmos_packages "$REPOSITORY_DIR"
   configure_kmos_terminal "$REPOSITORY_DIR"
   configure_identity
@@ -412,7 +527,9 @@ main() {
   configure_syncthing
   remove_alarm
   verify_installation
-  info 'Provisionamiento KMOS headless completado. Reinicie cuando le convenga.'
+  info 'Provisionamiento KMOS headless completado.'
+  offer_kde_desktop
+  info 'Reinicie cuando le convenga y compruebe red y sesion grafica localmente.'
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

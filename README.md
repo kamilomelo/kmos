@@ -104,8 +104,9 @@ dispatcher refuses `archarm` rather than sending it to the x86_64 UEFI flow.
 Arch Linux ARM has separate AArch64 and ARMv7 package repositories, so not all
 x86_64 packages or KDE features can be assumed available. Currently the
 [Quartz64 Model B workflow](./platforms/archlinuxarm/boards/quartz64b/README.md)
-implements SD preparation and headless post-boot provisioning. Other boards
-and an ARM KDE stage remain future work.
+implements SD preparation (including optional first-boot Wi-Fi), headless
+post-boot provisioning from a pinned GitHub checkout, and an experimental KDE
+offer gated by ARM package and graphics checks. Other boards remain future work.
 
 ## Rocky Linux
 
@@ -167,7 +168,7 @@ The Rocky script now blocks if a newer kernel is installed but not yet running, 
 │   │       └── kmos-usb-flasher.sh
 │   ├── archlinuxarm/
 │   │   ├── README.md
-│   │   └── boards/quartz64b/              # Quartz64 SD preparation + headless provisioning
+│   │   └── boards/quartz64b/              # Quartz64 SD, Wi-Fi, headless + KDE offer
 │   ├── rockylinux/
 │   │   ├── kmos-rockylinux-install.sh     # Rocky minimal post-install entry point
 │   │   └── tools/

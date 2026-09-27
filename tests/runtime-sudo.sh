@@ -45,6 +45,7 @@ expect_prompt() {
 
 expect_prompt platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh --device /not-a-device
 expect_prompt platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
+expect_prompt platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh
 expect_prompt platforms/archlinux/kmos-archlinux-install.sh --profile noapps
 expect_prompt platforms/archlinux/desktop/kde/kmos-kde-install.sh --profile noapps
 expect_prompt platforms/archlinux/desktop/kde/kmos-kde-post.sh --profile noapps
