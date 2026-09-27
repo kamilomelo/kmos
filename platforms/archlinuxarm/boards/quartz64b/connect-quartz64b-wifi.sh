@@ -5,6 +5,7 @@ SCRIPT_DIR=$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")
 # shellcheck source=platforms/archlinuxarm/boards/quartz64b/wifi-profile.sh
 source "$SCRIPT_DIR/wifi-profile.sh"
 NETWORK_NAMES=()
+WIFI_FAILURE_KIND=association
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*" >&2; }
@@ -19,6 +20,8 @@ to install the signed offline ARM packages staged during SD preparation.
 Incorrect credentials can be retried without keeping the failed profile.
 Success requires the saved profile, Wi-Fi association, DHCP, and a Wi-Fi route.
 Only a real reboot can verify that it reconnects on a later boot.
+Type CANCEL to stop. During provisioning, you may then explicitly finish on
+working Ethernet only; cancelling does not claim Wi-Fi was configured.
 EOF
 }
 
@@ -128,6 +131,7 @@ wait_for_wifi() {
 
 reconnect_saved_wifi() {
   local adapter=$1 state_dir=$2 ssid=$3 current command=connect
+  WIFI_FAILURE_KIND=association
   current=$(connected_wifi_ssid "$adapter") || true
   if [[ -n "$current" ]]; then
     [[ -z "${SSH_CONNECTION:-}" ]] || die 'Testing saved credentials requires restarting Wi-Fi. Run this helper from the local console, not over SSH.'
@@ -142,14 +146,35 @@ reconnect_saved_wifi() {
   if ! iwctl station "$adapter" "$command" "$ssid"; then
     [[ $(connected_wifi_ssid "$adapter") == "$ssid" ]] || return 1
   fi
-  wait_for_wifi "$adapter" "$state_dir" "$ssid"
+  if wait_for_wifi "$adapter" "$state_dir" "$ssid"; then return 0; fi
+  if [[ $(connected_wifi_ssid "$adapter") == "$ssid" ]]; then
+    WIFI_FAILURE_KIND=dhcp
+  fi
+  return 1
+}
+
+retry_wifi_dhcp() {
+  local adapter=$1 state_dir=$2 ssid=$3 answer
+  info "Associated with $ssid, but Wi-Fi DHCP/default route is not ready. The saved credentials will be kept."
+  networkctl status "$adapter" --no-pager >&2 || true
+  while true; do
+    read -r -p 'Retry Wi-Fi DHCP [r] or CANCEL (offer Ethernet-only completion) [c]? [r]: ' answer || return 2
+    [[ ! "$answer" =~ ^[Cc]$ ]] || return 2
+    networkctl reconfigure "$adapter" || true
+    networkctl renew "$adapter" || true
+    if wait_for_wifi "$adapter" "$state_dir" "$ssid"; then
+      info 'Wi-Fi DHCP address and route verified.'
+      return 0
+    fi
+    info 'Wi-Fi DHCP/default route is still missing; no password change was made.'
+  done
 }
 
 connect_wifi_with_retries() {
   local adapter=$1 state_dir=$2 ssid passphrase hidden answer profile backup_dir
   while true; do
-    read -r -p 'Wi-Fi network number or SSID (or type CANCEL): ' ssid || return 1
-    [[ "$ssid" != CANCEL ]] || return 1
+    read -r -p 'Wi-Fi network number or SSID (or type CANCEL): ' ssid || return 2
+    [[ "$ssid" != CANCEL ]] || return 2
     if [[ "$ssid" =~ ^[1-9][0-9]*$ ]] && ((ssid <= ${#NETWORK_NAMES[@]})); then
       ssid=${NETWORK_NAMES[$((ssid - 1))]}
       info "Selected network: $ssid"
@@ -157,6 +182,21 @@ connect_wifi_with_retries() {
     [[ "$ssid" =~ ^[a-zA-Z0-9_\ -]{1,32}$ ]] || { info 'SSID must be 1-32 ASCII letters, digits, spaces, underscores or hyphens.'; continue; }
     if [[ -n "${SSH_CONNECTION:-}" && -n $(connected_wifi_ssid "$adapter") ]]; then
       die 'Testing saved credentials requires restarting Wi-Fi. Run this helper from the local console, not over SSH.'
+    fi
+    profile="$state_dir/$ssid.psk"
+    if [[ -f "$profile" && ! -L "$profile" ]]; then
+      read -r -p "Try the existing saved profile for $ssid first? [Y/n]: " answer || return 2
+      if [[ ! "$answer" =~ ^[Nn]$ ]]; then
+        if reconnect_saved_wifi "$adapter" "$state_dir" "$ssid"; then
+          info 'Existing saved Wi-Fi profile reconnected successfully.'
+          return 0
+        fi
+        if [[ "$WIFI_FAILURE_KIND" == dhcp ]]; then
+          retry_wifi_dhcp "$adapter" "$state_dir" "$ssid"
+          return $?
+        fi
+        info 'The saved profile could not associate. You can enter corrected credentials or type CANCEL.'
+      fi
     fi
     read -r -s -p 'WPA passphrase: ' passphrase || return 1
     printf '\n' >&2
@@ -194,7 +234,12 @@ connect_wifi_with_retries() {
       info 'Saved Wi-Fi profile, association, DHCP, and Wi-Fi route verified. Reboot persistence still requires a real reboot test.'
       return 0
     fi
-    info 'Wi-Fi is not ready on this adapter (association, DHCP, route, or persistent services failed).'
+    if [[ "$WIFI_FAILURE_KIND" == dhcp ]]; then
+      [[ -z "$backup_dir" ]] || info "Previous profile backed up at $backup_dir/original.psk"
+      retry_wifi_dhcp "$adapter" "$state_dir" "$ssid"
+      return $?
+    fi
+    info "iwd could not associate with $ssid. The previous profile will be restored if one existed."
 
     rm -f -- "$profile"
     if [[ -n "$backup_dir" ]]; then
@@ -203,7 +248,8 @@ connect_wifi_with_retries() {
       rmdir -- "$backup_dir"
       info 'Previous profile restored.'
     fi
-    info 'Try again, or type CANCEL at the SSID prompt to stop without claiming success.'
+    read -r -p 'Retry Wi-Fi [r] or CANCEL (offer Ethernet-only completion) [c]? [r]: ' answer || return 2
+    [[ ! "$answer" =~ ^[Cc]$ ]] || return 2
     scan_wifi_networks "$adapter" || true
   done
 }
@@ -250,7 +296,13 @@ main() {
     info 'The current Wi-Fi connection is not verified as persistent; credentials must be checked.'
   fi
   scan_wifi_networks "$adapter" || true
-  connect_wifi_with_retries "$adapter" /var/lib/iwd || { info 'Wi-Fi setup cancelled; previously saved profiles were preserved.'; return 1; }
+  if connect_wifi_with_retries "$adapter" /var/lib/iwd; then
+    return 0
+  else
+    answer=$?
+    info 'Wi-Fi was not verified; previously saved profiles were preserved.'
+    return "$answer"
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

@@ -60,6 +60,29 @@ detect_wifi_adapter() { return 1; }
 configure_wifi 2> "$fixture/wifi-warning"
 grep -q 'No Wi-Fi adapter detected' "$fixture/wifi-warning"
 
+# A deliberate Wi-Fi cancellation can finish only with an explicit Ethernet choice.
+mkdir -p "$fixture/board/platforms/archlinuxarm/boards/quartz64b"
+printf '#!/bin/sh\nexit 2\n' > "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
+chmod +x "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
+(
+  REPOSITORY_DIR="$fixture/board"
+  detect_wifi_adapter() { printf 'wlan0\n'; }
+  ethernet_available() { return 0; }
+  configure_wifi
+  [[ -z "$WIFI_ADAPTER" ]]
+)
+if (
+  REPOSITORY_DIR="$fixture/board"
+  detect_wifi_adapter() { printf 'wlan0\n'; }
+  ethernet_available() { return 1; }
+  configure_wifi
+) >"$fixture/no-ethernet" 2>&1; then
+  printf 'Wi-Fi cancellation incorrectly succeeded without Ethernet.\n' >&2
+  exit 1
+fi
+grep -q 'Provisioning stopped' "$fixture/no-ethernet"
+REPOSITORY_DIR=$repo
+
 pacman() {
   case "$1" in
     -Si) [[ "$2" != opencode && "$2" != syncthing ]] ;;

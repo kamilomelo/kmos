@@ -127,7 +127,7 @@ if wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'; then
   printf 'An IP address without a saved profile was accepted as persistent.\n' >&2
   exit 1
 fi
-if ! printf '1\nwrong password\n\n2\ncorrect password\n\n' \
+if ! printf '1\nwrong password\n\n\n2\ncorrect password\n\n' \
   | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/retry-output" 2>&1; then
   cat "$fixture/retry-output" >&2
   exit 1
@@ -139,11 +139,15 @@ grep -qx 'Passphrase=correct password' "$fixture/retry-profiles/Good Wifi.psk"
 wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'
 reconnect_saved_wifi wlan0 "$fixture/retry-profiles" 'Good Wifi'
 [[ $(tail -n 3 "$fixture/attempts") == $'restarted\nscanned\nGood Wifi' ]]
+cp "$fixture/retry-profiles/Good Wifi.psk" "$fixture/good-profile"
+printf 'Good Wifi\n\n' | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/saved-output" 2>&1
+cmp "$fixture/good-profile" "$fixture/retry-profiles/Good Wifi.psk"
+grep -q 'Existing saved Wi-Fi profile reconnected successfully' "$fixture/saved-output"
 
 # A failed replacement must restore the original profile, even if the user stops.
 write_iwd_profile "$fixture/retry-profiles" 'Old Wifi' 'original password' false
 cp "$fixture/retry-profiles/Old Wifi.psk" "$fixture/original-profile"
-printf 'Old Wifi\nincorrect password\n\ny\nCANCEL\n' \
+printf 'Old Wifi\nn\nincorrect password\n\ny\nc\n' \
   | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/restore-output" 2>&1 && {
     printf 'Cancelling Wi-Fi retries incorrectly succeeded.\n' >&2
     exit 1
@@ -153,7 +157,7 @@ cmp "$fixture/original-profile" "$fixture/retry-profiles/Old Wifi.psk"
 [[ $(find "$fixture/retry-profiles" -maxdepth 1 -name '.kmos-wifi-backup.*' | wc -l) == 0 ]]
 
 # Declining replacement keeps the old profile and allows a clean cancellation.
-printf 'Old Wifi\nunused password\n\nn\nCANCEL\n' \
+printf 'Old Wifi\nn\nunused password\n\nn\nCANCEL\n' \
   | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >/dev/null 2>&1 && {
     printf 'Declining replacement incorrectly succeeded.\n' >&2
     exit 1
@@ -162,19 +166,22 @@ cmp "$fixture/original-profile" "$fixture/retry-profiles/Old Wifi.psk"
 
 # Association success with no DHCP route cannot be reported as success.
 ip() { [[ "$1" == -4 && "$2" == -o && "$3" == address ]] && printf 'wlan0 192.0.2.10\n'; }
-printf 'Good Wifi\ncorrect password\n\ny\nCANCEL\n' \
+networkctl() { :; }
+printf 'Good Wifi\nn\ncorrect password\n\ny\nc\n' \
   | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/dhcp-output" 2>&1 && {
     printf 'Wi-Fi without a DHCP route incorrectly succeeded.\n' >&2
     exit 1
   }
-grep -q 'Wi-Fi is not ready' "$fixture/dhcp-output"
+grep -q 'Associated with Good Wifi, but Wi-Fi DHCP/default route is not ready' "$fixture/dhcp-output"
 grep -qx 'Passphrase=correct password' "$fixture/retry-profiles/Good Wifi.psk"
 
 # Explicit cancellation before credential entry must leave profiles untouched.
-printf 'CANCEL\n' | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >/dev/null 2>&1 && {
+if printf 'CANCEL\n' | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >/dev/null 2>&1; then
   printf 'Cancelling before entry incorrectly succeeded.\n' >&2
   exit 1
-}
+else
+  [[ $? == 2 ]] || { printf 'Cancellation did not signal the explicit Ethernet choice.\n' >&2; exit 1; }
+fi
 cmp "$fixture/original-profile" "$fixture/retry-profiles/Old Wifi.psk"
 
 # Regression: the displayed KASA SSID must still be found after iwd restarts.

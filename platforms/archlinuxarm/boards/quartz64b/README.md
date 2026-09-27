@@ -58,8 +58,11 @@ WPA-Personal profile, and
 enables persistent `iwd` plus DHCP through `systemd-networkd`. The passphrase
 is never passed as a process argument. Failed association or missing Wi-Fi DHCP
 route returns to the SSID prompt, removes the failed profile, and restores any
-existing profile it temporarily replaced. Type `CANCEL` at the SSID prompt to
-stop explicitly. An already connected Wi-Fi link is accepted only when its
+existing profile it temporarily replaced. If a saved profile already exists,
+the helper offers to test it before asking for a new password. If Wi-Fi
+associates but DHCP fails, it keeps the profile and offers DHCP retries rather
+than asking for the password again. Type `CANCEL` at the SSID prompt to stop
+explicitly. An already connected Wi-Fi link is accepted only when its
 matching root-only auto-connect profile, DHCP address, Wi-Fi default route, and
 persistent services can be verified. It restarts `iwd` to reload the saved
 profile, scans again after that restart, and reconnects Wi-Fi, so **run it from
@@ -75,9 +78,11 @@ reflash or rerun the entire provisioner just to fix the credentials. With
 Ethernet connected if necessary, update your existing KMOS checkout and run
 `./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh` from it.
 If the board remains online after a Wi-Fi association error, verify whether
-Ethernet or Wi-Fi carries the connection before rebooting. If the Wi-Fi helper
-fails or you cancel it during provisioning, provisioning stops rather than
-reporting a completed installation.
+Ethernet or Wi-Fi carries the connection before rebooting. If you cancel the
+Wi-Fi helper during provisioning, you may explicitly choose to finish using a
+working Ethernet address and route. This is **Ethernet-only**, not a claim that
+Wi-Fi works. Without that choice, provisioning stops rather than reporting a
+completed installation.
 
 ## Provision KMOS headless, then optionally KDE
 

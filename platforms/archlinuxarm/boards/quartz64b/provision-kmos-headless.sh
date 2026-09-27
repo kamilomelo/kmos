@@ -488,14 +488,32 @@ detect_wifi_adapter() {
   return 1
 }
 
+ethernet_available() {
+  local interface
+  while IFS= read -r interface; do
+    [[ -e "/sys/class/net/$interface" && ! -d "/sys/class/net/$interface/wireless" ]] || continue
+    ip -4 -o address show dev "$interface" scope global | grep -q . && return 0
+  done < <(ip -4 route show default | awk '{for (i=1; i<NF; i++) if ($i=="dev") print $(i+1)}')
+  return 1
+}
+
 configure_wifi() {
+  local result
   ask_yes_no 'Configure persistent Wi-Fi now?' no || return
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
   [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter detected. Ethernet remains configured.'; return; }
-  if ! "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
-    die 'Wi-Fi setup was cancelled or did not complete. Provisioning is incomplete; check networking before reboot. Do not rerun the full provisioner just to fix Wi-Fi.'
+  if "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
+    info 'Wi-Fi works now with a saved profile; verify reconnecting after a real reboot before depending on it.'
+    return 0
+  else
+    result=$?
   fi
-  info 'Wi-Fi works now with a saved profile; verify reconnecting after a real reboot before depending on it.'
+  if ((result == 2)) && ethernet_available && ask_yes_no 'Wi-Fi was cancelled. Finish installation using Ethernet only?' no; then
+    WIFI_ADAPTER=""
+    warn 'Finishing with Ethernet only. Wi-Fi was NOT verified; run the Wi-Fi helper separately when ready.'
+    return 0
+  fi
+  die 'Wi-Fi setup did not complete. Provisioning stopped without claiming a working Wi-Fi connection.'
 }
 
 configure_swap() {
