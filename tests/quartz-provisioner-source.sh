@@ -101,6 +101,10 @@ if printf '%s\n' "${AVAILABLE_PACKAGES[@]}" | grep -qx opencode; then
   exit 1
 fi
 grep -qx 'ripgrep' "$fixture/packages-installed"
+if printf '%s\n' "${SKIPPED_PACKAGES[@]}" | grep -qx starship; then
+  printf 'Required Starship package was incorrectly skipped.\n' >&2
+  exit 1
+fi
 if grep -Eq '^(opencode|syncthing)$' "$fixture/packages-installed"; then
   printf 'A skipped package was included in the installation.\n' >&2
   exit 1
@@ -172,9 +176,13 @@ if command -v starship >/dev/null 2>&1; then
   STARSHIP_CONFIG="$fixture/headless/usr/share/kmos/starship-presets/quartz-headless.toml" \
     STARSHIP_LOG=warn starship prompt >"$fixture/prompt" 2>"$fixture/prompt-errors"
   [[ ! -s "$fixture/prompt-errors" && -s "$fixture/prompt" ]]
+  KMOS_PROFILE_TEST="$fixture/headless/etc/profile.d/10-kmos-starship.sh" \
+    bash --noprofile --norc -ic \
+    'source "$KMOS_PROFILE_TEST"; [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/quartz-headless.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
+    >"$fixture/login-output" 2>&1
 fi
 
-# Ethernet remains usable; KDE must not run during headless provisioning.
+# Ethernet remains usable; neither KDE nor Wi-Fi runs during headless provisioning.
 (
   parse_arguments() { :; }
   find_local_repository() { printf '%s\n' "$repo"; }
@@ -193,9 +201,10 @@ fi
   remove_alarm() { :; }
   # shellcheck disable=SC2329 # An invocation here would fail this test.
   offer_kde_desktop() { printf 'KDE ran during headless provisioning.\n' >&2; exit 1; }
-  configure_wifi() { printf 'wifi\n' >> "$fixture/steps"; }
+  # shellcheck disable=SC2329 # An invocation here would fail this test.
+  configure_wifi() { printf 'Wi-Fi ran during headless provisioning.\n' >&2; exit 1; }
   verify_installation() { printf 'verify\n' >> "$fixture/steps"; }
   main
 )
-[[ $(cat "$fixture/steps") == $'fonts\nterminal\nwifi\nverify' ]]
+[[ $(cat "$fixture/steps") == $'fonts\nterminal\nverify' ]]
 printf 'Quartz provisioner uses local KMOS files and honors skipped packages: OK.\n'

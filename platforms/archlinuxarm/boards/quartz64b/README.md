@@ -69,20 +69,16 @@ profile, scans again after that restart, and reconnects Wi-Fi, so **run it from
 the local console**, not
 over SSH. Even a successful reconnect **cannot prove it will work after reboot**.
 Check `networkctl status` and verify the
-connection survives a reboot before provisioning KMOS. If the adapter or
+connection survives a reboot before relying on Wi-Fi. If the adapter or
 firmware is missing, the helper stops before installing packages; temporary
 networking or a compatible adapter will be necessary.
 
-If provisioning already reached the Wi-Fi prompt and failed there, do **not**
-reflash or rerun the entire provisioner just to fix the credentials. With
-Ethernet connected if necessary, update your existing KMOS checkout and run
+The headless provisioner does **not** offer or configure Wi-Fi. To try it
+separately after installing on Ethernet, update your existing KMOS checkout and run
 `./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh` from it.
 If the board remains online after a Wi-Fi association error, verify whether
-Ethernet or Wi-Fi carries the connection before rebooting. If you cancel the
-Wi-Fi helper during provisioning, you may explicitly choose to finish using a
-working Ethernet address and route. This is **Ethernet-only**, not a claim that
-Wi-Fi works. Without that choice, provisioning stops rather than reporting a
-completed installation.
+Ethernet or Wi-Fi carries the connection before rebooting. A Wi-Fi error does
+not require rerunning headless provisioning.
 
 ## Provision KMOS headless
 
@@ -101,7 +97,9 @@ board** using its working network. Do not attempt the clone until it is
 available. The provisioner validates the local checkout and reports its commit
 before asking permission to make changes. It never fetches another copy or
 replaces files in your clone. Its initial `pacman -Syu` can update the board
-kernel, so back up the working card before confirming provisioning.
+kernel, so back up the working card before confirming provisioning. The
+Arch Linux ARM `starship` package is required; provisioning stops rather than
+claiming a working prompt if it cannot be installed or rendered.
 
 Headless provisioning installs available ARM CLI packages, asks before
 skipping unavailable packages, installs the four Kappa Mono Nerd Font TTF
@@ -109,12 +107,9 @@ styles from the Kappa Type GitHub repository using `git`, and configures
 terminal presets, hostname, timezone
 (default `Europe/Zurich`), locale, administrator and optional users, swap
 (default `4G`, `0` to omit), SSH (root login disabled), and DHCP Ethernet/DNS.
-Wi-Fi is optional; an existing iwd profile is kept if you decline to reconfigure
-it. Syncthing and removal of the default `alarm` account are optional. Wi-Fi
-is the last configuration prompt; keep Ethernet connected for package downloads.
-If you choose Wi-Fi at the end, it must pass the saved-profile reconnect test.
-Cancelling Wi-Fi can finish the installation **Ethernet-only** with explicit
-confirmation; this does not claim that Wi-Fi works. Provisioning does not
+Syncthing and removal of the default `alarm` account are optional. There is no
+Wi-Fi prompt or KDE offer in this headless run; keep Ethernet connected for
+package and font downloads. Provisioning does not
 rewrite partitions, U-Boot, or extlinux boot files, but its initial system
 update may update the board's kernel packages.
 
@@ -138,7 +133,10 @@ git pull --ff-only
 ```
 
 Start a new SSH session to check the prompt. This command does not install KDE,
-change networking, or rerun the headless provisioner.
+change networking, or rerun the headless provisioner. If `starship` was missing
+on the old install, it asks before a full Arch Linux ARM update to install the
+official AArch64 package; **that update may change the board kernel**. Declining
+leaves packages untouched, and the repair will not claim success.
 
 To add Kappa Mono to an **existing** headless board without repeating the
 system update or provisioning, run from the KMOS checkout:

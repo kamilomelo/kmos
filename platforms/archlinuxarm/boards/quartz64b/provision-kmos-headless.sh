@@ -122,7 +122,7 @@ initialize_pacman() {
   pacman-key --init
   pacman-key --populate archlinuxarm
   pacman -Syu --needed --noconfirm
-  pacman -S --needed --noconfirm git iwd nano openssh sudo
+  pacman -S --needed --noconfirm git iwd nano openssh starship sudo
   configure_pacman
 }
 
@@ -171,6 +171,10 @@ install_kmos_packages() {
   info "KMOS headless package set: ${package_summary% }"
   for package in "${packages[@]}"; do
     [[ "$package" =~ ^[a-zA-Z0-9@._+:-]+$ ]] || die "Invalid KMOS package name: $package"
+    if [[ "$package" == starship ]]; then
+      pacman -Q starship >/dev/null || die 'Starship is required for the headless prompt; do not skip it.'
+      continue
+    fi
     if pacman -Si "$package" >/dev/null 2>&1; then
       AVAILABLE_PACKAGES+=("$package")
     else
@@ -344,6 +348,19 @@ configure_kmos_terminal() {
   # would need to be installed on the SSH client's terminal, not this board.
   install -Dm0644 /dev/stdin "$root/etc/profile.d/10-kmos-starship.sh" <<'EOF'
 export STARSHIP_CONFIG=/usr/share/kmos/starship-presets/quartz-headless.toml
+# SSH login shells read /etc/profile.d, even if they do not read bash.bashrc.
+if [ -n "${BASH_VERSION:-}" ]; then
+  case $- in
+    *i*)
+      if command -v starship >/dev/null 2>&1; then
+        case "${PROMPT_COMMAND:-}" in
+          *starship_precmd*) ;;
+          *) eval "$(starship init bash)" ;;
+        esac
+      fi
+      ;;
+  esac
+fi
 EOF
   install -d -m 0755 "$root/etc"
   touch "$root/etc/bash.bashrc"
@@ -351,7 +368,7 @@ EOF
     cat >> "$root/etc/bash.bashrc" <<'EOF'
 
 # kmos headless shell
-if [[ $- == *i* ]] && command -v starship >/dev/null 2>&1; then
+if [[ $- == *i* && "${PROMPT_COMMAND:-}" != *starship_precmd* ]] && command -v starship >/dev/null 2>&1; then
   eval "$(starship init bash)"
 fi
 if [[ $- == *i* ]] && command -v zoxide >/dev/null 2>&1; then
@@ -371,6 +388,26 @@ if [[ $- == *i* && -r /etc/profile.d/10-kmos-starship.sh ]]; then
   source /etc/profile.d/10-kmos-starship.sh
 fi
 EOF
+  fi
+}
+
+verify_headless_prompt() {
+  local config=/usr/share/kmos/starship-presets/quartz-headless.toml
+  command -v starship >/dev/null 2>&1 || die 'Starship binary is missing; the headless prompt cannot work.'
+  [[ -r "$config" ]] || die 'Headless Starship preset is missing.'
+  bash -n /etc/bash.bashrc /etc/profile.d/10-kmos-starship.sh || die 'Headless Bash startup configuration has a syntax error.'
+  STARSHIP_CONFIG="$config" starship prompt >/dev/null || die 'Starship could not render the headless prompt.'
+  # shellcheck disable=SC2016 # These expressions expand inside the child Bash.
+  if ! env -u STARSHIP_CONFIG bash --noprofile --rcfile /etc/bash.bashrc -ic \
+    '[[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/quartz-headless.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
+    >/dev/null 2>&1; then
+    die 'Interactive Bash did not load the headless Starship prompt.'
+  fi
+  # shellcheck disable=SC2016 # These expressions expand inside the child Bash.
+  if ! env -u STARSHIP_CONFIG bash --noprofile --norc -ic \
+    'source /etc/profile.d/10-kmos-starship.sh; [[ "$STARSHIP_CONFIG" == /usr/share/kmos/starship-presets/quartz-headless.toml && "${PROMPT_COMMAND:-}" == *starship_precmd* ]]' \
+    >/dev/null 2>&1; then
+    die 'SSH-style login Bash did not initialize the headless Starship prompt.'
   fi
 }
 
@@ -555,7 +592,7 @@ configure_syncthing() {
 verify_installation() {
   local package
   info 'Verifying configuration.'
-  for package in iwd nano openssh sudo "${AVAILABLE_PACKAGES[@]}"; do
+  for package in iwd nano openssh starship sudo "${AVAILABLE_PACKAGES[@]}"; do
     pacman -Q "$package" >/dev/null || die "Expected package missing: $package"
   done
   id "$PRIMARY_USER" >/dev/null
@@ -564,6 +601,7 @@ verify_installation() {
   [[ $(cat /etc/hostname) == "$HOSTNAME_VALUE" ]] || die 'Hostname does not match.'
   systemctl is-enabled sshd.service systemd-networkd.service systemd-resolved.service >/dev/null
   [[ -f /usr/share/kmos/starship-presets/quartz-headless.toml ]] || die 'Headless Starship preset is missing.'
+  verify_headless_prompt
   if [[ -n "$WIFI_ADAPTER" ]]; then
     systemctl is-enabled iwd.service >/dev/null
     iwctl station "$WIFI_ADAPTER" show || warn 'Could not query Wi-Fi status.'
@@ -592,7 +630,7 @@ main() {
   configure_syncthing
   remove_alarm
   info 'Quartz64 KDE provisioning is disabled until it can be validated on physical hardware.'
-  configure_wifi
+  info 'Wi-Fi is not configured during headless provisioning; Ethernet remains in use. The Wi-Fi helper is separate.'
   verify_installation
   info 'KMOS provisioning complete.'
   info 'Reboot when convenient, then check networking and any graphical session locally.'

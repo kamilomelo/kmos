@@ -21,5 +21,12 @@ SCRIPT_DIR=$(dirname "$(readlink -f -- "$0")")
 # shellcheck source=platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
 source "$SCRIPT_DIR/provision-kmos-headless.sh"
 repository_dir=$(find_local_repository)
+if ! pacman -Q starship >/dev/null 2>&1; then
+  printf 'Starship is missing. Installing it requires a full Arch Linux ARM update, which may update the board kernel.\n' >&2
+  read -r -p 'Backed up the working card and continue with pacman -Syu starship? [y/N]: ' answer
+  [[ "$answer" =~ ^[Yy]$ ]] || { printf 'Cancelled without updating packages.\n' >&2; exit 1; }
+  pacman -Syu --needed starship
+fi
 configure_kmos_terminal "$repository_dir"
+verify_headless_prompt
 info 'Headless Starship prompt repaired. Start a new SSH session to check it.'
