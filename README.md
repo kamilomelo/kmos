@@ -168,7 +168,7 @@ The Rocky script now blocks if a newer kernel is installed but not yet running, 
 │   │       └── kmos-usb-flasher.sh
 │   ├── archlinuxarm/
 │   │   ├── README.md
-│   │   └── boards/quartz64b/              # Quartz64 SD, Wi-Fi, headless + KDE offer
+│   │   └── boards/quartz64b/              # Quartz64 SD, manual Wi-Fi, headless setup
 │   ├── rockylinux/
 │   │   ├── kmos-rockylinux-install.sh     # Rocky minimal post-install entry point
 │   │   └── tools/

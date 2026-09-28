@@ -21,6 +21,20 @@ The script asks for root access through the system `sudo` password prompt. It th
 
 Downloads, the rootfs signature and U-Boot artifact are stored in `work/` next to the script. The temporary PGP keyring is removed after verification. At the end of a successful run, choose whether to keep the default work directory for another SD card or delete it. The directory is retained automatically after a failure. A custom `--work-dir` is always preserved and must be removed manually after inspection.
 
+To remove the default root-owned cache later, run this from the **host** in
+the Quartz64 directory. It does not touch a device: it checks for mounts,
+asks for `DELETE`, and requests sudo itself. Custom work directories are never
+touched:
+
+```bash
+./prepare-quartz64b-sd.sh --clean-work
+```
+
+The folder has three executable scripts: host SD preparation, on-board
+headless setup/maintenance, and the separate on-board manual Wi-Fi helper.
+The console Starship preset lives in `assets/`. SD preparation copies only
+the self-contained Wi-Fi script into the board's `/root/`.
+
 The rootfs is downloaded from an official Arch Linux ARM mirror with valid HTTPS and is verified using the official PGP signature before it is written to the SD.
 
 The default U-Boot source is the exact GitLab CI artifact linked by Pine64's old Quartz64 Arch Linux ARM guide. It is old and not signed. For repeatable testing, archive it locally, record its digest, then use:
@@ -113,7 +127,7 @@ For a board already installed with `alarm` still present, run this from the
 new administrator session instead of repeating provisioning:
 
 ```bash
-./platforms/archlinuxarm/boards/quartz64b/remove-initial-alarm.sh
+./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh remove-alarm
 ```
 
 There is no Wi-Fi prompt or KDE offer in the headless run; keep Ethernet
@@ -146,7 +160,7 @@ disk space, and AUR packages may not support AArch64. Build checkouts are kept
 for inspection. To choose a helper later without repeating provisioning:
 
 ```bash
-./platforms/archlinuxarm/boards/quartz64b/install-aur-helper.sh
+./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh aur
 ```
 
 On a board provisioned by an older version, repair **only** the prompt without
@@ -154,7 +168,7 @@ reinstalling or repeating system updates. From the existing KMOS checkout:
 
 ```bash
 git pull --ff-only
-./platforms/archlinuxarm/boards/quartz64b/repair-headless-prompt.sh
+./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh repair-prompt
 ```
 
 Start a new SSH session to check the prompt. This command does not install KDE,
@@ -167,7 +181,7 @@ To add Kappa Mono to an **existing** headless board without repeating the
 system update or provisioning, run from the KMOS checkout:
 
 ```bash
-./platforms/archlinuxarm/boards/quartz64b/install-kappa-mono-fonts.sh
+./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh fonts
 ```
 
 ## Current limitations

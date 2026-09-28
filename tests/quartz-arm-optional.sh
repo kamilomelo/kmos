@@ -53,7 +53,7 @@ EOF
   chmod +x "$fixture/mock-bin/"*
   touch "$fixture/record"
   MOCK_ALARM_RECORD="$fixture/record" MOCK_ALARM_DISABLED="$fixture/disabled" \
-    PATH="$fixture/mock-bin:$PATH" bash "$repo/platforms/archlinuxarm/boards/quartz64b/remove-alarm-after-boot.sh"
+    PATH="$fixture/mock-bin:$PATH" bash "$fixture/target/usr/local/libexec/kmos-remove-alarm-after-boot.sh"
   [[ ! -e "$fixture/record" && -e "$fixture/disabled" ]]
 fi
 

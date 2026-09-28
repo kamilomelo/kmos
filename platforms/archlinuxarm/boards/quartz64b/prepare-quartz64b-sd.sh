@@ -65,6 +65,7 @@ Options:
   --root-password-hash HASH     SHA-512 crypt hash for root; avoids an interactive prompt.
   --yes-really-erase            Skip the final y/N confirmation.
   --keep-mounts                 Leave the SD mounted on success, for inspection.
+  --clean-work                  Only remove the default download cache (no SD operation).
   -h, --help                    Show this help.
 
 The artifact must contain idblock.bin and uboot.img, normally under artifacts/.
@@ -523,8 +524,6 @@ EOF
   enable_unit systemd-resolved.service multi-user.target
   enable_unit sshd.service multi-user.target
   install -Dm0755 "$SCRIPT_DIR/connect-quartz64b-wifi.sh" "$MOUNT_DIR/root/connect-quartz64b-wifi.sh"
-  install -Dm0644 "$SCRIPT_DIR/wifi-profile.sh" "$MOUNT_DIR/root/wifi-profile.sh"
-  install -Dm0644 "$SCRIPT_DIR/wifi-offline-packages.sh" "$MOUNT_DIR/root/wifi-offline-packages.sh"
   if ((STAGE_WIFI_PACKAGES)); then
     local package_file
     install -d -m 0755 "$MOUNT_DIR/var/lib/kmos/wifi-packages"
@@ -552,7 +551,7 @@ verify_target() {
   grep -q 'DHCP=yes' "$MOUNT_DIR/etc/systemd/network/20-ethernet-dhcp.network" || die 'DHCP configuration is missing.'
   [[ -L "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/systemd-networkd.service" ]] || die 'systemd-networkd was not enabled.'
   [[ -s "$MOUNT_DIR/boot/Image" && -s "$MOUNT_DIR/boot/initramfs-linux.img" ]] || die 'Boot files are incomplete.'
-  [[ -x "$MOUNT_DIR/root/connect-quartz64b-wifi.sh" && -r "$MOUNT_DIR/root/wifi-profile.sh" ]] || die 'The manual Wi-Fi helper was not copied.'
+  [[ -x "$MOUNT_DIR/root/connect-quartz64b-wifi.sh" ]] || die 'The manual Wi-Fi helper was not copied.'
   if ((STAGE_WIFI_PACKAGES)); then
     local staged
     for staged in "$WIFI_PACKAGE_DIR"/*.pkg.tar.xz "$WIFI_PACKAGE_DIR"/*.pkg.tar.zst; do
@@ -590,7 +589,30 @@ cleanup_workdir_prompt() {
   done
 }
 
+clean_work_cache() {
+  [[ -e "$WORK_DIR" || -L "$WORK_DIR" ]] || { info 'Quartz64 work cache is already absent.'; return 0; }
+  [[ -d "$WORK_DIR" && ! -L "$WORK_DIR" ]] || die 'Work path is not a real directory.'
+  command -v findmnt >/dev/null 2>&1 || die 'findmnt is required to check mounts before deletion.'
+  if findmnt -rn -o TARGET | awk -v path="$WORK_DIR" '$0 == path || index($0, path "/") == 1 { found=1 } END { exit !found }'; then
+    die 'Refusing to remove a work directory containing a mount.'
+  fi
+  local answer
+  read -r -p "Delete the Quartz64 download cache at $WORK_DIR? It will need downloading again. Type DELETE: " answer
+  [[ "$answer" == DELETE ]] || { info 'Cancelled; cache retained.'; return 0; }
+  if ((EUID != 0)); then
+    info 'Root-owned downloads require sudo; confirm once more after authentication.'
+    require_root --clean-work
+  fi
+  rm -rf -- "$WORK_DIR"
+  info 'Quartz64 work cache removed.'
+}
+
 main() {
+  if [[ "${1:-}" == --clean-work ]]; then
+    (($# == 1)) || die '--clean-work cannot be combined with SD-preparation options.'
+    clean_work_cache
+    return
+  fi
   parse_arguments "$@"
   require_root "$@"
   require_commands

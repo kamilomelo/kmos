@@ -8,20 +8,23 @@ trap 'rm -rf -- "$fixture"' EXIT
 # shellcheck disable=SC1091
 source "$repo/platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh"
 # shellcheck disable=SC1091
-source "$repo/platforms/archlinuxarm/boards/quartz64b/wifi-profile.sh"
+source "$repo/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
 
-write_iwd_profile "$fixture/iwd" 'Test Wifi' 'safe secret 123' false
-[[ $(stat -c %a "$fixture/iwd") == 700 ]]
-[[ $(stat -c %a "$fixture/iwd/Test Wifi.psk") == 600 ]]
-grep -qx 'Passphrase=safe secret 123' "$fixture/iwd/Test Wifi.psk"
-write_iwd_profile "$fixture/iwd" 'Other Wifi' ' backslash\test' true
-grep -Fxq 'Passphrase=\sbackslash\\test' "$fixture/iwd/Other Wifi.psk"
-if write_iwd_profile "$fixture/iwd" 'Test Wifi' 'different secret' false; then
-  printf 'Existing Wi-Fi credentials were overwritten.\n' >&2
+# SD preparation copies exactly one self-contained board-side Wi-Fi script.
+mkdir -p "$fixture/board/root"
+install -m 0755 "$repo/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" "$fixture/board/root/connect-quartz64b-wifi.sh"
+(
+  # shellcheck disable=SC1091
+  source "$fixture/board/root/connect-quartz64b-wifi.sh"
+  validate_wifi_credentials 'Test Wifi' 'safe secret 123'
+)
+
+if validate_wifi_credentials '../outside' 'safe secret 123'; then
+  printf 'Unsafe SSID was accepted.\n' >&2
   exit 1
 fi
-if write_iwd_profile "$fixture/iwd" '../outside' 'safe secret 123' false; then
-  printf 'Unsafe SSID was accepted.\n' >&2
+if validate_wifi_credentials 'Test Wifi' 'short'; then
+  printf 'Short Wi-Fi password was accepted.\n' >&2
   exit 1
 fi
 
@@ -59,8 +62,6 @@ stage_offline_wifi_packages
 [[ -f "$WIFI_PACKAGE_DIR/iwd-3.12-2-aarch64.pkg.tar.xz.sig" ]]
 
 # Mock the native first-boot pacman transaction; no real packages are installed.
-# shellcheck disable=SC1091
-source "$repo/platforms/archlinuxarm/boards/quartz64b/wifi-offline-packages.sh"
 mkdir "$fixture/board-cache"
 cp "$WIFI_PACKAGE_DIR"/*.pkg.tar.xz "$WIFI_PACKAGE_DIR"/*.pkg.tar.xz.sig "$fixture/board-cache/"
 printf '[options]\nLocalFileSigLevel = Optional\n' > "$fixture/pacman.conf"
@@ -87,8 +88,6 @@ fi
 [[ ! -e "$fixture/board-state/should-not-exist" ]]
 
 # Board-side tests: the x86-style flow connects first; iwd supplies the profile.
-# shellcheck disable=SC1091
-source "$repo/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
 mkdir -m 700 "$fixture/retry-profiles"
 iwctl() {
   if [[ "$1" == --passphrase ]]; then

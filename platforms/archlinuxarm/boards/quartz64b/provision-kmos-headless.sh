@@ -34,11 +34,13 @@ info() {
 
 usage() {
   cat <<'EOF'
-Usage: ./provision-kmos-headless.sh
+Usage: ./provision-kmos-headless.sh [provision|repair-prompt|fonts|aur|remove-alarm]
 
 Run this script from a complete local KMOS Git checkout on an already booted
 Quartz64. Uses the checkout's package manifests, assets and helper scripts.
-It does not clone another repository or modify the board's bootloader.
+No argument provisions KMOS headless. The other commands repair only the
+prompt, install only Kappa Mono, choose an AUR helper, or remove alarm.
+They do not rerun system provisioning or modify the board's bootloader.
 EOF
 }
 
@@ -83,15 +85,6 @@ require_root_and_arm() {
   exec sudo -- "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
 }
 
-parse_arguments() {
-  while (($#)); do
-    case "$1" in
-      -h|--help) usage; exit 0 ;;
-      *) die "Unknown option: $1" ;;
-    esac
-  done
-}
-
 find_local_repository() {
   local repository_dir=""
   repository_dir=$(cd -- "$SCRIPT_DIR/../../../.." && pwd -P) || die 'Could not locate the local KMOS checkout.'
@@ -104,7 +97,7 @@ validate_repository() {
   [[ -d "$repository_dir/.git" ]] || die 'A complete KMOS Git checkout is required.'
   [[ $(git -C "$repository_dir" rev-parse --show-toplevel) == "$repository_dir" ]] || die 'The KMOS path does not match the Git checkout root.'
   [[ -r "$repository_dir/platforms/archlinux/packages/metapackages/nodesktop/PKGBUILD" ]] || die 'Headless package manifest missing. Clone the complete KMOS repository onto the Quartz64.'
-  [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/starship-headless.toml" ]] || die 'Quartz64 headless Starship preset missing.'
+  [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/assets/starship-headless.toml" ]] || die 'Quartz64 headless Starship preset missing.'
   [[ -r "$repository_dir/platforms/archlinux/assets/starship-presets/holow-light.toml" ]] || die 'KMOS SSH Starship preset missing.'
   [[ -r "$repository_dir/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh" ]] || die 'Quartz64 provisioner missing from the checkout.'
   [[ -x "$repository_dir/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" ]] || die 'Quartz64 Wi-Fi helper missing from the checkout.'
@@ -345,7 +338,7 @@ offer_kde_desktop() {
 
 configure_kmos_terminal() {
   local repository_dir=$1 root=${2:-}
-  local preset="$repository_dir/platforms/archlinuxarm/boards/quartz64b/starship-headless.toml"
+  local preset="$repository_dir/platforms/archlinuxarm/boards/quartz64b/assets/starship-headless.toml"
   local ssh_preset="$repository_dir/platforms/archlinux/assets/starship-presets/holow-light.toml"
   [[ -r "$preset" ]] || die 'Quartz64 headless Starship preset not found.'
   [[ -r "$ssh_preset" ]] || die 'KMOS SSH Starship preset not found.'
@@ -602,9 +595,29 @@ configure_swap() {
 
 stage_alarm_removal() {
   local root=${1:-}
-  local helper="$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/remove-alarm-after-boot.sh"
-  [[ -x "$helper" ]] || die 'Alarm removal helper is missing from the KMOS checkout.'
-  install -Dm0755 "$helper" "$root/usr/local/libexec/kmos-remove-alarm-after-boot.sh"
+  install -Dm0755 /dev/stdin "$root/usr/local/libexec/kmos-remove-alarm-after-boot.sh" <<'ALARM_CLEANUP'
+#!/usr/bin/env bash
+# Runs at the next boot if alarm owned the active installer session.
+set -Eeuo pipefail
+if record=$(getent passwd alarm); then
+  IFS=: read -r _ _ _ _ _ home shell <<< "$record"
+  if [[ "$home" != /home/alarm || "$shell" != /usr/bin/nologin ]]; then
+    printf 'ERROR: alarm changed since removal was scheduled; refusing to remove it.\n' >&2
+    exit 1
+  fi
+  userdel -r alarm
+fi
+if getent passwd alarm >/dev/null; then
+  printf 'ERROR: alarm still exists; retry or inspect the service logs.\n' >&2
+  exit 1
+fi
+if [[ -e /home/alarm || -L /home/alarm ]]; then
+  printf 'ERROR: /home/alarm still exists; inspect it before removing anything.\n' >&2
+  exit 1
+fi
+systemctl disable kmos-remove-alarm.service
+printf 'Initial alarm account and home have been removed.\n'
+ALARM_CLEANUP
   install -Dm0644 /dev/stdin "$root/etc/systemd/system/kmos-remove-alarm.service" <<'EOF'
 [Unit]
 Description=Remove locked initial alarm account before SSH logins
@@ -743,9 +756,8 @@ verify_installation() {
 }
 
 main() {
-  parse_arguments "$@"
   REPOSITORY_DIR=$(find_local_repository)
-  require_root_and_arm "$@"
+  require_root_and_arm
   info "KMOS checkout commit: $(git -C "$REPOSITORY_DIR" rev-parse HEAD)"
   if [[ -n $(git -C "$REPOSITORY_DIR" status --porcelain --untracked-files=no) ]]; then
     warn 'This checkout has local changes; the files used may differ from the displayed commit.'
@@ -771,6 +783,56 @@ main() {
   info 'Reboot when convenient, then check networking and any graphical session locally.'
 }
 
+board_maintenance() {
+  local operation=$1 answer repository_dir
+  require_root_and_arm "$operation"
+  repository_dir=$(find_local_repository)
+  REPOSITORY_DIR=$repository_dir
+  case "$operation" in
+    repair-prompt)
+      if ! pacman -Q starship >/dev/null 2>&1; then
+        warn 'Starship is missing. Installing it requires a full Arch Linux ARM update, which may update the board kernel.'
+        read -r -p 'Backed up the working card and continue with pacman -Syu starship? [y/N]: ' answer
+        [[ "$answer" =~ ^[Yy]$ ]] || die 'Cancelled without updating packages.'
+        pacman -Syu --needed starship
+      fi
+      configure_kmos_terminal "$repository_dir"
+      verify_headless_prompt
+      info 'Headless Starship prompt repaired. Start a new SSH session to check it.'
+      ;;
+    fonts)
+      install_kappa_mono_fonts
+      info 'Kappa Mono is installed on the Quartz64. SSH glyphs depend on the client terminal font.'
+      ;;
+    aur|remove-alarm)
+      PRIMARY_USER=${SUDO_USER:-}
+      if [[ -z "$PRIMARY_USER" || "$PRIMARY_USER" == root || "$PRIMARY_USER" == alarm ]]; then
+        read -r -p 'Name of your new wheel administrator (not alarm): ' PRIMARY_USER
+      fi
+      if [[ "$operation" == aur ]]; then
+        offer_aur_helper
+      else
+        remove_alarm
+        if ((REMOVE_ALARM_REQUESTED == 0)); then
+          info 'alarm removal was declined; no account was removed.'
+        elif ((ALARM_REMOVAL_PENDING)); then
+          info 'After reboot, check: getent passwd alarm (must produce no output).'
+        else
+          info 'alarm removal verified.'
+        fi
+      fi
+      ;;
+  esac
+}
+
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-  main "$@"
+  case "${1:-provision}" in
+    -h|--help) usage ;;
+    provision) (($# <= 1)) || die 'Unexpected arguments. Run --help for commands.'; main ;;
+    repair-prompt|fonts|aur|remove-alarm)
+      (($# == 1)) || die 'Unexpected arguments. Run --help for commands.'
+      board_maintenance "$1"
+      ;;
+    *) die "Unknown command: $1. Run --help for commands." ;;
+  esac
 fi

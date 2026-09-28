@@ -7,7 +7,7 @@ repo=$(git rev-parse --show-toplevel)
 source "$repo/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh"
 
 [[ $(find_local_repository) == "$repo" ]]
-if LC_ALL=C grep -q '[^ -~]' "$repo/platforms/archlinuxarm/boards/quartz64b/starship-headless.toml"; then
+if LC_ALL=C grep -q '[^ -~]' "$repo/platforms/archlinuxarm/boards/quartz64b/assets/starship-headless.toml"; then
   printf 'Quartz64 headless Starship preset contains non-ASCII glyphs.\n' >&2
   exit 1
 fi
@@ -34,6 +34,7 @@ fi
 SCRIPT_DIR="$repo/platforms/archlinuxarm/boards/quartz64b"
 
 # Declining the initial confirmation must not invoke pacman or change the board.
+# shellcheck disable=SC2329 # Used by the sourced provisioner's main function.
 ask_yes_no() { return 1; }
 require_root_and_arm() { :; }
 initialize_pacman() { printf 'Unexpected pacman initialization.\n' >&2; exit 1; }
@@ -203,7 +204,6 @@ fi
 
 # Ethernet remains usable; neither KDE nor Wi-Fi runs during headless provisioning.
 (
-  parse_arguments() { :; }
   find_local_repository() { printf '%s\n' "$repo"; }
   require_root_and_arm() { :; }
   ask_yes_no() { return 0; }
