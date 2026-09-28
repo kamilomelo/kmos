@@ -755,6 +755,39 @@ verify_installation() {
   fi
 }
 
+countdown_or_reboot() {
+  local fd=$1 remaining status
+  for ((remaining=10; remaining>0; remaining--)); do
+    printf '\rRebooting in %2d seconds. Press any key to stay... ' "$remaining" >&2
+    if IFS= read -r -s -n 1 -t 1 -u "$fd"; then
+      printf '\nStaying in the current session. Reboot manually when ready.\n' >&2
+      return 0
+    else
+      status=$?
+      if ((status < 128)); then
+        printf '\n' >&2
+        warn 'Terminal input closed; automatic reboot skipped. Reboot manually when ready.'
+        return 0
+      fi
+    fi
+  done
+  printf '\nRebooting now.\n' >&2
+  systemctl reboot || die 'Automatic reboot failed. Reboot manually when ready.'
+}
+
+finish_installation() {
+  local fd
+  printf '\n+-------------------------------------+\n' >&2
+  printf '| KMOS headless installation complete |\n' >&2
+  printf '+-------------------------------------+\n' >&2
+  if ! { exec {fd}</dev/tty; } 2>/dev/null; then
+    warn 'No interactive terminal; automatic reboot skipped. Reboot manually when ready.'
+    return 0
+  fi
+  countdown_or_reboot "$fd"
+  exec {fd}<&-
+}
+
 main() {
   REPOSITORY_DIR=$(find_local_repository)
   require_root_and_arm
@@ -778,9 +811,8 @@ main() {
   info 'Quartz64 KDE provisioning is disabled until it can be validated on physical hardware.'
   info 'Wi-Fi is not configured during headless provisioning; Ethernet remains in use. The Wi-Fi helper is separate.'
   verify_installation
-  info 'KMOS headless provisioning complete.'
   offer_aur_helper
-  info 'Reboot when convenient, then check networking and any graphical session locally.'
+  finish_installation
 }
 
 board_maintenance() {

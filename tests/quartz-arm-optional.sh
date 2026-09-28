@@ -33,6 +33,37 @@ grep -q 'Before=sshd.service systemd-user-sessions.service' "$fixture/target/etc
 )
 [[ -f "$fixture/scheduled" ]]
 
+# A key cancels the reboot; ten timeouts request it once. No reboot is real.
+(
+  exec 3</dev/null
+  # shellcheck disable=SC2329 # Invoked by the sourced countdown.
+  read() { printf 'key\n' >> "$fixture/key-reads"; return 0; }
+  # shellcheck disable=SC2329
+  systemctl() { printf 'Unexpected reboot after keypress.\n' >&2; exit 1; }
+  countdown_or_reboot 3 >"$fixture/key-output" 2>&1
+)
+[[ $(wc -l < "$fixture/key-reads") == 1 ]]
+grep -q 'Staying in the current session' "$fixture/key-output"
+(
+  exec 3</dev/null
+  # shellcheck disable=SC2329 # Invoked by the sourced countdown.
+  read() { return 1; }
+  # shellcheck disable=SC2329
+  systemctl() { printf 'Unexpected reboot after terminal closed.\n' >&2; exit 1; }
+  countdown_or_reboot 3 >"$fixture/closed-output" 2>&1
+)
+grep -q 'Terminal input closed; automatic reboot skipped' "$fixture/closed-output"
+(
+  exec 3</dev/null
+  # shellcheck disable=SC2329 # Invoked by the sourced countdown.
+  read() { printf 'timeout\n' >> "$fixture/timeout-reads"; return 142; }
+  # shellcheck disable=SC2329
+  systemctl() { [[ "$1" == reboot ]] && touch "$fixture/reboot-requested"; }
+  countdown_or_reboot 3 >"$fixture/timeout-output" 2>&1
+)
+[[ $(wc -l < "$fixture/timeout-reads") == 10 && -f "$fixture/reboot-requested" ]]
+grep -q 'Rebooting now' "$fixture/timeout-output"
+
 if [[ ! -e /home/alarm && ! -L /home/alarm ]]; then
   mkdir -p "$fixture/mock-bin"
   cat > "$fixture/mock-bin/getent" <<'EOF'

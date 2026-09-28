@@ -118,6 +118,11 @@ styles from the Kappa Type GitHub repository using `git`, and configures
 terminal presets, hostname, timezone
 (default `Europe/Zurich`), locale, administrator and optional users, swap
 (default `4G`, `0` to omit), SSH (root login disabled), and DHCP Ethernet/DNS.
+After verification and the optional AUR choice, a success banner offers a
+10-second countdown: press any key to stay in the current session, or let it
+reboot automatically. Without an interactive terminal, it skips automatic
+reboot. Board maintenance commands (`repair-prompt`, `fonts`, `aur`, and
+`remove-alarm`) never trigger this countdown.
 Syncthing and removal of the default `alarm` account are optional. Confirming
 removal deletes `/home/alarm` and all its contents, including any checkout
 there. If the installer is running from `alarm`, it locks the account and
