@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Configure an existing Arch Linux ARM iwd installation without needing Ethernet.
+# Connect with iwd on Arch Linux ARM, then retain its working profile for boot.
 set -Eeuo pipefail
 SCRIPT_DIR=$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")
 # shellcheck source=platforms/archlinuxarm/boards/quartz64b/wifi-profile.sh
 source "$SCRIPT_DIR/wifi-profile.sh"
 NETWORK_NAMES=()
-WIFI_FAILURE_KIND=association
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*" >&2; }
@@ -14,14 +13,13 @@ usage() {
   cat <<'EOF'
 Usage: ./connect-quartz64b-wifi.sh [--help]
 
-Connect a detected Wi-Fi adapter using iwd and systemd-networkd, saving a
-root-only WPA-Personal profile for later boots. If iwd is not installed, offer
+Connect a detected Wi-Fi adapter using iwctl first, then verify internet over
+that adapter and keep the working iwd profile for later boots. If iwd is missing, offer
 to install the signed offline ARM packages staged during SD preparation.
-Incorrect credentials can be retried without keeping the failed profile.
-Success requires the saved profile, Wi-Fi association, DHCP, and a Wi-Fi route.
-Only a real reboot can verify that it reconnects on a later boot.
-Type CANCEL to stop. During provisioning, you may then explicitly finish on
-working Ethernet only; cancelling does not claim Wi-Fi was configured.
+Like the x86 Arch helper, iwctl --passphrase briefly exposes the password in
+the process argument list. Run from the local console if Wi-Fi carries SSH.
+Only a real reboot can verify that it reconnects on a later boot. Type CANCEL
+to stop; cancelling never claims Wi-Fi is configured.
 EOF
 }
 
@@ -73,6 +71,8 @@ scan_wifi_networks() {
 
 configure_wifi_network() {
   local adapter=$1
+  # Match the x86 installer's working-iwd handoff: iwd owns association,
+  # networkd owns DHCP, and resolved owns DNS.
   install -Dm0644 /dev/stdin /etc/iwd/main.conf <<'EOF'
 [General]
 EnableNetworkConfiguration=false
@@ -109,69 +109,31 @@ wifi_connection_ready() {
   local adapter=$1 state_dir=$2 ssid=$3 profile service
   profile="$state_dir/$ssid.psk"
   [[ -f "$profile" && ! -L "$profile" ]] || return 1
+  [[ $(stat -c %u -- "$profile") == 0 ]] || return 1
   [[ $(stat -c %a -- "$profile") == 600 ]] || return 1
-  grep -Fxq 'AutoConnect=true' "$profile" || return 1
+  # iwd's generated profiles default to autoconnect even without this key.
+  ! grep -Fxq 'AutoConnect=false' "$profile" || return 1
   for service in iwd.service systemd-networkd.service systemd-resolved.service; do
     systemctl is-active --quiet "$service" || return 1
     systemctl is-enabled --quiet "$service" || return 1
   done
   [[ $(connected_wifi_ssid "$adapter") == "$ssid" ]] || return 1
   ip -4 -o address show dev "$adapter" scope global | grep -q . || return 1
-  ip -4 route show default dev "$adapter" | grep -q .
+  ip -4 route show default dev "$adapter" | grep -q . || return 1
+  ping -I "$adapter" -c 3 -W 3 km-robota.com >/dev/null
 }
 
 wait_for_wifi() {
   local adapter=$1 state_dir=$2 ssid=$3 attempt
-  for ((attempt=0; attempt<15; attempt++)); do
+  for ((attempt=0; attempt<12; attempt++)); do
     wifi_connection_ready "$adapter" "$state_dir" "$ssid" && return 0
     sleep 2
   done
   return 1
 }
 
-reconnect_saved_wifi() {
-  local adapter=$1 state_dir=$2 ssid=$3 current command=connect
-  WIFI_FAILURE_KIND=association
-  current=$(connected_wifi_ssid "$adapter") || true
-  if [[ -n "$current" ]]; then
-    [[ -z "${SSH_CONNECTION:-}" ]] || die 'Testing saved credentials requires restarting Wi-Fi. Run this helper from the local console, not over SSH.'
-  fi
-  info 'Restarting iwd to reload the saved profile and test reconnection; Ethernet is unaffected.'
-  systemctl restart iwd.service || return 1
-  # Restarting iwd clears its scan cache. Scan again before connecting, as in
-  # the Arch ISO helper; otherwise iwctl can report "Invalid network name".
-  scan_wifi_networks "$adapter" || true
-  if grep -Fxq 'Hidden=true' "$state_dir/$ssid.psk"; then command=connect-hidden; fi
-  # AutoConnect may already have associated while the scan was running.
-  if ! iwctl station "$adapter" "$command" "$ssid"; then
-    [[ $(connected_wifi_ssid "$adapter") == "$ssid" ]] || return 1
-  fi
-  if wait_for_wifi "$adapter" "$state_dir" "$ssid"; then return 0; fi
-  if [[ $(connected_wifi_ssid "$adapter") == "$ssid" ]]; then
-    WIFI_FAILURE_KIND=dhcp
-  fi
-  return 1
-}
-
-retry_wifi_dhcp() {
-  local adapter=$1 state_dir=$2 ssid=$3 answer
-  info "Associated with $ssid, but Wi-Fi DHCP/default route is not ready. The saved credentials will be kept."
-  networkctl status "$adapter" --no-pager >&2 || true
-  while true; do
-    read -r -p 'Retry Wi-Fi DHCP [r] or CANCEL (offer Ethernet-only completion) [c]? [r]: ' answer || return 2
-    [[ ! "$answer" =~ ^[Cc]$ ]] || return 2
-    networkctl reconfigure "$adapter" || true
-    networkctl renew "$adapter" || true
-    if wait_for_wifi "$adapter" "$state_dir" "$ssid"; then
-      info 'Wi-Fi DHCP address and route verified.'
-      return 0
-    fi
-    info 'Wi-Fi DHCP/default route is still missing; no password change was made.'
-  done
-}
-
 connect_wifi_with_retries() {
-  local adapter=$1 state_dir=$2 ssid passphrase hidden answer profile backup_dir
+  local adapter=$1 state_dir=$2 ssid passphrase hidden answer command profile backup_dir
   while true; do
     read -r -p 'Wi-Fi network number or SSID (or type CANCEL): ' ssid || return 2
     [[ "$ssid" != CANCEL ]] || return 2
@@ -180,77 +142,58 @@ connect_wifi_with_retries() {
       info "Selected network: $ssid"
     fi
     [[ "$ssid" =~ ^[a-zA-Z0-9_\ -]{1,32}$ ]] || { info 'SSID must be 1-32 ASCII letters, digits, spaces, underscores or hyphens.'; continue; }
-    if [[ -n "${SSH_CONNECTION:-}" && -n $(connected_wifi_ssid "$adapter") ]]; then
-      die 'Testing saved credentials requires restarting Wi-Fi. Run this helper from the local console, not over SSH.'
-    fi
     profile="$state_dir/$ssid.psk"
-    if [[ -f "$profile" && ! -L "$profile" ]]; then
-      read -r -p "Try the existing saved profile for $ssid first? [Y/n]: " answer || return 2
-      if [[ ! "$answer" =~ ^[Nn]$ ]]; then
-        if reconnect_saved_wifi "$adapter" "$state_dir" "$ssid"; then
-          info 'Existing saved Wi-Fi profile reconnected successfully.'
-          return 0
-        fi
-        if [[ "$WIFI_FAILURE_KIND" == dhcp ]]; then
-          retry_wifi_dhcp "$adapter" "$state_dir" "$ssid"
-          return $?
-        fi
-        info 'The saved profile could not associate. You can enter corrected credentials or type CANCEL.'
-      fi
+    [[ ! -L "$profile" ]] || die "Refusing to use a symlinked Wi-Fi profile: $profile"
+    if [[ -n "${SSH_CONNECTION:-}" && -n $(connected_wifi_ssid "$adapter") ]]; then
+      die 'Changing an active Wi-Fi connection may drop SSH. Run from the local console.'
     fi
-    read -r -s -p 'WPA passphrase: ' passphrase || return 1
-    printf '\n' >&2
-    if ! validate_wifi_credentials "$ssid" "$passphrase"; then
+    passphrase=""
+    if [[ -f "$profile" ]]; then
+      read -r -p "Use the existing iwd profile for $ssid? [Y/n]: " answer || return 2
+      if [[ ! "$answer" =~ ^[Nn]$ ]]; then
+        info 'Testing the profile iwd already saved.'
+      else
+        read -r -s -p 'WPA passphrase: ' passphrase || return 2
+        printf '\n' >&2
+      fi
+    else
+      read -r -s -p 'WPA passphrase: ' passphrase || return 2
+      printf '\n' >&2
+    fi
+    read -r -p 'Hidden network? [y/N]: ' hidden || { unset passphrase; return 2; }
+    case "$hidden" in [Yy]*) command=connect-hidden ;; *) command=connect ;; esac
+    if [[ -n "$passphrase" ]] && ! validate_wifi_credentials "$ssid" "$passphrase"; then
       unset passphrase
       info 'WPA passphrase must be 8-63 characters.'
       continue
     fi
-    read -r -p 'Hidden network? [y/N]: ' hidden || { unset passphrase; return 1; }
-    case "$hidden" in [Yy]*) hidden=true ;; *) hidden=false ;; esac
-
-    profile="$state_dir/$ssid.psk"
     backup_dir=""
-    if [[ -e "$profile" || -L "$profile" ]]; then
-      [[ -f "$profile" && ! -L "$profile" ]] || die "Refusing to replace a non-regular Wi-Fi profile: $profile"
-      read -r -p "A profile for $ssid already exists. Back it up and replace it? [y/N]: " answer || { unset passphrase; return 1; }
-      if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-        unset passphrase
-        info 'Existing profile kept. Choose another SSID or type CANCEL.'
-        continue
-      fi
+    if [[ -n "$passphrase" && -f "$profile" ]]; then
       backup_dir=$(mktemp -d "$state_dir/.kmos-wifi-backup.XXXXXXXX") || die 'Could not create a private Wi-Fi profile backup.'
       cp -p -- "$profile" "$backup_dir/original.psk" || die "Could not back up $profile."
-      rm -f -- "$profile"
     fi
-
-    if ! write_iwd_profile "$state_dir" "$ssid" "$passphrase" "$hidden"; then
-      unset passphrase
-      if [[ -n "$backup_dir" ]]; then cp -p -- "$backup_dir/original.psk" "$profile"; fi
-      die 'Could not write the Wi-Fi profile; any previous profile was restored.'
+    # Match the x86 live helper: associate first, letting iwd generate its own
+    # working profile. Password arguments are briefly visible to other users.
+    scan_wifi_networks "$adapter" || true
+    if [[ -n "$passphrase" ]]; then
+      iwctl --passphrase "$passphrase" station "$adapter" "$command" "$ssid" || true
+    else
+      iwctl station "$adapter" "$command" "$ssid" || true
     fi
     unset passphrase
-    if reconnect_saved_wifi "$adapter" "$state_dir" "$ssid"; then
+    if wait_for_wifi "$adapter" "$state_dir" "$ssid"; then
       [[ -z "$backup_dir" ]] || info "Previous profile backed up at $backup_dir/original.psk"
-      info 'Saved Wi-Fi profile, association, DHCP, and Wi-Fi route verified. Reboot persistence still requires a real reboot test.'
+      info 'Working iwd profile, association, Wi-Fi DHCP/route and internet verified. Reboot persistence still requires a real reboot test.'
       return 0
     fi
-    if [[ "$WIFI_FAILURE_KIND" == dhcp ]]; then
-      [[ -z "$backup_dir" ]] || info "Previous profile backed up at $backup_dir/original.psk"
-      retry_wifi_dhcp "$adapter" "$state_dir" "$ssid"
-      return $?
-    fi
-    info "iwd could not associate with $ssid. The previous profile will be restored if one existed."
-
-    rm -f -- "$profile"
+    info "Wi-Fi was not verified for $ssid (association, profile, DHCP, or internet)."
     if [[ -n "$backup_dir" ]]; then
       cp -p -- "$backup_dir/original.psk" "$profile" || die "Could not restore the previous profile from $backup_dir."
-      rm -f -- "$backup_dir/original.psk"
-      rmdir -- "$backup_dir"
       info 'Previous profile restored.'
     fi
-    read -r -p 'Retry Wi-Fi [r] or CANCEL (offer Ethernet-only completion) [c]? [r]: ' answer || return 2
+    networkctl status "$adapter" --no-pager >&2 || true
+    read -r -p 'Retry Wi-Fi [r] or CANCEL [c]? [r]: ' answer || return 2
     [[ ! "$answer" =~ ^[Cc]$ ]] || return 2
-    scan_wifi_networks "$adapter" || true
   done
 }
 
@@ -270,6 +213,9 @@ main() {
   fi
   adapter=$(detect_wifi_adapter) || die 'No wireless interface found. Check your adapter and its firmware.'
   info "Detected Wi-Fi interface: $adapter"
+  if command -v rfkill >/dev/null 2>&1; then
+    rfkill unblock wifi || die 'Could not unblock the wireless adapter.'
+  fi
   if ! command -v iwctl >/dev/null 2>&1; then
     [[ -r "$SCRIPT_DIR/wifi-offline-packages.sh" && -d /var/lib/kmos/wifi-packages ]] \
       || die 'iwd is missing and no offline packages were staged. Use temporary networking to install the ARM iwd package.'
@@ -286,14 +232,8 @@ main() {
   configure_wifi_network "$adapter"
   ssid=$(connected_wifi_ssid "$adapter") || true
   if [[ -n "$ssid" ]] && wifi_connection_ready "$adapter" /var/lib/iwd "$ssid"; then
-    info "The current Wi-Fi link ($ssid) looks ready, but the saved credentials have not been retested."
-    if reconnect_saved_wifi "$adapter" /var/lib/iwd "$ssid"; then
-      info 'Saved credentials reconnected, Wi-Fi DHCP and route verified. A real reboot test is still required.'
-      return 0
-    fi
-    info 'The saved profile did not reconnect. Please enter corrected credentials or type CANCEL.'
-  else
-    info 'The current Wi-Fi connection is not verified as persistent; credentials must be checked.'
+    info "Working Wi-Fi link ($ssid) and saved iwd profile verified. A real reboot test is still required."
+    return 0
   fi
   scan_wifi_networks "$adapter" || true
   if connect_wifi_with_retries "$adapter" /var/lib/iwd; then

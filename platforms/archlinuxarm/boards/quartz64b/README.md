@@ -52,24 +52,21 @@ cd /root
 
 The helper first detects a wireless interface. If `iwd` is missing, it asks
 before installing the staged ARM `ell` and `iwd` packages locally with
-`pacman -U` and **required signature verification**. Then it scans, asks for
-your Wi-Fi network number (or the exact SSID) and passphrase, stores a root-only
-WPA-Personal profile, and
-enables persistent `iwd` plus DHCP through `systemd-networkd`. The passphrase
-is never passed as a process argument. Failed association or missing Wi-Fi DHCP
-route returns to the SSID prompt, removes the failed profile, and restores any
-existing profile it temporarily replaced. If a saved profile already exists,
-the helper offers to test it before asking for a new password. If Wi-Fi
-associates but DHCP fails, it keeps the profile and offers DHCP retries rather
-than asking for the password again. Type `CANCEL` at the SSID prompt to stop
-explicitly. An already connected Wi-Fi link is accepted only when its
-matching root-only auto-connect profile, DHCP address, Wi-Fi default route, and
-persistent services can be verified. It restarts `iwd` to reload the saved
-profile, scans again after that restart, and reconnects Wi-Fi, so **run it from
-the local console**, not
-over SSH. Even a successful reconnect **cannot prove it will work after reboot**.
-Check `networkctl status` and verify the
-connection survives a reboot before relying on Wi-Fi. If the adapter or
+`pacman -U` and **required signature verification**. As in the x86 Arch live
+helper, it then scans, asks for your network and passphrase, connects with
+`iwctl`, and checks association, the iwd-generated root-only profile, DHCP,
+a Wi-Fi default route and internet **over the Wi-Fi adapter**, not Ethernet.
+This is the same-machine equivalent of copying the working iwd profile from
+the live system into the target: it already lives in persistent `/var/lib/iwd`.
+The helper enables iwd, networkd and resolved for later boots and does not
+write a speculative profile before association. A failed attempt offers retry
+or `CANCEL`; an existing profile is backed up before trying new credentials.
+Like the x86 helper, `iwctl --passphrase` briefly exposes the passphrase in
+process arguments; do not use it on an untrusted multi-user system. Changing
+an active Wi-Fi connection over SSH is blocked: **use the local console** in
+that case. A successful connection does **not** prove reboot persistence:
+disconnect Ethernet, reboot, then verify the Wi-Fi address, route and internet
+before relying on it. If the adapter or
 firmware is missing, the helper stops before installing packages; temporary
 networking or a compatible adapter will be necessary.
 
@@ -107,9 +104,20 @@ styles from the Kappa Type GitHub repository using `git`, and configures
 terminal presets, hostname, timezone
 (default `Europe/Zurich`), locale, administrator and optional users, swap
 (default `4G`, `0` to omit), SSH (root login disabled), and DHCP Ethernet/DNS.
-Syncthing and removal of the default `alarm` account are optional. There is no
-Wi-Fi prompt or KDE offer in this headless run; keep Ethernet connected for
-package and font downloads. Provisioning does not
+Syncthing and removal of the default `alarm` account are optional. Confirming
+removal deletes `/home/alarm` and all its contents, including any checkout
+there. If the installer is running from `alarm`, it locks the account and
+schedules removal before SSH logins on the next boot; it does not claim removal
+until it succeeds. After reboot, `getent passwd alarm` must print nothing.
+For a board already installed with `alarm` still present, run this from the
+new administrator session instead of repeating provisioning:
+
+```bash
+./platforms/archlinuxarm/boards/quartz64b/remove-initial-alarm.sh
+```
+
+There is no Wi-Fi prompt or KDE offer in the headless run; keep Ethernet
+connected for package and font downloads. Provisioning does not
 rewrite partitions, U-Boot, or extlinux boot files, but its initial system
 update may update the board's kernel packages.
 
@@ -125,6 +133,21 @@ text console cannot render desktop fonts, and an SSH session is rendered by
 the terminal on your *other computer*: select Kappa Mono there to display
 the prompt's Nerd glyphs. The provisioner checks that both Starship presets
 render and that a fresh SSH-style Bash selects the icon preset.
+
+After headless verification, the provisioner offers an **optional** AUR helper.
+Choose `yay` or `paru` to build the AUR source as the administrator, never a
+`yay-bin`, `paru-bin`, or x86 binary. It asks before installing board-side build
+dependencies (`base-devel` and `go` for yay, or `base-devel`, `rust`, and
+`cargo` for paru), shows the retrieved PKGBUILD for review, then asks again
+before running `makepkg -si` as the non-root administrator. `makepkg` can ask
+for the administrator's normal sudo authentication for package transactions;
+the installer does not enable passwordless sudo. Builds can be slow and need
+disk space, and AUR packages may not support AArch64. Build checkouts are kept
+for inspection. To choose a helper later without repeating provisioning:
+
+```bash
+./platforms/archlinuxarm/boards/quartz64b/install-aur-helper.sh
+```
 
 On a board provisioned by an older version, repair **only** the prompt without
 reinstalling or repeating system updates. From the existing KMOS checkout:
@@ -165,5 +188,5 @@ system update or provisioning, run from the KMOS checkout:
   official package changes dependencies, SD preparation stops for review.
 - Headless package availability on AArch64 still depends on the repositories.
   The GPU/DRM stack and KDE session require separate on-board diagnosis; KDE
-  is not part of this provisioner. Source builds and NetworkManager migration
-  are **not automated**.
+  is not part of this provisioner. KDE source builds and NetworkManager
+  migration are **not automated**.

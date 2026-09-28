@@ -11,6 +11,9 @@ REPOSITORY_DIR=""
 PRIMARY_USER=""
 HOSTNAME_VALUE=""
 WIFI_ADAPTER=""
+REMOVE_ALARM_REQUESTED=0
+ALARM_REMOVAL_PENDING=0
+ALARM_HOME=""
 AVAILABLE_PACKAGES=()
 SKIPPED_PACKAGES=()
 KDE_PACKAGES=()
@@ -465,6 +468,7 @@ create_administrator() {
   local username password additional add_password
   while true; do
     read -r -p 'Primary administrator username: ' username
+    [[ "$username" != alarm ]] || { warn 'Choose a new administrator name; alarm is the initial account to remove.'; continue; }
     [[ "$username" =~ ^[a-z_][a-z0-9_-]*$ ]] && break
     warn 'Invalid username.'
   done
@@ -480,6 +484,7 @@ create_administrator() {
 
   while ask_yes_no 'Create another user?' no; do
     read -r -p 'Additional username: ' additional
+    [[ "$additional" != alarm ]] || { warn 'The initial alarm account cannot be reused.'; continue; }
     [[ "$additional" =~ ^[a-z_][a-z0-9_-]*$ ]] || { warn 'Invalid username.'; continue; }
     add_password=$(prompt_secret "Password for $additional")
     if id "$additional" >/dev/null 2>&1; then
@@ -595,17 +600,118 @@ configure_swap() {
   printf '/swapfile none swap defaults 0 0\n' >> /etc/fstab
 }
 
+stage_alarm_removal() {
+  local root=${1:-}
+  local helper="$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/remove-alarm-after-boot.sh"
+  [[ -x "$helper" ]] || die 'Alarm removal helper is missing from the KMOS checkout.'
+  install -Dm0755 "$helper" "$root/usr/local/libexec/kmos-remove-alarm-after-boot.sh"
+  install -Dm0644 /dev/stdin "$root/etc/systemd/system/kmos-remove-alarm.service" <<'EOF'
+[Unit]
+Description=Remove locked initial alarm account before SSH logins
+After=local-fs.target
+Before=sshd.service systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/kmos-remove-alarm-after-boot.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  if [[ -z "$root" ]]; then
+    systemctl daemon-reload
+    systemctl enable kmos-remove-alarm.service
+  fi
+}
+
 remove_alarm() {
-  getent passwd alarm >/dev/null || return
-  ask_yes_no 'Remove the initial alarm user and its home directory?' yes || return
+  local record
+  if ! record=$(getent passwd alarm); then
+    [[ ! -e /home/alarm && ! -L /home/alarm ]] || die 'alarm account is absent but /home/alarm remains; inspect it before deletion.'
+    info 'Initial alarm account and home are already absent.'
+    return 0
+  fi
+  warn 'Removing alarm also deletes /home/alarm and everything inside it, including any checkout stored there.'
+  ask_yes_no 'Remove the initial alarm user and its home directory?' yes || return 0
+  REMOVE_ALARM_REQUESTED=1
+  ALARM_HOME=$(printf '%s\n' "$record" | awk -F: '{print $6}')
+  [[ "$ALARM_HOME" == /home/alarm ]] || die 'Unexpected alarm home directory; refusing automatic removal.'
+  [[ "$PRIMARY_USER" != alarm ]] || die 'Cannot remove the primary administrator account.'
   id "$PRIMARY_USER" >/dev/null || die 'Administrator account is missing; alarm will not be removed.'
-  userdel -r alarm
+  id -nG "$PRIMARY_USER" | grep -qw wheel || die 'Administrator lacks sudo; alarm will not be removed.'
+  # The checkout (and current directory) may live under the home being removed.
+  if [[ "$PWD" == /home/alarm || "$PWD" == /home/alarm/* ]]; then
+    cd /
+  fi
+  if [[ "${SUDO_USER:-}" != alarm ]] && userdel -r alarm; then
+    getent passwd alarm >/dev/null && die 'alarm still exists after userdel.'
+    [[ ! -e "$ALARM_HOME" && ! -L "$ALARM_HOME" ]] || die "alarm home still exists: $ALARM_HOME"
+    info 'Initial alarm account and home removed.'
+    return 0
+  fi
+  if ! getent passwd alarm >/dev/null; then
+    [[ ! -e "$ALARM_HOME" && ! -L "$ALARM_HOME" ]] || die "alarm home still exists: $ALARM_HOME"
+    info 'Initial alarm account and home removed.'
+    return 0
+  fi
+  # userdel cannot remove the account that owns the active installer session.
+  # Lock it immediately and remove it before the next boot's SSH logins.
+  usermod -L -s /usr/bin/nologin alarm || die 'Could not lock alarm; removal was not scheduled.'
+  stage_alarm_removal
+  ALARM_REMOVAL_PENDING=1
+  warn 'alarm is locked and scheduled for removal at the next boot; it is not removed yet.'
 }
 
 configure_syncthing() {
   pacman -Q syncthing >/dev/null 2>&1 || { warn 'Syncthing is not installed; its service will be skipped.'; return; }
   ask_yes_no "Enable Syncthing for $PRIMARY_USER?" no || return
   systemctl enable --now "syncthing@$PRIMARY_USER.service"
+}
+
+install_aur_helper() {
+  local helper=$1 username=$2 work_dir summary
+  local -a dependencies=()
+  case "$helper" in
+    yay) dependencies=(base-devel go) ;;
+    paru) dependencies=(base-devel rust cargo) ;;
+    *) die "Unknown AUR helper: $helper" ;;
+  esac
+  [[ "$username" != alarm && "$username" != root ]] || die 'Build the AUR helper as the new non-root administrator, not alarm or root.'
+  id "$username" >/dev/null || die "AUR build user does not exist: $username"
+  id -nG "$username" | grep -qw wheel || die "$username needs sudo access for makepkg dependency installation."
+  if command -v "$helper" >/dev/null 2>&1 && "$helper" --version >/dev/null 2>&1; then
+    info "$helper is already installed and runnable."
+    return 0
+  fi
+  info "Building $helper from the AUR source PKGBUILD on this AArch64 board (never ${helper}-bin)."
+  printf -v summary '%s ' "${dependencies[@]}"
+  info "Board build packages required: ${summary% }. Go/Rust builds can take significant disk space and time."
+  ask_yes_no "Install the build packages and stage $helper?" no || { info 'AUR helper skipped; headless installation remains complete.'; return 0; }
+  pacman -S --needed "${dependencies[@]}"
+  work_dir=$(mktemp -d "${TMPDIR:-/var/tmp}/kmos-aur-${helper}.XXXXXXXX") || die 'Could not create a private AUR build directory.'
+  chown "$username:$username" "$work_dir"
+  info "AUR build checkout: $work_dir/$helper (kept for inspection)."
+  runuser -u "$username" -- git clone "https://aur.archlinux.org/$helper.git" "$work_dir/$helper" || die 'AUR clone failed; inspect the retained build directory.'
+  info "AUR commit for $helper: $(runuser -u "$username" -- git -C "$work_dir/$helper" rev-parse HEAD)"
+  cat "$work_dir/$helper/PKGBUILD" || die 'Cannot review the AUR PKGBUILD.'
+  ask_yes_no "Review complete: build and install $helper as $username?" no || { info 'Build declined; source checkout kept for review.'; return 0; }
+  # shellcheck disable=SC2016 # The build path expands in the non-root child shell.
+  runuser -u "$username" -- bash -c 'cd -- "$1" && makepkg -si --needed --cleanbuild' _ "$work_dir/$helper" || die "AUR source build failed; inspect $work_dir/$helper. Headless KMOS remains installed."
+  if ! command -v "$helper" >/dev/null 2>&1 || ! "$helper" --version >/dev/null 2>&1; then
+    die "$helper was not runnable after installation."
+  fi
+  info "$helper built from source and verified on this AArch64 board."
+}
+
+offer_aur_helper() {
+  local choice
+  ask_yes_no 'Install an optional AUR helper from source now?' no || return 0
+  read -r -p 'Choose AUR helper [paru/yay/skip] (skip): ' choice
+  case "${choice:-skip}" in
+    paru|yay) install_aur_helper "$choice" "$PRIMARY_USER" ;;
+    skip) info 'AUR helper skipped.' ;;
+    *) die 'Choose paru, yay, or skip. Headless KMOS remains installed.' ;;
+  esac
 }
 
 verify_installation() {
@@ -621,6 +727,15 @@ verify_installation() {
   systemctl is-enabled sshd.service systemd-networkd.service systemd-resolved.service >/dev/null
   [[ -f /usr/share/kmos/starship-presets/quartz-headless.toml ]] || die 'Headless Starship preset is missing.'
   verify_headless_prompt
+  if ((REMOVE_ALARM_REQUESTED)); then
+    if ((ALARM_REMOVAL_PENDING)); then
+      systemctl is-enabled --quiet kmos-remove-alarm.service || die 'alarm removal is not enabled for the next boot.'
+      [[ $(getent passwd alarm | awk -F: '{print $7}') == /usr/bin/nologin ]] || die 'alarm is not blocked from logging in before removal.'
+    else
+      getent passwd alarm >/dev/null && die 'alarm was requested for removal but still exists.'
+      [[ ! -e "$ALARM_HOME" && ! -L "$ALARM_HOME" ]] || die "alarm home still exists: $ALARM_HOME"
+    fi
+  fi
   if [[ -n "$WIFI_ADAPTER" ]]; then
     systemctl is-enabled iwd.service >/dev/null
     iwctl station "$WIFI_ADAPTER" show || warn 'Could not query Wi-Fi status.'
@@ -651,7 +766,8 @@ main() {
   info 'Quartz64 KDE provisioning is disabled until it can be validated on physical hardware.'
   info 'Wi-Fi is not configured during headless provisioning; Ethernet remains in use. The Wi-Fi helper is separate.'
   verify_installation
-  info 'KMOS provisioning complete.'
+  info 'KMOS headless provisioning complete.'
+  offer_aur_helper
   info 'Reboot when convenient, then check networking and any graphical session locally.'
 }
 

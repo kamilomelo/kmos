@@ -223,7 +223,8 @@ fi
   # shellcheck disable=SC2329 # An invocation here would fail this test.
   configure_wifi() { printf 'Wi-Fi ran during headless provisioning.\n' >&2; exit 1; }
   verify_installation() { printf 'verify\n' >> "$fixture/steps"; }
+  offer_aur_helper() { printf 'aur\n' >> "$fixture/steps"; }
   main
 )
-[[ $(cat "$fixture/steps") == $'fonts\nterminal\nverify' ]]
+[[ $(cat "$fixture/steps") == $'fonts\nterminal\nverify\naur' ]]
 printf 'Quartz provisioner uses local KMOS files and honors skipped packages: OK.\n'
