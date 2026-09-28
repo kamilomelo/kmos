@@ -101,12 +101,21 @@ iwctl() {
     [[ "$1" == station && "$2" == wlan0 ]] || return 1
     case "$3" in
       show) [[ -f "$fixture/retry-profiles/Good Wifi.psk" ]] && printf '  Connected network    Good Wifi\n' ;;
-      scan) printf 'scanned\n' >> "$fixture/attempts" ;;
+      scan)
+        printf 'scanned\n' >> "$fixture/attempts"
+        [[ ! -f "$fixture/scan-in-progress" ]]
+        ;;
       get-networks) printf 'Network name      Security\nBad Wifi          psk\nGood Wifi         psk\n' ;;
       connect) [[ "$4" == 'Good Wifi' ]] ;;
       *) return 1 ;;
     esac
   fi
+}
+# shellcheck disable=SC2329 # Invoked by the sourced board Wi-Fi helper.
+timeout() {
+  [[ "$1" == --foreground && "$2" == 45s && "$3" == iwctl ]] || return 1
+  printf 'connecting\n' >> "$fixture/attempts"
+  iwctl "${@:4}"
 }
 ip() {
   if [[ "$1" == -4 && "$2" == -o && "$3" == address ]]; then
@@ -130,6 +139,10 @@ networkctl() { :; }
 sleep() { :; }
 scan_wifi_networks wlan0 >/dev/null
 [[ "${NETWORK_NAMES[1]}" == 'Good Wifi' ]]
+touch "$fixture/scan-in-progress"
+scan_wifi_networks wlan0 >/dev/null
+[[ "${NETWORK_NAMES[1]}" == 'Good Wifi' ]]
+rm "$fixture/scan-in-progress"
 if wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'; then
   printf 'An IP address without a working iwd profile was accepted.\n' >&2
   exit 1
@@ -142,7 +155,22 @@ if grep -q 'correct password' "$fixture/output"; then
   printf 'Wi-Fi password appeared in helper output.\n' >&2; exit 1
 fi
 grep -qx 'Passphrase=correct password' "$fixture/retry-profiles/Good Wifi.psk"
-[[ $(cat "$fixture/attempts") == *$'Bad Wifi\nscanned\nGood Wifi' ]]
+[[ $(cat "$fixture/attempts") == *$'connecting\nBad Wifi\nconnecting\nGood Wifi' ]]
+[[ $(grep -c '^scanned$' "$fixture/attempts") == 2 ]]
+(
+  # A stuck iwctl command must stop; no unverified profile is accepted.
+  # shellcheck disable=SC2329 # Invoked by the sourced board helper.
+  timeout() { [[ "$1" == --foreground && "$2" == 45s ]] && return 124; }
+  if printf 'Never Wifi\nvalid password\n\nc\n' \
+    | connect_wifi_with_retries wlan0 "$fixture/retry-profiles" >"$fixture/timed-out" 2>&1; then
+    printf 'Timed-out connection incorrectly succeeded.\n' >&2; exit 1
+  fi
+)
+grep -q 'iwctl timed out' "$fixture/timed-out"
+[[ ! -e "$fixture/retry-profiles/Never Wifi.psk" ]]
+if grep -q 'valid password' "$fixture/timed-out"; then
+  printf 'Timed-out password appeared in helper output.\n' >&2; exit 1
+fi
 wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'
 touch "$fixture/no-route"
 if wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'; then

@@ -70,6 +70,10 @@ before installing the staged ARM `ell` and `iwd` packages locally with
 helper, it then scans, asks for your network and passphrase, connects with
 `iwctl`, and checks association, the iwd-generated root-only profile, DHCP,
 a Wi-Fi default route and internet **over the Wi-Fi adapter**, not Ethernet.
+It does not rescan between the selection and connection (a second scan can
+race with iwd); a scan already in progress still permits reading the current
+network list. The connection command has a 45-second limit so it cannot block
+the helper indefinitely. This change still requires a real board test.
 This is the same-machine equivalent of copying the working iwd profile from
 the live system into the target: it already lives in persistent `/var/lib/iwd`.
 The helper enables iwd, networkd and resolved for later boots and does not

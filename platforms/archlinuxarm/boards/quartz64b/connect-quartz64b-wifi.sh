@@ -66,8 +66,7 @@ scan_wifi_networks() {
   local adapter=$1 output line name existing duplicate index=1
   NETWORK_NAMES=()
   if ! iwctl station "$adapter" scan; then
-    info 'Wi-Fi scan failed. You may still enter an SSID manually.'
-    return 1
+    info 'Wi-Fi scan could not start (it may already be in progress); checking the available network list.'
   fi
   # iwd scans asynchronously; an immediate get-networks can show stale results.
   sleep 2
@@ -162,7 +161,7 @@ wait_for_wifi() {
 }
 
 connect_wifi_with_retries() {
-  local adapter=$1 state_dir=$2 ssid passphrase hidden answer command profile backup_dir
+  local adapter=$1 state_dir=$2 ssid passphrase hidden answer command profile backup_dir result
   while true; do
     read -r -p 'Wi-Fi network number or SSID (or type CANCEL): ' ssid || return 2
     [[ "$ssid" != CANCEL ]] || return 2
@@ -201,15 +200,21 @@ connect_wifi_with_retries() {
       backup_dir=$(mktemp -d "$state_dir/.kmos-wifi-backup.XXXXXXXX") || die 'Could not create a private Wi-Fi profile backup.'
       cp -p -- "$profile" "$backup_dir/original.psk" || die "Could not back up $profile."
     fi
-    # Match the x86 live helper: associate first, letting iwd generate its own
-    # working profile. Password arguments are briefly visible to other users.
-    scan_wifi_networks "$adapter" || true
+    # As on the x86 live system, connect using the initial scan's network list.
+    # An extra asynchronous scan here races with iwd's connection attempt.
+    info "Connecting to $ssid via $adapter (up to 45 seconds)..."
+    result=0
     if [[ -n "$passphrase" ]]; then
-      iwctl --passphrase "$passphrase" station "$adapter" "$command" "$ssid" || true
+      timeout --foreground 45s iwctl --passphrase "$passphrase" station "$adapter" "$command" "$ssid" || result=$?
     else
-      iwctl station "$adapter" "$command" "$ssid" || true
+      timeout --foreground 45s iwctl station "$adapter" "$command" "$ssid" || result=$?
     fi
     unset passphrase
+    if ((result == 124)); then
+      info 'iwctl timed out; checking whether iwd associated anyway.'
+    elif ((result != 0)); then
+      info "iwctl exited with status $result; checking whether iwd associated anyway."
+    fi
     if wait_for_wifi "$adapter" "$state_dir" "$ssid"; then
       [[ -z "$backup_dir" ]] || info "Previous profile backed up at $backup_dir/original.psk"
       info 'Working iwd profile, association, Wi-Fi DHCP/route and internet verified. Reboot persistence still requires a real reboot test.'
@@ -253,6 +258,7 @@ main() {
     install_offline_wifi /var/lib/kmos/wifi-packages /var/lib/kmos/quartz64b-wifi-packages-installed
     command -v iwctl >/dev/null 2>&1 || die 'iwd installation did not provide iwctl.'
   fi
+  command -v timeout >/dev/null 2>&1 || die 'Coreutils timeout is required so Wi-Fi connect cannot hang indefinitely.'
   systemctl start iwd.service
   configure_wifi_network "$adapter"
   ssid=$(connected_wifi_ssid "$adapter") || true
