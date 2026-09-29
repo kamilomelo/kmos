@@ -42,16 +42,20 @@ ensure_wpa_package() {
 }
 
 verify_wpa_after_boot() {
-  local wifi=$1 status ssid
+  local wifi=$1 status ssid attempt
   if systemctl is-active --quiet iwd.service || systemctl is-enabled --quiet iwd.service; then
     die 'iwd is still active or enabled; two Wi-Fi backends must not compete.'
   fi
-  status=$(wpa_cli -i "$wifi" status) || die "wpa_supplicant has no status for $wifi."
-  ssid=$(sed -n 's/^ssid=//p' <<< "$status" | head -n 1)
-  [[ -n "$ssid" ]] || die 'wpa_supplicant is not associated with a Wi-Fi network.'
-  wpa_connection_ready "$wifi" "$ssid" "/etc/wpa_supplicant/wpa_supplicant-$wifi.conf" \
-    || die "Wi-Fi post-boot check failed on $wifi (association, service, address, route or Wi-Fi internet)."
-  info "Post-boot Wi-Fi check passed on $wifi: $ssid (iwd disabled)."
+  for ((attempt=0; attempt<15; attempt++)); do
+    status=$(wpa_cli -i "$wifi" status 2>/dev/null) || status=''
+    ssid=$(sed -n 's/^ssid=//p' <<< "$status" | head -n 1)
+    if [[ -n "$ssid" ]] && wpa_connection_ready "$wifi" "$ssid" "/etc/wpa_supplicant/wpa_supplicant-$wifi.conf"; then
+      info "Wi-Fi check passed on $wifi: $ssid (iwd disabled)."
+      return 0
+    fi
+    sleep 2
+  done
+  die "Wi-Fi check failed on $wifi after 30 seconds (association, service, address, route or Wi-Fi internet)."
 }
 
 main() {

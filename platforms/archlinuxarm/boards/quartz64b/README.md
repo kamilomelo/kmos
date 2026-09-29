@@ -90,33 +90,28 @@ backed up before updating its DHCP/DNS keys; driver quirks are preserved.
 Fresh configs leave SAE/WPA3 enabled; a previously configured
 `SaeDisable=brcmfmac` quirk is preserved, not added automatically. The Kasa
 network still showed authentication timeouts after reboot even with this quirk.
-For an **isolated wpa_supplicant trial** on an already-installed board, connect
-Ethernet and run `./platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh`
-from the board's local console. This is separate from provisioning. If the ARM
-package is missing, it asks before the required full system update (which may
-also update the kernel); if present, it does not update packages. It prompts
-for Wi-Fi credentials locally, stops iwd before enabling wpa_supplicant, and
-checks Wi-Fi-bound connectivity. The generated profile includes the control
-socket required by `wpa_cli`; older trial copies lacking `ctrl_interface` must
-be replaced before retrying. **Reboot**, then run
-`./platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh --check`.
-The read-only check works without Ethernet and verifies the saved backend,
-association, address, route and Wi-Fi internet. Do not include this trial in
-the normal installer until it has passed a real reboot test on the board.
-If iwd fails and Ethernet is available, the provisioner can offer an optional
-**wpa_supplicant fallback** after the system update. It installs the ARM
-`wpa_supplicant` package, asks for the Wi-Fi SSID and passphrase on the board,
-stops/disables iwd, and uses wpa_supplicant for association with networkd for
-Wi-Fi DHCP and resolved for DNS. These backends never run together on Wi-Fi.
-The generated fallback profile contains a PSK, not a plaintext passphrase, and
-has mode `600`. If association, DHCP, route, or Wi-Fi-bound internet cannot be
-verified, the helper removes its new fallback files and attempts to restore
-iwd. The existing iwd profiles remain untouched. A real reboot test is still
-required to verify either backend reconnects. Without Ethernet, the fallback
-package cannot be installed during this provisioning step; keep the working
-network or configure it later. To select the fallback manually after the ARM
-package is available, run `./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh --wpa-fallback`
-from a local console or Ethernet connection, not over Wi-Fi SSH.
+The provisioner now selects **wpa_supplicant** as its persistent Wi-Fi manager.
+On an existing wpa_supplicant install, it checks and preserves the connection;
+if the package is present but unconfigured, it sets up wpa_supplicant directly.
+With Ethernet, it installs the ARM package after the full system update, then
+asks for Wi-Fi credentials locally. Without Ethernet, it first uses staged iwd
+packages to bootstrap connectivity, updates and installs wpa_supplicant, then
+switches the Wi-Fi adapter. This temporary iwd connection requires entering
+the Wi-Fi credentials a second time for wpa_supplicant; iwd profiles are kept
+for rollback, but iwd is stopped and disabled before wpa_supplicant starts.
+Networkd supplies Wi-Fi DHCP and resolved supplies DNS. No two Wi-Fi managers
+should run together. A failed switch attempts to restore iwd, and provisioning
+stops rather than claiming a persistent Wi-Fi setup. The generated profile
+has mode `600`, a PSK rather than a plaintext passphrase, and the control socket
+needed for `wpa_cli`. An older trial profile lacking `ctrl_interface` needs
+manual review; the installer does not overwrite it.
+
+The standalone trial remains available for an already-installed board with
+Ethernet recovery: run `./platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh`
+from the local console. To verify a reboot, run its read-only `--check` mode;
+it waits up to 30 seconds for association, address, route and Wi-Fi internet.
+The `KM-R-WiFi-RBT` network passed a real reboot check on one physical board;
+this is not yet fleet reliability validation.
 On an already-provisioned board with Ethernet recovery, run
 `./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh wifi-fallback`
 to install the ARM package if necessary and switch without repeating the full

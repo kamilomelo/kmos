@@ -74,7 +74,8 @@ configure_wifi 2> "$fixture/wifi-warning"
 grep -q 'No Wi-Fi adapter detected' "$fixture/wifi-warning"
 ask_yes_no() { return 0; }
 
-# A deliberate Wi-Fi cancellation can finish only with an explicit Ethernet choice.
+# Ethernet allows wpa_supplicant to be installed after the full update without
+# configuring a temporary iwd connection.
 mkdir -p "$fixture/board/platforms/archlinuxarm/boards/quartz64b"
 printf '#!/bin/sh\nexit 2\n' > "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
 chmod +x "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
@@ -82,21 +83,18 @@ chmod +x "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz6
   REPOSITORY_DIR="$fixture/board"
   detect_wifi_adapter() { printf 'wlan0\n'; }
   ethernet_available() { return 0; }
-  ask_yes_no() { [[ "$1" != 'iwd Wi-Fi was not verified. Try wpa_supplicant after updating over Ethernet?' ]]; }
+  systemctl() { return 1; }
+  pacman() { return 1; }
   configure_wifi
-  [[ -z "$WIFI_ADAPTER" ]]
+  [[ "$WIFI_WPA_REQUESTED" == 1 && "$WIFI_ADAPTER" == wlan0 ]]
 )
-(
-  REPOSITORY_DIR="$fixture/board"
-  detect_wifi_adapter() { printf 'wlan0\n'; }
-  ethernet_available() { return 0; }
-  configure_wifi
-  [[ "$WIFI_FALLBACK_REQUESTED" == 1 && "$WIFI_ADAPTER" == wlan0 ]]
-)
+# Without Ethernet or a Wi-Fi bootstrap, provisioning stops.
 if (
   REPOSITORY_DIR="$fixture/board"
   detect_wifi_adapter() { printf 'wlan0\n'; }
   ethernet_available() { return 1; }
+  systemctl() { return 1; }
+  pacman() { return 1; }
   configure_wifi
 ) >"$fixture/no-ethernet" 2>&1; then
   printf 'Wi-Fi cancellation incorrectly succeeded without Ethernet.\n' >&2
@@ -111,16 +109,44 @@ export KMOS_WIFI_TEST_STEPS="$fixture/wifi-steps"
 (
   REPOSITORY_DIR="$fixture/board"
   detect_wifi_adapter() { printf 'wlan0\n'; }
+  ethernet_available() { return 1; }
+  systemctl() { return 1; }
+  pacman() { return 1; }
   configure_wifi
-  [[ "$WIFI_ADAPTER" == wlan0 ]]
+  [[ "$WIFI_WPA_REQUESTED" == 1 && "$WIFI_ADAPTER" == wlan0 ]]
 )
 [[ $(cat "$fixture/wifi-steps") == iwd ]]
+# If the package is present, wpa_supplicant is selected without starting iwd.
+(
+  REPOSITORY_DIR="$fixture/board"
+  detect_wifi_adapter() { printf 'wlan0\n'; }
+  systemctl() { return 1; }
+  pacman() { [[ "$1" == -Q && "$2" == wpa_supplicant ]]; }
+  configure_wifi
+  [[ "$WIFI_ADAPTER" == wlan0 && "$WIFI_BACKEND" == wpa ]]
+)
+[[ $(tail -n 1 "$fixture/wifi-steps") == --wpa-fallback ]]
+# An existing wpa_supplicant installation is preserved and verified, not overwritten.
+cat > "$fixture/board/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh" <<'EOF'
+#!/bin/sh
+[ "$1" = --check ] && printf 'check\n' >> "$KMOS_WIFI_TEST_STEPS"
+EOF
+chmod +x "$fixture/board/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh"
+(
+  REPOSITORY_DIR="$fixture/board"
+  detect_wifi_adapter() { printf 'wlan0\n'; }
+  systemctl() { [[ "$1" == is-enabled && "$3" == wpa_supplicant@wlan0.service ]]; }
+  pacman() { printf 'Unexpected package query.\n' >&2; exit 1; }
+  configure_wifi
+  [[ "$WIFI_BACKEND" == wpa ]]
+)
+[[ $(tail -n 1 "$fixture/wifi-steps") == check ]]
 (
   REPOSITORY_DIR="$fixture/board"
   WIFI_ADAPTER=wlan0
-  WIFI_FALLBACK_REQUESTED=1
+  WIFI_WPA_REQUESTED=1
   pacman() { [[ "$*" == $'-S\n--needed\n--noconfirm\nwpa_supplicant' ]]; }
-  configure_wpa_fallback_after_update
+  configure_wpa_after_update
   [[ "$WIFI_BACKEND" == wpa ]]
 )
 [[ $(tail -n 1 "$fixture/wifi-steps") == --wpa-fallback ]]
@@ -322,6 +348,16 @@ grep -q 'sshd.service is not active' "$fixture/no-ssh"
   curl() { [[ "$1" == --fail && "${!#}" == https://github.com/ ]]; }
   verify_runtime_network
 )
+(
+  REPOSITORY_DIR="$fixture/board"
+  WIFI_BACKEND=wpa
+  WIFI_ADAPTER=wlan0
+  systemctl() { [[ "$1" == is-active && "$2" == --quiet ]]; }
+  ip() { printf 'default via 192.0.2.1\n'; }
+  curl() { return 0; }
+  verify_runtime_network
+)
+[[ $(tail -n 1 "$fixture/wifi-steps") == check ]]
 if (
   systemctl() { [[ "$1" == is-active && "$2" == --quiet ]]; }
   ip() { :; }

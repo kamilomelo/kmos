@@ -260,7 +260,9 @@ restore_iwd_after_wpa_failure() {
   fi
   rm -f -- "$profile" "$network_config" || return 1
   networkctl reload || return 1
-  networkctl reconfigure "$adapter" || return 1
+  # Once networkd releases Wi-Fi, the link may be unmanaged; this is not a
+  # reason to leave iwd disabled after a failed switch.
+  networkctl reconfigure "$adapter" || info 'Wi-Fi link is unmanaged by networkd during rollback.'
   systemctl enable --now iwd.service
 }
 

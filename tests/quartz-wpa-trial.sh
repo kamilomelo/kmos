@@ -63,13 +63,25 @@ grep -q 'two Wi-Fi backends' "$fixture/dual-manager"
   wpa_connection_ready() { [[ "$1" == wlan0 && "$2" == 'Trial Wifi' ]]; }
   verify_wpa_after_boot wlan0
 )
+(
+  systemctl() { return 1; }
+  wpa_cli() {
+    if [[ ! -e "$fixture/reconnected" ]]; then printf 'wpa_state=SCANNING\n';
+    else printf 'wpa_state=COMPLETED\nssid=Trial Wifi\n'; fi
+  }
+  wpa_connection_ready() { [[ "$2" == 'Trial Wifi' ]]; }
+  sleep() { touch "$fixture/reconnected"; }
+  verify_wpa_after_boot wlan0
+)
+[[ -e "$fixture/reconnected" ]]
 if (
   systemctl() { return 1; }
   wpa_cli() { printf 'wpa_state=DISCONNECTED\n'; }
+  sleep() { :; }
   verify_wpa_after_boot wlan0
 ) >"$fixture/disconnected" 2>&1; then
   printf 'Disconnected Wi-Fi was accepted after boot.\n' >&2
   exit 1
 fi
-grep -q 'not associated' "$fixture/disconnected"
+grep -q 'after 30 seconds' "$fixture/disconnected"
 printf 'Quartz standalone wpa_supplicant trial: OK (mocked only).\n'

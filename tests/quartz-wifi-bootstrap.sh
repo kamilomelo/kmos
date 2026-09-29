@@ -202,6 +202,21 @@ fi
 [[ ! -e "$fixture/wpa-failed.conf" && ! -e "$fixture/wpa-failed.network" ]]
 grep -qx 'enable:iwd.service' "$fixture/wpa-rollback-services"
 grep -q 'restoration was attempted' "$fixture/wpa-failure"
+if (
+  wpa_passphrase() { printf 'network={\n\tssid="Fallback Wifi"\n\tpsk=0123456789abcdef\n}\n'; }
+  systemctl() {
+    printf '%s:%s\n' "$1" "${!#}" >> "$fixture/wpa-unmanaged-services"
+    [[ "$1" != enable || "${!#}" != wpa_supplicant@wlan0.service ]]
+  }
+  networkctl() { [[ "$1" != reconfigure ]]; }
+  configure_wpa_fallback wlan0 'Fallback Wifi' 'correct password' \
+    "$fixture/wpa-unmanaged.conf" "$fixture/wpa-unmanaged.network"
+) >"$fixture/wpa-unmanaged-log" 2>&1; then
+  printf 'Failed wpa_supplicant service was accepted on an unmanaged link.\n' >&2
+  exit 1
+fi
+[[ ! -e "$fixture/wpa-unmanaged.conf" && ! -e "$fixture/wpa-unmanaged.network" ]]
+grep -qx 'enable:iwd.service' "$fixture/wpa-unmanaged-services"
 if (configure_wpa_fallback wlan0 'Fallback Wifi' 'correct password' \
   "$fixture/wpa-working.conf" "$fixture/wpa-working.network") >"$fixture/wpa-existing-error" 2>&1; then
   printf 'Existing fallback profile was overwritten.\n' >&2

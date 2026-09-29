@@ -12,7 +12,7 @@ PRIMARY_USER=""
 HOSTNAME_VALUE=""
 WIFI_ADAPTER=""
 WIFI_BACKEND=""
-WIFI_FALLBACK_REQUESTED=0
+WIFI_WPA_REQUESTED=0
 REMOVE_ALARM_REQUESTED=0
 ALARM_REMOVAL_PENDING=0
 ALARM_HOME=""
@@ -333,7 +333,7 @@ offer_kde_desktop() {
   done
   install_kappa_mono_fonts
   configure_kde_terminal "$REPOSITORY_DIR"
-  # Keep iwd + networkd in charge of Wi-Fi and Ethernet until NM migration is
+  # Keep the selected Wi-Fi manager + networkd in charge until NM migration is
   # verified on the physical board; never disable the working network here.
   systemctl enable sddm.service
   systemctl set-default graphical.target
@@ -549,14 +549,28 @@ configure_wifi() {
   ask_yes_no 'Configure persistent Wi-Fi now?' yes || { info 'Wi-Fi skipped; continuing with the existing network.'; return 0; }
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
   [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter detected. Ethernet remains configured.'; return; }
-  if "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
-    WIFI_BACKEND=iwd
-    info 'Wi-Fi works now with a saved profile; verify reconnecting after a real reboot before depending on it.'
+  if systemctl is-enabled --quiet "wpa_supplicant@$WIFI_ADAPTER.service"; then
+    "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh" --check \
+      || die 'Existing wpa_supplicant setup was not verified; preserving it for manual diagnosis.'
+    WIFI_BACKEND=wpa
     return 0
   fi
-  if ethernet_available && ask_yes_no 'iwd Wi-Fi was not verified. Try wpa_supplicant after updating over Ethernet?' no; then
-    WIFI_FALLBACK_REQUESTED=1
-    info 'Keeping Ethernet for package updates before the wpa_supplicant fallback.'
+  if pacman -Q wpa_supplicant >/dev/null 2>&1; then
+    "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --wpa-fallback \
+      || die 'wpa_supplicant Wi-Fi setup failed; inspect the rollback before continuing.'
+    WIFI_BACKEND=wpa
+    return 0
+  fi
+  if ethernet_available; then
+    WIFI_WPA_REQUESTED=1
+    info 'Ethernet is available; install wpa_supplicant after the full update, then configure Wi-Fi.'
+    return 0
+  fi
+  info 'Using iwd temporarily to download the ARM wpa_supplicant package; it will not remain the Wi-Fi manager.'
+  if "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
+    WIFI_BACKEND=iwd
+    WIFI_WPA_REQUESTED=1
+    info 'Temporary iwd connection verified; switch to wpa_supplicant after the full update.'
     return 0
   fi
   if ethernet_available && ask_yes_no 'Finish installation using Ethernet only?' no; then
@@ -567,13 +581,13 @@ configure_wifi() {
   die 'Wi-Fi setup did not complete. Provisioning stopped without claiming a working Wi-Fi connection.'
 }
 
-configure_wpa_fallback_after_update() {
-  ((WIFI_FALLBACK_REQUESTED)) || return 0
+configure_wpa_after_update() {
+  ((WIFI_WPA_REQUESTED)) || return 0
   pacman -S --needed --noconfirm wpa_supplicant
   "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --wpa-fallback \
-    || die 'wpa_supplicant fallback was not verified; Ethernet remains the recovery connection.'
+    || die 'wpa_supplicant was not verified; inspect the rollback before rebooting.'
   WIFI_BACKEND=wpa
-  info 'wpa_supplicant is configured for Wi-Fi boot; verify a real reboot before removing Ethernet.'
+  info 'wpa_supplicant is configured for Wi-Fi boot; verify a real reboot before relying on it.'
 }
 
 disable_active_swapfile() {
@@ -785,7 +799,9 @@ verify_runtime_network() {
   done
   if [[ "$WIFI_BACKEND" == wpa ]]; then
     systemctl is-active --quiet "wpa_supplicant@$WIFI_ADAPTER.service" \
-      || die 'wpa_supplicant is not active. Keep Ethernet connected before rebooting.'
+      || die 'wpa_supplicant is not active. Do not reboot expecting Wi-Fi.'
+    "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh" --check \
+      || die 'wpa_supplicant Wi-Fi was lost during provisioning. Do not reboot expecting Wi-Fi.'
   fi
   [[ -n $(ip -4 route show default) ]] || die 'No IPv4 default route. Fix networking before rebooting.'
   command -v curl >/dev/null 2>&1 || die 'curl is needed to verify live internet access before rebooting.'
@@ -839,7 +855,7 @@ main() {
   ask_yes_no 'Continue with provisioning and the full Arch Linux ARM update?' yes || die 'Cancelled without modifying the system.'
   configure_wifi
   initialize_pacman
-  configure_wpa_fallback_after_update
+  configure_wpa_after_update
   install_kmos_packages "$REPOSITORY_DIR"
   install_kappa_mono_fonts
   configure_kmos_terminal "$REPOSITORY_DIR"
