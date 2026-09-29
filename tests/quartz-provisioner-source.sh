@@ -240,6 +240,68 @@ grep -qx continued "$fixture/syncthing-declined"
 grep -qx continued "$fixture/syncthing-failed"
 grep -q 'continuing installation' "$fixture/syncthing-warning"
 
+# Do not replace an active swapfile if swapoff fails; inactive files need no swapoff.
+printf 'Filename Type Size Used Priority\n/swapfile file 1024 0 -2\n' > "$fixture/swaps"
+(
+  swapoff() { [[ "$1" == /swapfile ]] && return 1; }
+  if (disable_active_swapfile "$fixture/swaps") >"$fixture/swap-error" 2>&1; then
+    printf 'Failed swapoff was accepted.\n' >&2
+    exit 1
+  fi
+)
+grep -q 'refusing to replace it' "$fixture/swap-error"
+if (disable_active_swapfile "$fixture/missing-swaps") >"$fixture/swap-error" 2>&1; then
+  printf 'Unreadable swap state was accepted.\n' >&2
+  exit 1
+fi
+grep -q 'Could not inspect active swap' "$fixture/swap-error"
+(
+  swapoff() { [[ "$1" == /swapfile ]] && printf 'disabled\n' > "$fixture/swap-disabled"; }
+  disable_active_swapfile "$fixture/swaps"
+)
+grep -qx disabled "$fixture/swap-disabled"
+printf 'Filename Type Size Used Priority\n' > "$fixture/swaps"
+(
+  swapoff() { printf 'Inactive swapfile unexpectedly disabled.\n' >&2; exit 1; }
+  disable_active_swapfile "$fixture/swaps"
+)
+
+# Verify live networking after installation, not just enabled unit files.
+if (
+  systemctl() { [[ "$3" != sshd.service ]]; }
+  verify_runtime_network
+) >"$fixture/no-ssh" 2>&1; then
+  printf 'Inactive SSH service was accepted.\n' >&2
+  exit 1
+fi
+grep -q 'sshd.service is not active' "$fixture/no-ssh"
+(
+  systemctl() { [[ "$1" == is-active && "$2" == --quiet ]]; }
+  ip() { [[ "$1" == -4 && "$2" == route && "$3" == show && "$4" == default ]] && printf 'default via 192.0.2.1\n'; }
+  curl() { [[ "$1" == --fail && "${!#}" == https://github.com/ ]]; }
+  verify_runtime_network
+)
+if (
+  systemctl() { [[ "$1" == is-active && "$2" == --quiet ]]; }
+  ip() { :; }
+  curl() { printf 'Internet probe must not run without a route.\n' >&2; exit 1; }
+  verify_runtime_network
+) >"$fixture/no-route" 2>&1; then
+  printf 'Missing IPv4 default route was accepted.\n' >&2
+  exit 1
+fi
+grep -q 'No IPv4 default route' "$fixture/no-route"
+if (
+  systemctl() { [[ "$1" == is-active && "$2" == --quiet ]]; }
+  ip() { printf 'default via 192.0.2.1\n'; }
+  curl() { return 1; }
+  verify_runtime_network
+) >"$fixture/no-internet" 2>&1; then
+  printf 'Failed internet probe was accepted.\n' >&2
+  exit 1
+fi
+grep -q 'Live internet access could not be verified' "$fixture/no-internet"
+
 # Ethernet remains usable when optional Wi-Fi and Syncthing are declined; KDE stays disabled.
 (
   find_local_repository() { printf '%s\n' "$repo"; }
@@ -262,8 +324,9 @@ grep -q 'continuing installation' "$fixture/syncthing-warning"
   detect_wifi_adapter() { printf 'Wi-Fi adapter detection ran after Wi-Fi was declined.\n' >&2; exit 1; }
   verify_installation() { printf 'verify\n' >> "$fixture/steps"; }
   offer_aur_helper() { printf 'aur\n' >> "$fixture/steps"; }
+  verify_runtime_network() { printf 'network\n' >> "$fixture/steps"; }
   finish_installation() { printf 'finish\n' >> "$fixture/steps"; }
   main
 )
-[[ $(cat "$fixture/steps") == $'fonts\nterminal\nverify\naur\nfinish' ]]
+[[ $(cat "$fixture/steps") == $'fonts\nterminal\nverify\naur\nnetwork\nfinish' ]]
 printf 'Quartz provisioner uses local KMOS files and honors skipped packages: OK.\n'

@@ -81,10 +81,16 @@ The helper enables iwd, networkd and resolved for later boots and does not
 write a speculative profile before association. A failed attempt offers retry
 or `CANCEL`; an existing profile is backed up before trying new credentials.
 It preserves an existing compatible `/etc/iwd/main.conf`, including driver
-quirks, instead of erasing them. This protects the board's tested
-`SaeDisable=brcmfmac` WPA2 workaround, but does **not** cure the repeated
-authentication timeouts seen on the Kasa network after reboot. This quirk
-disables SAE on brcmfmac, so WPA3-only networks cannot connect with it.
+quirks, instead of erasing them. On a fresh iwd config with the detected
+`brcmfmac` driver, it writes the board-tested `SaeDisable=brcmfmac` WPA2
+workaround **before starting/restarting iwd**; a new config also survives
+reboot. It does not add that quirk to an existing config automatically.
+This quirk disables SAE on brcmfmac, so WPA3-only networks cannot connect
+with it. If your network is WPA3-only, use `--allow-sae` with the checkout's
+standalone Wi-Fi helper on a **new** iwd config (and decline the provisioner's
+Wi-Fi prompt); it will not overwrite an existing quirk. SAE has not been
+validated on this board. None of this cures the repeated authentication
+timeouts seen on Kasa after reboot, even with the manual quirk in place.
 Like the x86 helper, `iwctl --passphrase` briefly exposes the passphrase in
 process arguments; do not use it on an untrusted multi-user system. Changing
 an active Wi-Fi connection over SSH is blocked: **use the local console** in
@@ -100,7 +106,7 @@ without changing Wi-Fi, or run the standalone helper later from the checkout:
 `./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh`.
 Updating the Git checkout does not update an older SD-card copy at
 `/root/connect-quartz64b-wifi.sh`; use the checkout copy to preserve existing
-iwd settings.
+iwd settings and get the fresh-config brcmfmac workaround.
 If the board remains online after a Wi-Fi association error, verify whether
 Ethernet or Wi-Fi carries the connection before rebooting. A Wi-Fi error does
 not require rerunning headless provisioning.
@@ -132,11 +138,15 @@ styles from the Kappa Type GitHub repository using `git`, and configures
 terminal presets, hostname, timezone
 (default `Europe/Zurich`), locale, administrator and optional users, swap
 (default `4G`, `0` to omit), SSH (root login disabled), and DHCP Ethernet/DNS.
-After verification and the optional AUR choice, a success banner offers a
-10-second countdown: press any key to stay in the current session, or let it
+After verification, the optional AUR choice, and a live internet check against
+GitHub, a success banner offers a 10-second countdown: press any key to stay in
+the current session, or let it
 reboot automatically. Without an interactive terminal, it skips automatic
 reboot. Board maintenance commands (`repair-prompt`, `fonts`, `aur`, and
 `remove-alarm`) never trigger this countdown.
+If SSH, networking, or live internet access is unavailable at the end, the
+provisioner stops without claiming completion or rebooting; keep the recovery
+connection attached and diagnose the failure instead of repeating provisioning.
 Syncthing and removal of the default `alarm` account are optional. Confirming
 removal deletes `/home/alarm` and all its contents, including any checkout
 there. If the installer is running from `alarm`, it locks the account and
@@ -149,9 +159,9 @@ new administrator session instead of repeating provisioning:
 ./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh remove-alarm
 ```
 
-There is no Wi-Fi prompt or KDE offer in the headless run; keep Ethernet
-connected for package and font downloads. Provisioning does not
-rewrite partitions, U-Boot, or extlinux boot files, but its initial system
+The headless run offers Wi-Fi but not KDE. Keep Ethernet connected for recovery
+until Wi-Fi survives reboot and SSH over Wi-Fi is verified. Provisioning does
+not rewrite partitions, U-Boot, or extlinux boot files, but its initial system
 update may update the board's kernel packages.
 
 **KDE is not offered on Quartz64.** The earlier experimental stage failed on

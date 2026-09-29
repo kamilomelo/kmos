@@ -82,17 +82,31 @@ EOF
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
-  [[ -z "$BOOTLOADER_DIR" ]] || rm -rf "$BOOTLOADER_DIR"
+  if [[ -n "$BOOTLOADER_DIR" ]] && ! rm -rf "$BOOTLOADER_DIR"; then
+    warn "Could not remove temporary bootloader files at $BOOTLOADER_DIR."
+    status=1
+  fi
   if [[ -n "$MOUNT_DIR" && "$KEEP_MOUNTS" -eq 0 ]]; then
-    if mountpoint -q "$MOUNT_DIR/boot"; then
-      umount "$MOUNT_DIR/boot" || true
-    fi
-    if mountpoint -q "$MOUNT_DIR"; then
-      umount "$MOUNT_DIR" || true
-    fi
-    rmdir "$MOUNT_DIR" 2>/dev/null || true
+    unmount_target || status=1
   fi
   exit "$status"
+}
+
+unmount_target() {
+  local failed=0
+  if mountpoint -q "$MOUNT_DIR/boot"; then
+    umount "$MOUNT_DIR/boot" || { warn "Could not unmount $MOUNT_DIR/boot; do not remove the SD card."; failed=1; }
+  fi
+  if mountpoint -q "$MOUNT_DIR"; then
+    umount "$MOUNT_DIR" || { warn "Could not unmount $MOUNT_DIR; do not remove the SD card."; failed=1; }
+  fi
+  if mountpoint -q "$MOUNT_DIR/boot" || mountpoint -q "$MOUNT_DIR"; then
+    warn "The SD card is still mounted at $MOUNT_DIR; do not remove it."
+    failed=1
+  fi
+  ((failed == 0)) || return 1
+  rmdir "$MOUNT_DIR" 2>/dev/null || warn "Unmounted, but could not remove mount directory $MOUNT_DIR."
+  MOUNT_DIR=""
 }
 
 require_root() {
@@ -400,7 +414,7 @@ fetch_inputs() {
     rm -f "$rootfs" "$signature"
     download "$ALARM_ROOTFS_URL" "$rootfs"
     download "$ALARM_ROOTFS_URL.sig" "$signature"
-    verify_rootfs "$rootfs" "$signature"
+    verify_rootfs "$rootfs" "$signature" || die 'Rootfs signature verification failed again; refusing to write the SD card.'
   fi
 
   if [[ -n "$BOOTLOADER_ARCHIVE" ]]; then
@@ -473,6 +487,25 @@ enable_unit() {
   ln -sfn "/usr/lib/systemd/system/$unit" "$MOUNT_DIR/etc/systemd/system/$target.wants/$unit"
 }
 
+enable_first_boot_ssh() {
+  [[ -e "$MOUNT_DIR/usr/lib/systemd/system/sshd.service" ]] \
+    || die 'Rootfs lacks sshd.service; first-boot SSH cannot be enabled.'
+  enable_unit sshd.service multi-user.target
+}
+
+write_target_fstab() {
+  local root_partuuid boot_partuuid
+  root_partuuid=$(blkid -s PARTUUID -o value "$ROOT_PARTITION") \
+    || die "Cannot read the root partition PARTUUID: $ROOT_PARTITION"
+  boot_partuuid=$(blkid -s PARTUUID -o value "$BOOT_PARTITION") \
+    || die "Cannot read the boot partition PARTUUID: $BOOT_PARTITION"
+  local uuid_pattern='^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$'
+  [[ "$root_partuuid" =~ $uuid_pattern && "$boot_partuuid" =~ $uuid_pattern ]] \
+    || die 'An SD partition has a missing or invalid PARTUUID; refusing to write fstab.'
+  printf 'PARTUUID=%s / ext4 defaults 0 1\nPARTUUID=%s /boot vfat defaults 0 2\n' \
+    "$root_partuuid" "$boot_partuuid" > "$MOUNT_DIR/etc/fstab"
+}
+
 configure_target() {
   local rootfs=$1 dtb
   MOUNT_DIR=$(mktemp -d /mnt/quartz64b.XXXXXX)
@@ -504,10 +537,7 @@ label arch
   append initrd=/initramfs-linux.img earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 root=LABEL=rootfs rw rootwait
 EOF
 
-  cat > "$MOUNT_DIR/etc/fstab" <<EOF
-PARTUUID=$(blkid -s PARTUUID -o value "$ROOT_PARTITION") / ext4 defaults 0 1
-PARTUUID=$(blkid -s PARTUUID -o value "$BOOT_PARTITION") /boot vfat defaults 0 2
-EOF
+  write_target_fstab
   install -d -m 0755 "$MOUNT_DIR/etc/systemd/network"
   cat > "$MOUNT_DIR/etc/systemd/network/20-ethernet-dhcp.network" <<'EOF'
 [Match]
@@ -522,7 +552,7 @@ RouteMetric=100
 EOF
   enable_unit systemd-networkd.service multi-user.target
   enable_unit systemd-resolved.service multi-user.target
-  enable_unit sshd.service multi-user.target
+  enable_first_boot_ssh
   install -Dm0755 "$SCRIPT_DIR/connect-quartz64b-wifi.sh" "$MOUNT_DIR/root/connect-quartz64b-wifi.sh"
   if ((STAGE_WIFI_PACKAGES)); then
     local package_file
@@ -550,6 +580,10 @@ verify_target() {
   grep -q 'rk3566-quartz64-b.dtb' "$MOUNT_DIR/boot/extlinux/extlinux.conf" || die 'Model B DTB is not configured.'
   grep -q 'DHCP=yes' "$MOUNT_DIR/etc/systemd/network/20-ethernet-dhcp.network" || die 'DHCP configuration is missing.'
   [[ -L "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/systemd-networkd.service" ]] || die 'systemd-networkd was not enabled.'
+  [[ -L "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/sshd.service" ]] || die 'First-boot SSH was not enabled.'
+  if [[ ! -s "$MOUNT_DIR/etc/fstab" ]] || grep -q '^PARTUUID=[[:space:]]' "$MOUNT_DIR/etc/fstab"; then
+    die 'The SD card fstab has a missing PARTUUID.'
+  fi
   [[ -s "$MOUNT_DIR/boot/Image" && -s "$MOUNT_DIR/boot/initramfs-linux.img" ]] || die 'Boot files are incomplete.'
   [[ -x "$MOUNT_DIR/root/connect-quartz64b-wifi.sh" ]] || die 'The manual Wi-Fi helper was not copied.'
   if ((STAGE_WIFI_PACKAGES)); then
@@ -572,7 +606,10 @@ cleanup_workdir_prompt() {
   printf '  1) Keep downloads for another SD card (default)\n'
   printf '  2) Delete downloads, signatures and verification files\n'
   while true; do
-    read -r -p 'Choose an action [1-2] (default: 1): ' choice
+    if ! read -r -p 'Choose an action [1-2] (default: 1): ' choice; then
+      info 'No input; keeping the work directory.'
+      return 0
+    fi
     choice=${choice:-1}
     case "$choice" in
       1)
@@ -642,6 +679,7 @@ main() {
   if ((KEEP_MOUNTS)); then
     info "SD card is ready and remains mounted at $MOUNT_DIR."
   else
+    unmount_target || die "Could not safely unmount $DEVICE. Do not remove the SD card."
     info "SD card is ready. Safely remove $DEVICE and insert it into the Quartz64 Model B."
   fi
   cleanup_workdir_prompt

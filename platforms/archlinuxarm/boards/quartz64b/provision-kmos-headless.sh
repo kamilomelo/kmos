@@ -572,6 +572,15 @@ configure_wifi() {
   die 'Wi-Fi setup did not complete. Provisioning stopped without claiming a working Wi-Fi connection.'
 }
 
+disable_active_swapfile() {
+  local swaps_file=${1:-/proc/swaps} active
+  active=$(awk 'NR > 1 && $1 == "/swapfile" { print "active"; exit }' "$swaps_file") \
+    || die "Could not inspect active swap devices: $swaps_file"
+  if [[ "$active" == active ]]; then
+    swapoff /swapfile || die 'Could not disable the active /swapfile; refusing to replace it.'
+  fi
+}
+
 configure_swap() {
   local size
   read -r -p 'Swapfile size [4G, 0 to skip]: ' size
@@ -584,7 +593,7 @@ configure_swap() {
       return 0
     fi
   fi
-  swapoff /swapfile 2>/dev/null || true
+  disable_active_swapfile
   rm -f /swapfile
   fallocate -l "$size" /swapfile
   chmod 600 /swapfile
@@ -762,6 +771,19 @@ verify_installation() {
   fi
 }
 
+verify_runtime_network() {
+  local service
+  for service in sshd.service systemd-networkd.service systemd-resolved.service; do
+    systemctl is-active --quiet "$service" || die "$service is not active. Fix networking/SSH before rebooting."
+  done
+  [[ -n $(ip -4 route show default) ]] || die 'No IPv4 default route. Fix networking before rebooting.'
+  command -v curl >/dev/null 2>&1 || die 'curl is needed to verify live internet access before rebooting.'
+  if ! curl --fail --silent --show-error --location --connect-timeout 5 --max-time 15 --output /dev/null https://github.com/; then
+    die 'Live internet access could not be verified after provisioning. Keep Ethernet connected; diagnose the network before rebooting.'
+  fi
+  info 'SSH and network services, IPv4 default route, and live internet access verified before reboot.'
+}
+
 countdown_or_reboot() {
   local fd=$1 remaining status
   for ((remaining=10; remaining>0; remaining--)); do
@@ -819,6 +841,7 @@ main() {
   info 'Quartz64 KDE provisioning is disabled until it can be validated on physical hardware.'
   verify_installation
   offer_aur_helper
+  verify_runtime_network
   finish_installation
 }
 

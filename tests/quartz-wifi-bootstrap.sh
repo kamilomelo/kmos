@@ -30,10 +30,79 @@ fi
 
 configure_iwd_main "$fixture/iwd-main.conf"
 grep -Fxq 'EnableNetworkConfiguration=false' "$fixture/iwd-main.conf"
+[[ "$IWD_CONFIG_CREATED" == 1 ]]
 printf '\n[DriverQuirks]\nSaeDisable=brcmfmac\n' >> "$fixture/iwd-main.conf"
 cp "$fixture/iwd-main.conf" "$fixture/iwd-main-before"
-configure_iwd_main "$fixture/iwd-main.conf"
+configure_iwd_main "$fixture/iwd-main.conf" brcmfmac
 cmp "$fixture/iwd-main-before" "$fixture/iwd-main.conf"
+[[ "$IWD_CONFIG_CREATED" == 0 ]]
+configure_iwd_main "$fixture/new-brcmfmac.conf" brcmfmac
+grep -Fxq 'SaeDisable=brcmfmac' "$fixture/new-brcmfmac.conf"
+configure_iwd_main "$fixture/new-generic.conf" other-driver
+if grep -q '^SaeDisable=' "$fixture/new-generic.conf"; then
+  printf 'A non-brcmfmac interface had SAE disabled.\n' >&2
+  exit 1
+fi
+mkdir -p "$fixture/drivers/brcmfmac" "$fixture/devices"
+ln -s "$fixture/drivers/brcmfmac" "$fixture/devices/driver"
+[[ $(wifi_driver wlan0 "$fixture/devices/driver") == brcmfmac ]]
+(
+  # The offline iwd installer starts the daemon before the helper configures it.
+  # A newly written quirk must be in place when that daemon is restarted.
+  wifi_driver() { printf 'brcmfmac\n'; }
+  connected_wifi_ssid() { :; }
+  systemctl() {
+    if [[ "$1" == is-active ]]; then return 0; fi
+    if [[ "$1" == restart ]]; then
+      grep -Fxq 'SaeDisable=brcmfmac' "$fixture/first-run-iwd.conf" || return 1
+    fi
+    printf '%s:%s\n' "$1" "${@: -1}" >> "$fixture/wifi-services"
+  }
+  networkctl() { :; }
+  configure_wifi_network wlan0 "$fixture/first-run-iwd.conf" "$fixture/first-run-network.conf"
+)
+grep -qx 'restart:iwd.service' "$fixture/wifi-services"
+grep -qx 'enable:iwd.service' "$fixture/wifi-services"
+[[ -s "$fixture/first-run-network.conf" ]]
+cp "$fixture/first-run-iwd.conf" "$fixture/first-run-iwd-before"
+(
+  wifi_driver() { printf 'brcmfmac\n'; }
+  systemctl() { :; }
+  networkctl() { :; }
+  configure_wifi_network wlan0 "$fixture/first-run-iwd.conf" "$fixture/first-run-network.conf"
+)
+cmp "$fixture/first-run-iwd-before" "$fixture/first-run-iwd.conf"
+(
+  wifi_driver() { printf 'brcmfmac\n'; }
+  connected_wifi_ssid() { printf 'Current Wifi\n'; }
+  systemctl() {
+    [[ "$1" != restart ]] || { printf 'Active Wi-Fi was interrupted.\n' >&2; exit 1; }
+    return 0
+  }
+  networkctl() { :; }
+  configure_wifi_network wlan0 "$fixture/connected-iwd.conf" "$fixture/connected-network.conf"
+)
+grep -Fxq 'SaeDisable=brcmfmac' "$fixture/connected-iwd.conf"
+(
+  ALLOW_SAE=1
+  wifi_driver() { printf 'brcmfmac\n'; }
+  systemctl() { :; }
+  networkctl() { :; }
+  configure_wifi_network wlan0 "$fixture/wpa3-iwd.conf" "$fixture/wpa3-network.conf"
+)
+if grep -q '^SaeDisable=' "$fixture/wpa3-iwd.conf"; then
+  printf '%s\n' '--allow-sae unexpectedly disabled SAE.' >&2
+  exit 1
+fi
+if (
+  ALLOW_SAE=1
+  wifi_driver() { printf 'brcmfmac\n'; }
+  configure_wifi_network wlan0 "$fixture/first-run-iwd.conf" "$fixture/wpa3-network.conf"
+) >"$fixture/wpa3-error" 2>&1; then
+  printf 'Existing brcmfmac quirk was silently ignored for --allow-sae.\n' >&2
+  exit 1
+fi
+grep -q 'will not overwrite' "$fixture/wpa3-error"
 printf '[General]\nEnableNetworkConfiguration=true\n' > "$fixture/conflicting-iwd.conf"
 if (configure_iwd_main "$fixture/conflicting-iwd.conf") >"$fixture/iwd-error" 2>&1; then
   printf 'Accepted conflicting iwd DHCP configuration.\n' >&2

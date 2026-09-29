@@ -2,6 +2,8 @@
 # Connect with iwd on Arch Linux ARM, then retain its working profile for boot.
 set -Eeuo pipefail
 NETWORK_NAMES=()
+IWD_CONFIG_CREATED=0
+ALLOW_SAE=0
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*" >&2; }
@@ -40,7 +42,7 @@ install_offline_wifi() (
 
 usage() {
   cat <<'EOF'
-Usage: ./connect-quartz64b-wifi.sh [--help]
+Usage: ./connect-quartz64b-wifi.sh [--allow-sae|--help]
 
 Connect a detected Wi-Fi adapter using iwctl first, then verify internet over
 that adapter and keep the working iwd profile for later boots. If iwd is missing, offer
@@ -49,6 +51,9 @@ Like the x86 Arch helper, iwctl --passphrase briefly exposes the password in
 the process argument list. Run from the local console if Wi-Fi carries SSH.
 Only a real reboot can verify that it reconnects on a later boot. Type CANCEL
 to stop; cancelling never claims Wi-Fi is configured.
+On brcmfmac, new configs use the tested WPA2 workaround by default. For a
+WPA3-only network, --allow-sae leaves SAE enabled on a new iwd config. It
+does not remove any quirk from an existing config.
 EOF
 }
 
@@ -60,6 +65,13 @@ detect_wifi_adapter() {
     return 0
   done
   return 1
+}
+
+wifi_driver() {
+  local adapter=$1 driver_path=${2:-/sys/class/net/$1/device/driver} target
+  [[ -L "$driver_path" ]] || return 1
+  target=$(readlink -f -- "$driver_path") || return 1
+  printf '%s\n' "${target##*/}"
 }
 
 scan_wifi_networks() {
@@ -98,7 +110,8 @@ scan_wifi_networks() {
 }
 
 configure_iwd_main() {
-  local config=${1:-/etc/iwd/main.conf}
+  local config=${1:-/etc/iwd/main.conf} driver=${2:-}
+  IWD_CONFIG_CREATED=0
   if [[ -e "$config" || -L "$config" ]]; then
     [[ -f "$config" && ! -L "$config" ]] || die "Refusing to replace a non-regular iwd configuration: $config"
     # iwd defaults to false when this key is absent. Preserve driver quirks,
@@ -111,19 +124,43 @@ configure_iwd_main() {
       die "iwd network configuration conflicts with networkd; inspect $config before continuing."
     fi
     info "Preserving existing iwd configuration: $config"
+    if [[ "$driver" == brcmfmac ]] && ! grep -Eq '^[[:space:]]*SaeDisable[[:space:]]*=[[:space:]]*brcmfmac[[:space:]]*$' "$config"; then
+      info 'Existing iwd config does not enable the brcmfmac WPA2 workaround; it was not changed automatically.'
+    fi
     return 0
   fi
-  install -Dm0644 /dev/stdin "$config" <<'EOF'
+  if [[ "$driver" == brcmfmac ]]; then
+    install -Dm0644 /dev/stdin "$config" <<'EOF'
+[General]
+EnableNetworkConfiguration=false
+
+[DriverQuirks]
+SaeDisable=brcmfmac
+EOF
+    info 'Enabled the board-tested brcmfmac WPA2 workaround. WPA3-only networks will not connect.'
+  else
+    install -Dm0644 /dev/stdin "$config" <<'EOF'
 [General]
 EnableNetworkConfiguration=false
 EOF
+  fi
+  IWD_CONFIG_CREATED=1
 }
 
 configure_wifi_network() {
-  local adapter=$1
+  local adapter=$1 iwd_config=${2:-/etc/iwd/main.conf} network_config=${3:-/etc/systemd/network/25-wifi-dhcp.network} driver
+  driver=$(wifi_driver "$adapter") || driver=""
+  [[ -n "$driver" ]] || info "Could not identify the driver for $adapter; no driver-specific iwd quirk will be added."
+  if ((ALLOW_SAE)) && [[ "$driver" == brcmfmac ]]; then
+    if [[ -f "$iwd_config" ]] && grep -Eq '^[[:space:]]*SaeDisable[[:space:]]*=[[:space:]]*brcmfmac[[:space:]]*$' "$iwd_config"; then
+      die "Existing $iwd_config disables SAE. --allow-sae will not overwrite it; inspect the config before using a WPA3-only network."
+    fi
+    info 'Leaving SAE enabled for brcmfmac; this has not been verified on the physical board.'
+    driver=""
+  fi
   # iwd owns association, networkd owns DHCP, and resolved owns DNS.
-  configure_iwd_main
-  install -Dm0644 /dev/stdin /etc/systemd/network/25-wifi-dhcp.network <<'EOF'
+  configure_iwd_main "$iwd_config" "$driver"
+  install -Dm0644 /dev/stdin "$network_config" <<'EOF'
 [Match]
 Name=wl* wlan*
 
@@ -135,6 +172,13 @@ IPv6AcceptRA=yes
 RouteMetric=600
 EOF
   systemctl enable --now systemd-networkd.service systemd-resolved.service
+  if ((IWD_CONFIG_CREATED)) && systemctl is-active --quiet iwd.service; then
+    if [[ -z $(connected_wifi_ssid "$adapter") ]]; then
+      systemctl restart iwd.service
+    else
+      info 'Existing Wi-Fi connection left intact; the new iwd config takes effect after iwd restarts or the board reboots.'
+    fi
+  fi
   systemctl enable --now iwd.service
   networkctl reload
   networkctl reconfigure "$adapter" || true
@@ -253,10 +297,11 @@ main() {
   local adapter ssid answer
   case "${1:-}" in
     -h|--help) usage; return ;;
+    --allow-sae) ALLOW_SAE=1 ;;
     '') ;;
     *) die "Unknown argument: $1" ;;
   esac
-  (($# == 0)) || die 'Unexpected arguments.'
+  (($# == 0 || ($# == 1 && ALLOW_SAE == 1))) || die 'Unexpected arguments.'
   [[ $(uname -m) == aarch64 ]] || die 'This helper is for AArch64 boards.'
   if ((EUID != 0)); then
     command -v sudo >/dev/null 2>&1 || die 'Root access is required, but sudo is unavailable.'
@@ -277,7 +322,6 @@ main() {
     command -v iwctl >/dev/null 2>&1 || die 'iwd installation did not provide iwctl.'
   fi
   command -v timeout >/dev/null 2>&1 || die 'Coreutils timeout is required so Wi-Fi connect cannot hang indefinitely.'
-  systemctl start iwd.service
   configure_wifi_network "$adapter"
   ssid=$(connected_wifi_ssid "$adapter") || true
   if [[ -n "$ssid" ]] && wifi_connection_ready "$adapter" /var/lib/iwd "$ssid"; then
