@@ -90,17 +90,20 @@ backed up before updating its DHCP/DNS keys; driver quirks are preserved.
 Fresh configs leave SAE/WPA3 enabled; a previously configured
 `SaeDisable=brcmfmac` quirk is preserved, not added automatically. The Kasa
 network still showed authentication timeouts after reboot even with this quirk.
-The provisioner now selects **wpa_supplicant** as its persistent Wi-Fi manager.
-On an existing wpa_supplicant install, it checks and preserves the connection;
-if the package is present but unconfigured, it sets up wpa_supplicant directly.
-With Ethernet, it installs the ARM package after the full system update, then
-asks for Wi-Fi credentials locally. Without Ethernet, it first uses staged iwd
-packages to bootstrap connectivity, updates and installs wpa_supplicant, then
-switches the Wi-Fi adapter. For that switch it reuses a usable WPA2 PSK or
+At the **end of provisioning**, whether the update used Ethernet or Wi-Fi, the
+installer asks once (default **Yes**) whether to configure persistent Wi-Fi
+with **wpa_supplicant**. If it is already enabled, it checks and preserves the
+connection; otherwise it installs the ARM package and configures it. A board
+without Ethernet uses staged iwd packages only to bootstrap connectivity for
+package updates. If persistent Wi-Fi is accepted, iwd is then replaced by
+wpa_supplicant. For that switch it reuses a usable WPA2 PSK or
 passphrase from the active, root-only iwd profile, without asking a second
 time. If the saved credentials cannot be safely read, it asks again. iwd
 profiles are kept for rollback, but iwd is stopped and disabled before
 wpa_supplicant starts.
+If Wi-Fi is declined after iwd was used for bootstrap, iwd is disabled for
+future boots but the current connection is left up; without Ethernet the
+installer skips automatic reboot and warns that a recovery connection is needed.
 Networkd supplies Wi-Fi DHCP and resolved supplies DNS. No two Wi-Fi managers
 should run together. A failed switch attempts to restore iwd, and provisioning
 stops rather than claiming a persistent Wi-Fi setup. The generated profile
@@ -127,9 +130,9 @@ route and internet before relying on Wi-Fi-only SSH. If the adapter or
 firmware is missing, the helper stops before installing packages; temporary
 networking or a compatible adapter will be necessary.
 
-The headless provisioner offers optional Wi-Fi setup **before package updates**
-and calls the same helper from the checkout. Decline to continue over Ethernet
-without changing Wi-Fi, or run the standalone helper later from the checkout:
+The headless provisioner configures persistent Wi-Fi **after other setup and
+optional AUR builds**, before its final network check and reboot. Run the
+standalone bootstrap helper when networking is needed before cloning the checkout:
 `./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh`.
 Updating the Git checkout does not update an older SD-card copy at
 `/root/connect-quartz64b-wifi.sh`; use the checkout copy to preserve existing
@@ -161,7 +164,8 @@ initial provisioning confirmation and optional Wi-Fi setup both default to
 Arch Linux ARM `starship` package is required; provisioning stops rather than
 claiming a working prompt if it cannot be installed or rendered.
 
-Headless provisioning first offers Wi-Fi, then installs available ARM CLI packages, asks before
+Headless provisioning brings up temporary Wi-Fi only if Ethernet is absent,
+then installs available ARM CLI packages, asks before
 skipping unavailable packages, installs the four Kappa Mono Nerd Font TTF
 styles from the Kappa Type GitHub repository using `git`, and configures
 terminal presets, hostname, timezone

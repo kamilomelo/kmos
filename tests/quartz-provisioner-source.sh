@@ -51,13 +51,13 @@ if (main) > "$fixture/declined-output" 2>&1; then
 fi
 grep -q 'Cancelled without modifying the system' "$fixture/declined-output"
 
-# With consent, optional Wi-Fi precedes the first package stage, using this checkout.
+# Without Ethernet, temporary Wi-Fi precedes the first package stage.
 (
   ask_yes_no() {
     [[ "$1" == 'Continue with provisioning and the full Arch Linux ARM update?' && "$2" == yes ]] || exit 1
     return 0
   }
-  configure_wifi() { printf 'wifi\n' >> "$fixture/early-steps"; }
+  bootstrap_network() { printf 'wifi\n' >> "$fixture/early-steps"; }
   initialize_pacman() { printf 'pacman\n' >> "$fixture/early-steps"; }
   install_kmos_packages() {
     [[ "$1" == "$repo" ]] || exit 1
@@ -67,40 +67,39 @@ grep -q 'Cancelled without modifying the system' "$fixture/declined-output"
 )
 [[ $(cat "$fixture/early-steps") == $'wifi\npacman' ]]
 
-# Even an affirmative Wi-Fi answer is harmless when no adapter is present.
-ask_yes_no() { [[ "$1" == 'Configure persistent Wi-Fi now?' && "$2" == yes ]]; }
-detect_wifi_adapter() { return 1; }
-configure_wifi 2> "$fixture/wifi-warning"
-grep -q 'No Wi-Fi adapter detected' "$fixture/wifi-warning"
+# Ethernet requires no early Wi-Fi setup or credential prompt.
+(
+  ethernet_available() { return 0; }
+  detect_wifi_adapter() { printf 'Unexpected early Wi-Fi detection.\n' >&2; exit 1; }
+  bootstrap_network
+)
 ask_yes_no() { return 0; }
 
-# Ethernet allows wpa_supplicant to be installed after the full update without
-# configuring a temporary iwd connection.
+# No network for updating is an error, not a claimed successful installation.
+if (
+  ethernet_available() { return 1; }
+  detect_wifi_adapter() { return 1; }
+  bootstrap_network
+) >"$fixture/no-network" 2>&1; then
+  printf 'No network was accepted for package updates.\n' >&2
+  exit 1
+fi
+grep -q 'No Ethernet connection or Wi-Fi adapter' "$fixture/no-network"
 mkdir -p "$fixture/board/platforms/archlinuxarm/boards/quartz64b"
 printf '#!/bin/sh\nexit 2\n' > "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
 chmod +x "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
-(
-  REPOSITORY_DIR="$fixture/board"
-  detect_wifi_adapter() { printf 'wlan0\n'; }
-  ethernet_available() { return 0; }
-  systemctl() { return 1; }
-  pacman() { return 1; }
-  configure_wifi
-  [[ "$WIFI_WPA_REQUESTED" == 1 && "$WIFI_ADAPTER" == wlan0 ]]
-)
-# Without Ethernet or a Wi-Fi bootstrap, provisioning stops.
+# A failed temporary iwd connection stops Wi-Fi-only provisioning.
 if (
   REPOSITORY_DIR="$fixture/board"
   detect_wifi_adapter() { printf 'wlan0\n'; }
   ethernet_available() { return 1; }
   systemctl() { return 1; }
-  pacman() { return 1; }
-  configure_wifi
+  bootstrap_network
 ) >"$fixture/no-ethernet" 2>&1; then
   printf 'Wi-Fi cancellation incorrectly succeeded without Ethernet.\n' >&2
   exit 1
 fi
-grep -q 'Provisioning stopped' "$fixture/no-ethernet"
+grep -q 'No network is available' "$fixture/no-ethernet"
 cat > "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" <<'EOF'
 #!/bin/sh
 printf '%s\n' "${1:-iwd}" >> "$KMOS_WIFI_TEST_STEPS"
@@ -111,18 +110,17 @@ export KMOS_WIFI_TEST_STEPS="$fixture/wifi-steps"
   detect_wifi_adapter() { printf 'wlan0\n'; }
   ethernet_available() { return 1; }
   systemctl() { return 1; }
-  pacman() { return 1; }
-  configure_wifi
-  [[ "$WIFI_WPA_REQUESTED" == 1 && "$WIFI_ADAPTER" == wlan0 ]]
+  bootstrap_network
+  [[ "$WIFI_BOOTSTRAP_IWD" == 1 && "$WIFI_BACKEND" == iwd ]]
 )
 [[ $(cat "$fixture/wifi-steps") == iwd ]]
-# If the package is present, wpa_supplicant is selected without starting iwd.
+# At the end, wpa_supplicant is offered regardless of how updates were reached.
 (
   REPOSITORY_DIR="$fixture/board"
   detect_wifi_adapter() { printf 'wlan0\n'; }
   systemctl() { return 1; }
-  pacman() { [[ "$1" == -Q && "$2" == wpa_supplicant ]]; }
-  configure_wifi
+  pacman() { [[ "$*" == $'-S\n--needed\n--noconfirm\nwpa_supplicant' ]]; }
+  configure_persistent_wifi
   [[ "$WIFI_ADAPTER" == wlan0 && "$WIFI_BACKEND" == wpa ]]
 )
 [[ $(tail -n 1 "$fixture/wifi-steps") == --wpa-fallback ]]
@@ -136,20 +134,37 @@ chmod +x "$fixture/board/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-w
   REPOSITORY_DIR="$fixture/board"
   detect_wifi_adapter() { printf 'wlan0\n'; }
   systemctl() { [[ "$1" == is-enabled && "$3" == wpa_supplicant@wlan0.service ]]; }
-  pacman() { printf 'Unexpected package query.\n' >&2; exit 1; }
-  configure_wifi
+  pacman() { printf 'Unexpected package install.\n' >&2; exit 1; }
+  configure_persistent_wifi
   [[ "$WIFI_BACKEND" == wpa ]]
 )
 [[ $(tail -n 1 "$fixture/wifi-steps") == check ]]
 (
   REPOSITORY_DIR="$fixture/board"
-  WIFI_ADAPTER=wlan0
-  WIFI_WPA_REQUESTED=1
-  pacman() { [[ "$*" == $'-S\n--needed\n--noconfirm\nwpa_supplicant' ]]; }
-  configure_wpa_after_update
-  [[ "$WIFI_BACKEND" == wpa ]]
+  detect_wifi_adapter() { printf 'wlan0\n'; }
+  ethernet_available() { return 1; }
+  systemctl() { [[ "$1" == is-enabled && "$3" == wpa_supplicant@wlan0.service ]]; }
+  bootstrap_network
+  [[ "$WIFI_BACKEND" == wpa && "$WIFI_BOOTSTRAP_IWD" == 0 ]]
 )
-[[ $(tail -n 1 "$fixture/wifi-steps") == --wpa-fallback ]]
+[[ $(tail -n 1 "$fixture/wifi-steps") == check ]]
+(
+  detect_wifi_adapter() { return 1; }
+  pacman() { printf 'Unexpected package install without an adapter.\n' >&2; exit 1; }
+  configure_persistent_wifi
+  [[ -z "$WIFI_BACKEND" ]]
+) 2>"$fixture/no-final-adapter"
+grep -q 'No Wi-Fi adapter found' "$fixture/no-final-adapter"
+(
+  WIFI_BOOTSTRAP_IWD=1
+  WIFI_BACKEND=iwd
+  ethernet_available() { return 1; }
+  ask_yes_no() { [[ "$1" == 'Configure persistent Wi-Fi with wpa_supplicant now?' && "$2" == yes ]] && return 1; exit 1; }
+  systemctl() { [[ "$1" == disable && "$2" == iwd.service ]]; }
+  pacman() { printf 'Unexpected package install.\n' >&2; exit 1; }
+  configure_persistent_wifi
+  [[ "$WIFI_REBOOT_UNSAFE" == 1 && -z "$WIFI_BACKEND" ]]
+)
 (
   find_local_repository() { printf '%s\n' "$fixture/board"; }
   require_root_and_arm() { :; }
@@ -379,11 +394,19 @@ if (
 fi
 grep -q 'Live internet access could not be verified' "$fixture/no-internet"
 
-# Ethernet remains usable when optional Wi-Fi and Syncthing are declined; KDE stays disabled.
+# Ethernet remains usable when final Wi-Fi and Syncthing are declined; KDE stays disabled.
 (
   find_local_repository() { printf '%s\n' "$repo"; }
   require_root_and_arm() { :; }
-  ask_yes_no() { [[ "$1" != 'Configure persistent Wi-Fi now?' && "$1" != 'Enable Syncthing for admin?' ]]; }
+  ask_yes_no() {
+    if [[ "$1" == 'Configure persistent Wi-Fi with wpa_supplicant now?' ]]; then
+      [[ "$2" == yes ]] || exit 1
+      printf 'wifi-choice\n' >> "$fixture/steps"
+      return 1
+    fi
+    [[ "$1" != 'Enable Syncthing for admin?' ]]
+  }
+  ethernet_available() { return 0; }
   PRIMARY_USER='admin'
   pacman() { [[ "$1" == -Q && "$2" == syncthing ]]; }
   initialize_pacman() { :; }
@@ -405,5 +428,11 @@ grep -q 'Live internet access could not be verified' "$fixture/no-internet"
   finish_installation() { printf 'finish\n' >> "$fixture/steps"; }
   main
 )
-[[ $(cat "$fixture/steps") == $'fonts\nterminal\nverify\naur\nnetwork\nfinish' ]]
+[[ $(cat "$fixture/steps") == $'fonts\nterminal\nverify\naur\nwifi-choice\nnetwork\nfinish' ]]
+(
+  WIFI_REBOOT_UNSAFE=1
+  countdown_or_reboot() { printf 'Unexpected reboot countdown.\n' >&2; exit 1; }
+  finish_installation
+) >"$fixture/unsafe-reboot" 2>&1
+grep -q 'Automatic reboot skipped' "$fixture/unsafe-reboot"
 printf 'Quartz provisioner uses local KMOS files and honors skipped packages: OK.\n'

@@ -12,7 +12,8 @@ PRIMARY_USER=""
 HOSTNAME_VALUE=""
 WIFI_ADAPTER=""
 WIFI_BACKEND=""
-WIFI_WPA_REQUESTED=0
+WIFI_BOOTSTRAP_IWD=0
+WIFI_REBOOT_UNSAFE=0
 REMOVE_ALARM_REQUESTED=0
 ALARM_REMOVAL_PENDING=0
 AVAILABLE_PACKAGES=()
@@ -544,47 +545,48 @@ ethernet_available() {
   return 1
 }
 
-configure_wifi() {
-  ask_yes_no 'Configure persistent Wi-Fi now?' yes || { info 'Wi-Fi skipped; continuing with the existing network.'; return 0; }
+bootstrap_network() {
+  # Only bring up temporary Wi-Fi when no Ethernet connection can update ARM.
+  ethernet_available && return 0
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
-  [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter detected. Ethernet remains configured.'; return; }
+  [[ -n "$WIFI_ADAPTER" ]] || die 'No Ethernet connection or Wi-Fi adapter available for package updates.'
   if systemctl is-enabled --quiet "wpa_supplicant@$WIFI_ADAPTER.service"; then
     "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh" --check \
-      || die 'Existing wpa_supplicant setup was not verified; preserving it for manual diagnosis.'
+      || die 'Existing wpa_supplicant connection cannot update packages; inspect it before provisioning.'
     WIFI_BACKEND=wpa
     return 0
   fi
-  if pacman -Q wpa_supplicant >/dev/null 2>&1; then
-    "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --wpa-fallback \
-      || die 'wpa_supplicant Wi-Fi setup failed; inspect the rollback before continuing.'
-    WIFI_BACKEND=wpa
-    return 0
-  fi
-  if ethernet_available; then
-    WIFI_WPA_REQUESTED=1
-    info 'Ethernet is available; install wpa_supplicant after the full update, then configure Wi-Fi.'
-    return 0
-  fi
-  info 'Using iwd temporarily to download the ARM wpa_supplicant package; it will not remain the Wi-Fi manager.'
+  info 'No Ethernet route. Using iwd temporarily for package updates; persistent Wi-Fi is offered at the end.'
   if "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
     WIFI_BACKEND=iwd
-    WIFI_WPA_REQUESTED=1
-    info 'Temporary iwd connection verified; switch to wpa_supplicant after the full update.'
+    WIFI_BOOTSTRAP_IWD=1
+    info 'Temporary iwd connection verified for package updates.'
     return 0
   fi
-  if ethernet_available && ask_yes_no 'Finish installation using Ethernet only?' no; then
-    WIFI_ADAPTER=""
-    warn 'Finishing with Ethernet only. Wi-Fi was NOT verified; run the Wi-Fi helper separately when ready.'
-    return 0
-  fi
-  die 'Wi-Fi setup did not complete. Provisioning stopped without claiming a working Wi-Fi connection.'
+  die 'No network is available for package updates; provisioning stopped.'
 }
 
-configure_wpa_after_update() {
-  ((WIFI_WPA_REQUESTED)) || return 0
-  pacman -S --needed --noconfirm wpa_supplicant
-  "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --wpa-fallback \
-    || die 'wpa_supplicant was not verified; inspect the rollback before rebooting.'
+configure_persistent_wifi() {
+  if ! ask_yes_no 'Configure persistent Wi-Fi with wpa_supplicant now?' yes; then
+    info 'wpa_supplicant setup skipped; existing Wi-Fi configuration was not replaced.'
+    if ((WIFI_BOOTSTRAP_IWD)); then
+      systemctl disable iwd.service || die 'Could not disable the temporary iwd boot service.'
+      warn 'Temporary iwd will not start after reboot. Connect Ethernet or configure persistent Wi-Fi before rebooting.'
+      ethernet_available || WIFI_REBOOT_UNSAFE=1
+    fi
+    WIFI_BACKEND=""
+    return 0
+  fi
+  WIFI_ADAPTER=$(detect_wifi_adapter || true)
+  [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter found; persistent Wi-Fi was not configured.'; return 0; }
+  if systemctl is-enabled --quiet "wpa_supplicant@$WIFI_ADAPTER.service"; then
+    "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh" --check \
+      || die 'Existing wpa_supplicant Wi-Fi could not be verified; it was not overwritten.'
+  else
+    pacman -S --needed --noconfirm wpa_supplicant
+    "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --wpa-fallback \
+      || die 'wpa_supplicant was not verified; inspect the rollback before rebooting.'
+  fi
   WIFI_BACKEND=wpa
   info 'wpa_supplicant is configured for Wi-Fi boot; verify a real reboot before relying on it.'
 }
@@ -822,6 +824,10 @@ finish_installation() {
   printf '\n+-------------------------------------+\n' >&2
   printf '| KMOS headless installation complete |\n' >&2
   printf '+-------------------------------------+\n' >&2
+  if ((WIFI_REBOOT_UNSAFE)); then
+    warn 'Automatic reboot skipped: persistent Wi-Fi was declined and Ethernet is unavailable. Reboot only after arranging a recovery connection.'
+    return 0
+  fi
   if ! { exec {fd}</dev/tty; } 2>/dev/null; then
     warn 'No interactive terminal; automatic reboot skipped. Reboot manually when ready.'
     return 0
@@ -839,9 +845,8 @@ main() {
   fi
   info 'Arch Linux ARM will be updated and configured from this KMOS checkout.'
   ask_yes_no 'Continue with provisioning and the full Arch Linux ARM update?' yes || die 'Cancelled without modifying the system.'
-  configure_wifi
+  bootstrap_network
   initialize_pacman
-  configure_wpa_after_update
   install_kmos_packages "$REPOSITORY_DIR"
   install_kappa_mono_fonts
   configure_kmos_terminal "$REPOSITORY_DIR"
@@ -855,6 +860,7 @@ main() {
   info 'Quartz64 KDE provisioning is disabled until it can be validated on physical hardware.'
   verify_installation
   offer_aur_helper
+  configure_persistent_wifi
   verify_runtime_network
   finish_installation
 }
