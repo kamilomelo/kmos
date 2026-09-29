@@ -28,6 +28,19 @@ if validate_wifi_credentials 'Test Wifi' 'short'; then
   exit 1
 fi
 
+configure_iwd_main "$fixture/iwd-main.conf"
+grep -Fxq 'EnableNetworkConfiguration=false' "$fixture/iwd-main.conf"
+printf '\n[DriverQuirks]\nSaeDisable=brcmfmac\n' >> "$fixture/iwd-main.conf"
+cp "$fixture/iwd-main.conf" "$fixture/iwd-main-before"
+configure_iwd_main "$fixture/iwd-main.conf"
+cmp "$fixture/iwd-main-before" "$fixture/iwd-main.conf"
+printf '[General]\nEnableNetworkConfiguration=true\n' > "$fixture/conflicting-iwd.conf"
+if (configure_iwd_main "$fixture/conflicting-iwd.conf") >"$fixture/iwd-error" 2>&1; then
+  printf 'Accepted conflicting iwd DHCP configuration.\n' >&2
+  exit 1
+fi
+grep -q 'conflicts with networkd' "$fixture/iwd-error"
+
 # Fake ARM repository contents, with no external network or actual card.
 mkdir -p "$fixture/repo"
 

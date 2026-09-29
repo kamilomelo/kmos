@@ -73,24 +73,34 @@ a Wi-Fi default route and internet **over the Wi-Fi adapter**, not Ethernet.
 It does not rescan between the selection and connection (a second scan can
 race with iwd); a scan already in progress still permits reading the current
 network list. The connection command has a 45-second limit so it cannot block
-the helper indefinitely. This change still requires a real board test.
+the helper indefinitely. On a physical board, the saved WPA2 profile for
+`KM-R-WiFi-GST` reconnected promptly after reboot and SSH worked over Wi-Fi.
 This is the same-machine equivalent of copying the working iwd profile from
 the live system into the target: it already lives in persistent `/var/lib/iwd`.
 The helper enables iwd, networkd and resolved for later boots and does not
 write a speculative profile before association. A failed attempt offers retry
 or `CANCEL`; an existing profile is backed up before trying new credentials.
+It preserves an existing compatible `/etc/iwd/main.conf`, including driver
+quirks, instead of erasing them. This protects the board's tested
+`SaeDisable=brcmfmac` WPA2 workaround, but does **not** cure the repeated
+authentication timeouts seen on the Kasa network after reboot. This quirk
+disables SAE on brcmfmac, so WPA3-only networks cannot connect with it.
 Like the x86 helper, `iwctl --passphrase` briefly exposes the passphrase in
 process arguments; do not use it on an untrusted multi-user system. Changing
 an active Wi-Fi connection over SSH is blocked: **use the local console** in
 that case. A successful connection does **not** prove reboot persistence:
-disconnect Ethernet, reboot, then verify the Wi-Fi address, route and internet
-before relying on it. If the adapter or
+keep Ethernet connected for recovery, reboot, then verify the Wi-Fi address,
+route and internet before relying on Wi-Fi-only SSH. If the adapter or
 firmware is missing, the helper stops before installing packages; temporary
 networking or a compatible adapter will be necessary.
 
-The headless provisioner does **not** offer or configure Wi-Fi. To try it
-separately after installing on Ethernet, update your existing KMOS checkout and run
-`./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh` from it.
+The headless provisioner offers optional Wi-Fi setup **before package updates**
+and calls the same helper from the checkout. Decline to continue over Ethernet
+without changing Wi-Fi, or run the standalone helper later from the checkout:
+`./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh`.
+Updating the Git checkout does not update an older SD-card copy at
+`/root/connect-quartz64b-wifi.sh`; use the checkout copy to preserve existing
+iwd settings.
 If the board remains online after a Wi-Fi association error, verify whether
 Ethernet or Wi-Fi carries the connection before rebooting. A Wi-Fi error does
 not require rerunning headless provisioning.
@@ -116,7 +126,7 @@ kernel, so back up the working card before confirming provisioning. The
 Arch Linux ARM `starship` package is required; provisioning stops rather than
 claiming a working prompt if it cannot be installed or rendered.
 
-Headless provisioning installs available ARM CLI packages, asks before
+Headless provisioning first offers Wi-Fi, then installs available ARM CLI packages, asks before
 skipping unavailable packages, installs the four Kappa Mono Nerd Font TTF
 styles from the Kappa Type GitHub repository using `git`, and configures
 terminal presets, hostname, timezone
@@ -158,11 +168,13 @@ the prompt's Nerd glyphs. The provisioner checks that both Starship presets
 render and that a fresh SSH-style Bash selects the icon preset.
 
 After headless verification, the provisioner offers an **optional** AUR helper.
-Choose `yay` or `paru` to build the AUR source as the administrator, never a
-`yay-bin`, `paru-bin`, or x86 binary. It asks before installing board-side build
-dependencies (`base-devel` and `go` for yay, or `base-devel`, `rust`, and
-`cargo` for paru), shows the retrieved PKGBUILD for review, then asks again
-before running `makepkg -si` as the non-root administrator. `makepkg` can ask
+Answer once whether to install one, then select `1) paru` (default) or `2) yay`.
+That choice installs its board-side build dependencies (`base-devel` and `go`
+for yay, or `base-devel`, `rust`, and `cargo` for paru) and builds the AUR
+source as the administrator without further y/N prompts. It never uses
+`yay-bin`, `paru-bin`, or an x86 binary. Choosing a helper also authorizes
+running its third-party PKGBUILD without a separate review prompt; inspect
+the retained checkout afterward if needed. `makepkg` can still ask
 for the administrator's normal sudo authentication for package transactions;
 the installer does not enable passwordless sudo. Builds can be slow and need
 disk space, and AUR packages may not support AArch64. Build checkouts are kept

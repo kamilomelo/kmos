@@ -44,16 +44,18 @@ if (main) > "$fixture/declined-output" 2>&1; then
 fi
 grep -q 'Cancelled without modifying the system' "$fixture/declined-output"
 
-# With consent, the first package stage must use this checkout, not re-clone.
+# With consent, optional Wi-Fi precedes the first package stage, using this checkout.
 (
   ask_yes_no() { return 0; }
-  initialize_pacman() { :; }
+  configure_wifi() { printf 'wifi\n' >> "$fixture/early-steps"; }
+  initialize_pacman() { printf 'pacman\n' >> "$fixture/early-steps"; }
   install_kmos_packages() {
     [[ "$1" == "$repo" ]] || exit 1
     exit 0
   }
   main
 )
+[[ $(cat "$fixture/early-steps") == $'wifi\npacman' ]]
 
 # Even an affirmative Wi-Fi answer is harmless when no adapter is present.
 ask_yes_no() { return 0; }
@@ -82,6 +84,18 @@ if (
   exit 1
 fi
 grep -q 'Provisioning stopped' "$fixture/no-ethernet"
+cat > "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" <<'EOF'
+#!/bin/sh
+printf 'helper\n' >> "$KMOS_WIFI_TEST_STEPS"
+EOF
+(
+  export KMOS_WIFI_TEST_STEPS="$fixture/wifi-steps"
+  REPOSITORY_DIR="$fixture/board"
+  detect_wifi_adapter() { printf 'wlan0\n'; }
+  configure_wifi
+  [[ "$WIFI_ADAPTER" == wlan0 ]]
+)
+[[ $(cat "$fixture/wifi-steps") == helper ]]
 REPOSITORY_DIR=$repo
 
 pacman() {
@@ -202,11 +216,11 @@ if command -v starship >/dev/null 2>&1; then
     >"$fixture/login-output" 2>&1
 fi
 
-# Ethernet remains usable; neither KDE nor Wi-Fi runs during headless provisioning.
+# Ethernet remains usable when optional Wi-Fi is declined; KDE stays disabled.
 (
   find_local_repository() { printf '%s\n' "$repo"; }
   require_root_and_arm() { :; }
-  ask_yes_no() { return 0; }
+  ask_yes_no() { [[ "$1" != 'Configure persistent Wi-Fi now?' ]]; }
   initialize_pacman() { :; }
   install_kmos_packages() { :; }
   install_kappa_mono_fonts() { printf 'fonts\n' >> "$fixture/steps"; }
@@ -220,8 +234,7 @@ fi
   remove_alarm() { :; }
   # shellcheck disable=SC2329 # An invocation here would fail this test.
   offer_kde_desktop() { printf 'KDE ran during headless provisioning.\n' >&2; exit 1; }
-  # shellcheck disable=SC2329 # An invocation here would fail this test.
-  configure_wifi() { printf 'Wi-Fi ran during headless provisioning.\n' >&2; exit 1; }
+  detect_wifi_adapter() { printf 'Wi-Fi adapter detection ran after Wi-Fi was declined.\n' >&2; exit 1; }
   verify_installation() { printf 'verify\n' >> "$fixture/steps"; }
   offer_aur_helper() { printf 'aur\n' >> "$fixture/steps"; }
   finish_installation() { printf 'finish\n' >> "$fixture/steps"; }

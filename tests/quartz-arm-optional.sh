@@ -89,11 +89,27 @@ EOF
 fi
 
 (
-  ask_yes_no() { return 1; }
+  ask_yes_no() { [[ "$2" == yes ]] && return 1; exit 1; }
   # shellcheck disable=SC2329 # An invocation would fail this skip test.
   install_aur_helper() { printf 'Unexpected AUR build.\n' >&2; exit 1; }
   offer_aur_helper
 )
+
+(
+  PRIMARY_USER='admin'
+  # shellcheck disable=SC2329 # Invoked by the sourced menu.
+  ask_yes_no() { [[ "$2" == yes ]] || return 1; printf 'asked\n' >> "$fixture/aur-questions"; }
+  # shellcheck disable=SC2329
+  install_aur_helper() { printf '%s:%s\n' "$1" "$2" >> "$fixture/choices"; }
+  printf '\n' | offer_aur_helper 2>"$fixture/default-menu"
+  printf '3\n2\n' | offer_aur_helper 2>"$fixture/yay-menu"
+)
+[[ $(cat "$fixture/choices") == $'paru:admin\nyay:admin' ]]
+[[ $(wc -l < "$fixture/aur-questions") == 2 ]]
+grep -Fq '1) paru' "$fixture/default-menu"
+grep -Fq '2) yay' "$fixture/default-menu"
+grep -Fq 'AUR helper options' "$fixture/default-menu"
+grep -q 'Invalid selection.' "$fixture/yay-menu"
 
 (
   # No host packages, AUR network request, or real privilege change is made.
@@ -112,9 +128,13 @@ fi
   # shellcheck disable=SC2329
   paru() { [[ "$1" == --version ]]; }
   # shellcheck disable=SC2329
-  ask_yes_no() { return 0; }
+  # shellcheck disable=SC2329 # A post-selection prompt is a regression.
+  ask_yes_no() { printf 'Unexpected follow-up confirmation.\n' >&2; exit 1; }
   # shellcheck disable=SC2329
-  pacman() { printf '%s\n' "$*" >> "$fixture/pacman-log"; }
+  pacman() {
+    [[ "$1" == -S && "$2" == --needed && "$3" == --noconfirm ]] || return 1
+    printf '%s\n' "$*" >> "$fixture/pacman-log"
+  }
   # shellcheck disable=SC2329
   chown() { :; }
   # shellcheck disable=SC2329
@@ -136,6 +156,7 @@ fi
       git "${@:5}"
     else
       [[ "$4" == bash && "$5" == -c ]] || return 1
+      [[ "$6" == *'makepkg -si --noconfirm --needed --cleanbuild'* ]] || return 1
       local target=${!#}
       touch "$fixture/${target##*/}-installed"
     fi

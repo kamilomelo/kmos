@@ -37,7 +37,8 @@ usage() {
 Usage: ./provision-kmos-headless.sh [provision|repair-prompt|fonts|aur|remove-alarm]
 
 Run this script from a complete local KMOS Git checkout on an already booted
-Quartz64. Uses the checkout's package manifests, assets and helper scripts.
+Quartz64. Optionally configures Wi-Fi before package updates with the standalone
+helper. Uses the checkout's package manifests, assets and helper scripts.
 No argument provisions KMOS headless. The other commands repair only the
 prompt, install only Kappa Mono, choose an AUR helper, or remove alarm.
 They do not rerun system provisioning or modify the board's bootloader.
@@ -554,7 +555,7 @@ ethernet_available() {
 
 configure_wifi() {
   local result
-  ask_yes_no 'Configure persistent Wi-Fi now?' no || return
+  ask_yes_no 'Configure persistent Wi-Fi now?' no || { info 'Wi-Fi skipped; continuing with the existing network.'; return 0; }
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
   [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter detected. Ethernet remains configured.'; return; }
   if "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
@@ -699,17 +700,15 @@ install_aur_helper() {
   info "Building $helper from the AUR source PKGBUILD on this AArch64 board (never ${helper}-bin)."
   printf -v summary '%s ' "${dependencies[@]}"
   info "Board build packages required: ${summary% }. Go/Rust builds can take significant disk space and time."
-  ask_yes_no "Install the build packages and stage $helper?" no || { info 'AUR helper skipped; headless installation remains complete.'; return 0; }
-  pacman -S --needed "${dependencies[@]}"
+  pacman -S --needed --noconfirm "${dependencies[@]}"
   work_dir=$(mktemp -d "${TMPDIR:-/var/tmp}/kmos-aur-${helper}.XXXXXXXX") || die 'Could not create a private AUR build directory.'
   chown "$username:$username" "$work_dir"
   info "AUR build checkout: $work_dir/$helper (kept for inspection)."
   runuser -u "$username" -- git clone "https://aur.archlinux.org/$helper.git" "$work_dir/$helper" || die 'AUR clone failed; inspect the retained build directory.'
   info "AUR commit for $helper: $(runuser -u "$username" -- git -C "$work_dir/$helper" rev-parse HEAD)"
-  cat "$work_dir/$helper/PKGBUILD" || die 'Cannot review the AUR PKGBUILD.'
-  ask_yes_no "Review complete: build and install $helper as $username?" no || { info 'Build declined; source checkout kept for review.'; return 0; }
+  [[ -r "$work_dir/$helper/PKGBUILD" ]] || die 'AUR PKGBUILD is missing; refusing to build.'
   # shellcheck disable=SC2016 # The build path expands in the non-root child shell.
-  runuser -u "$username" -- bash -c 'cd -- "$1" && makepkg -si --needed --cleanbuild' _ "$work_dir/$helper" || die "AUR source build failed; inspect $work_dir/$helper. Headless KMOS remains installed."
+  runuser -u "$username" -- bash -c 'cd -- "$1" && makepkg -si --noconfirm --needed --cleanbuild' _ "$work_dir/$helper" || die "AUR source build failed; inspect $work_dir/$helper. Headless KMOS remains installed."
   if ! command -v "$helper" >/dev/null 2>&1 || ! "$helper" --version >/dev/null 2>&1; then
     die "$helper was not runnable after installation."
   fi
@@ -718,13 +717,18 @@ install_aur_helper() {
 
 offer_aur_helper() {
   local choice
-  ask_yes_no 'Install an optional AUR helper from source now?' no || return 0
-  read -r -p 'Choose AUR helper [paru/yay/skip] (skip): ' choice
-  case "${choice:-skip}" in
-    paru|yay) install_aur_helper "$choice" "$PRIMARY_USER" ;;
-    skip) info 'AUR helper skipped.' ;;
-    *) die 'Choose paru, yay, or skip. Headless KMOS remains installed.' ;;
-  esac
+  ask_yes_no 'Install an optional AUR helper from source now?' yes || return 0
+  info 'AUR helper options'
+  info 'Source builds install board packages: paru needs base-devel, rust and cargo; yay needs base-devel and go.'
+  printf '  1) paru\n  2) yay\n' >&2
+  while true; do
+    read -r -p 'Select [1-2] (default: 1): ' choice
+    case "${choice:-1}" in
+      1) install_aur_helper paru "$PRIMARY_USER"; return ;;
+      2) install_aur_helper yay "$PRIMARY_USER"; return ;;
+      *) warn 'Invalid selection.' ;;
+    esac
+  done
 }
 
 verify_installation() {
@@ -797,6 +801,7 @@ main() {
   fi
   info 'Arch Linux ARM will be updated and configured from this KMOS checkout.'
   ask_yes_no 'Continue with provisioning?' no || die 'Cancelled without modifying the system.'
+  configure_wifi
   initialize_pacman
   install_kmos_packages "$REPOSITORY_DIR"
   install_kappa_mono_fonts
@@ -809,7 +814,6 @@ main() {
   configure_syncthing
   remove_alarm
   info 'Quartz64 KDE provisioning is disabled until it can be validated on physical hardware.'
-  info 'Wi-Fi is not configured during headless provisioning; Ethernet remains in use. The Wi-Fi helper is separate.'
   verify_installation
   offer_aur_helper
   finish_installation

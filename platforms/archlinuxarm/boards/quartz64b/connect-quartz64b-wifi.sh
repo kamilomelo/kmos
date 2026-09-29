@@ -97,14 +97,32 @@ scan_wifi_networks() {
   fi
 }
 
-configure_wifi_network() {
-  local adapter=$1
-  # Match the x86 installer's working-iwd handoff: iwd owns association,
-  # networkd owns DHCP, and resolved owns DNS.
-  install -Dm0644 /dev/stdin /etc/iwd/main.conf <<'EOF'
+configure_iwd_main() {
+  local config=${1:-/etc/iwd/main.conf}
+  if [[ -e "$config" || -L "$config" ]]; then
+    [[ -f "$config" && ! -L "$config" ]] || die "Refusing to replace a non-regular iwd configuration: $config"
+    # iwd defaults to false when this key is absent. Preserve driver quirks,
+    # especially the brcmfmac WPA2 compatibility setting validated on Quartz64.
+    if ! awk -F= '/^[[:space:]]*EnableNetworkConfiguration[[:space:]]*=/ {
+      value=$2
+      gsub(/[[:space:]]/, "", value)
+      if (value != "false" && value != "0") exit 1
+    }' "$config"; then
+      die "iwd network configuration conflicts with networkd; inspect $config before continuing."
+    fi
+    info "Preserving existing iwd configuration: $config"
+    return 0
+  fi
+  install -Dm0644 /dev/stdin "$config" <<'EOF'
 [General]
 EnableNetworkConfiguration=false
 EOF
+}
+
+configure_wifi_network() {
+  local adapter=$1
+  # iwd owns association, networkd owns DHCP, and resolved owns DNS.
+  configure_iwd_main
   install -Dm0644 /dev/stdin /etc/systemd/network/25-wifi-dhcp.network <<'EOF'
 [Match]
 Name=wl* wlan*
