@@ -90,6 +90,17 @@ backed up before updating its DHCP/DNS keys; driver quirks are preserved.
 Fresh configs leave SAE/WPA3 enabled; a previously configured
 `SaeDisable=brcmfmac` quirk is preserved, not added automatically. The Kasa
 network still showed authentication timeouts after reboot even with this quirk.
+For an **isolated wpa_supplicant trial** on an already-installed board, connect
+Ethernet and run `./platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh`
+from the board's local console. This is separate from provisioning. If the ARM
+package is missing, it asks before the required full system update (which may
+also update the kernel); if present, it does not update packages. It prompts
+for Wi-Fi credentials locally, stops iwd before enabling wpa_supplicant, and
+checks Wi-Fi-bound connectivity. **Reboot**, then run
+`./platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh --check`.
+The read-only check works without Ethernet and verifies the saved backend,
+association, address, route and Wi-Fi internet. Do not include this trial in
+the normal installer until it has passed a real reboot test on the board.
 If iwd fails and Ethernet is available, the provisioner can offer an optional
 **wpa_supplicant fallback** after the system update. It installs the ARM
 `wpa_supplicant` package, asks for the Wi-Fi SSID and passphrase on the board,
