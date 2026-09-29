@@ -11,6 +11,8 @@ REPOSITORY_DIR=""
 PRIMARY_USER=""
 HOSTNAME_VALUE=""
 WIFI_ADAPTER=""
+WIFI_BACKEND=""
+WIFI_FALLBACK_REQUESTED=0
 REMOVE_ALARM_REQUESTED=0
 ALARM_REMOVAL_PENDING=0
 ALARM_HOME=""
@@ -34,13 +36,14 @@ info() {
 
 usage() {
   cat <<'EOF'
-Usage: ./provision-kmos-headless.sh [provision|repair-prompt|fonts|aur|remove-alarm]
+Usage: ./provision-kmos-headless.sh [provision|repair-prompt|fonts|aur|remove-alarm|wifi-fallback]
 
 Run this script from a complete local KMOS Git checkout on an already booted
 Quartz64. Optionally configures Wi-Fi before package updates with the standalone
 helper. Uses the checkout's package manifests, assets and helper scripts.
 No argument provisions KMOS headless. The other commands repair only the
-prompt, install only Kappa Mono, choose an AUR helper, or remove alarm.
+prompt, install only Kappa Mono, choose an AUR helper, remove alarm, or switch
+Wi-Fi to wpa_supplicant without rerunning provisioning.
 They do not rerun system provisioning or modify the board's bootloader.
 EOF
 }
@@ -543,22 +546,34 @@ ethernet_available() {
 }
 
 configure_wifi() {
-  local result
   ask_yes_no 'Configure persistent Wi-Fi now?' no || { info 'Wi-Fi skipped; continuing with the existing network.'; return 0; }
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
   [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter detected. Ethernet remains configured.'; return; }
   if "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
+    WIFI_BACKEND=iwd
     info 'Wi-Fi works now with a saved profile; verify reconnecting after a real reboot before depending on it.'
     return 0
-  else
-    result=$?
   fi
-  if ((result == 2)) && ethernet_available && ask_yes_no 'Wi-Fi was cancelled. Finish installation using Ethernet only?' no; then
+  if ethernet_available && ask_yes_no 'iwd Wi-Fi was not verified. Try wpa_supplicant after updating over Ethernet?' no; then
+    WIFI_FALLBACK_REQUESTED=1
+    info 'Keeping Ethernet for package updates before the wpa_supplicant fallback.'
+    return 0
+  fi
+  if ethernet_available && ask_yes_no 'Finish installation using Ethernet only?' no; then
     WIFI_ADAPTER=""
     warn 'Finishing with Ethernet only. Wi-Fi was NOT verified; run the Wi-Fi helper separately when ready.'
     return 0
   fi
   die 'Wi-Fi setup did not complete. Provisioning stopped without claiming a working Wi-Fi connection.'
+}
+
+configure_wpa_fallback_after_update() {
+  ((WIFI_FALLBACK_REQUESTED)) || return 0
+  pacman -S --needed --noconfirm wpa_supplicant
+  "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --wpa-fallback \
+    || die 'wpa_supplicant fallback was not verified; Ethernet remains the recovery connection.'
+  WIFI_BACKEND=wpa
+  info 'wpa_supplicant is configured for Wi-Fi boot; verify a real reboot before removing Ethernet.'
 }
 
 disable_active_swapfile() {
@@ -754,9 +769,12 @@ verify_installation() {
       [[ ! -e "$ALARM_HOME" && ! -L "$ALARM_HOME" ]] || die "alarm home still exists: $ALARM_HOME"
     fi
   fi
-  if [[ -n "$WIFI_ADAPTER" ]]; then
+  if [[ "$WIFI_BACKEND" == iwd ]]; then
     systemctl is-enabled iwd.service >/dev/null
     iwctl station "$WIFI_ADAPTER" show || warn 'Could not query Wi-Fi status.'
+  elif [[ "$WIFI_BACKEND" == wpa ]]; then
+    systemctl is-enabled "wpa_supplicant@$WIFI_ADAPTER.service" >/dev/null
+    wpa_cli -i "$WIFI_ADAPTER" status || warn 'Could not query wpa_supplicant status.'
   fi
 }
 
@@ -765,6 +783,10 @@ verify_runtime_network() {
   for service in sshd.service systemd-networkd.service systemd-resolved.service; do
     systemctl is-active --quiet "$service" || die "$service is not active. Fix networking/SSH before rebooting."
   done
+  if [[ "$WIFI_BACKEND" == wpa ]]; then
+    systemctl is-active --quiet "wpa_supplicant@$WIFI_ADAPTER.service" \
+      || die 'wpa_supplicant is not active. Keep Ethernet connected before rebooting.'
+  fi
   [[ -n $(ip -4 route show default) ]] || die 'No IPv4 default route. Fix networking before rebooting.'
   command -v curl >/dev/null 2>&1 || die 'curl is needed to verify live internet access before rebooting.'
   if ! curl --fail --silent --show-error --location --connect-timeout 5 --max-time 15 --output /dev/null https://github.com/; then
@@ -817,6 +839,7 @@ main() {
   ask_yes_no 'Continue with provisioning?' no || die 'Cancelled without modifying the system.'
   configure_wifi
   initialize_pacman
+  configure_wpa_fallback_after_update
   install_kmos_packages "$REPOSITORY_DIR"
   install_kappa_mono_fonts
   configure_kmos_terminal "$REPOSITORY_DIR"
@@ -855,6 +878,16 @@ board_maintenance() {
       install_kappa_mono_fonts
       info 'Kappa Mono is installed on the Quartz64. SSH glyphs depend on the client terminal font.'
       ;;
+    wifi-fallback)
+      if ! pacman -Q wpa_supplicant >/dev/null 2>&1; then
+        warn 'Installing ARM wpa_supplicant needs a full package update and may update the board kernel.'
+        ask_yes_no 'Update Arch Linux ARM and install wpa_supplicant?' no \
+          || die 'Cancelled without changing the Wi-Fi backend.'
+        pacman -Syu --needed --noconfirm wpa_supplicant
+      fi
+      "$repository_dir/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --wpa-fallback
+      info 'wpa_supplicant fallback configured; a real reboot test is still required.'
+      ;;
     aur|remove-alarm)
       PRIMARY_USER=${SUDO_USER:-}
       if [[ -z "$PRIMARY_USER" || "$PRIMARY_USER" == root || "$PRIMARY_USER" == alarm ]]; then
@@ -880,7 +913,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   case "${1:-provision}" in
     -h|--help) usage ;;
     provision) (($# <= 1)) || die 'Unexpected arguments. Run --help for commands.'; main ;;
-    repair-prompt|fonts|aur|remove-alarm)
+    repair-prompt|fonts|aur|remove-alarm|wifi-fallback)
       (($# == 1)) || die 'Unexpected arguments. Run --help for commands.'
       board_maintenance "$1"
       ;;

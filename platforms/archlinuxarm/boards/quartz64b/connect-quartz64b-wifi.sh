@@ -41,7 +41,7 @@ install_offline_wifi() (
 
 usage() {
   cat <<'EOF'
-Usage: ./connect-quartz64b-wifi.sh [--help]
+Usage: ./connect-quartz64b-wifi.sh [--wpa-fallback|--help]
 
 Connect a detected Wi-Fi adapter using iwctl first, then verify internet over
 that adapter and keep the working iwd profile for later boots. If iwd is missing, offer
@@ -52,6 +52,9 @@ Only a real reboot can verify that it reconnects on a later boot. Type CANCEL
 to stop; cancelling never claims Wi-Fi is configured.
 Like the x86 installer, iwd handles association, DHCP and DNS on Wi-Fi.
 Existing iwd driver settings and saved network profiles are preserved.
+--wpa-fallback switches this adapter to wpa_supplicant plus networkd DHCP.
+It requires the ARM wpa_supplicant package installed and must be run from the
+local console or over Ethernet, not over the Wi-Fi connection being switched.
 EOF
 }
 
@@ -149,6 +152,10 @@ EOF
 
 configure_wifi_network() {
   local adapter=$1 iwd_config=${2:-/etc/iwd/main.conf} network_config=${3:-/etc/systemd/network/25-wifi-dhcp.network} legacy migrate=0
+  if systemctl is-active --quiet "wpa_supplicant@$adapter.service" \
+    || systemctl is-enabled --quiet "wpa_supplicant@$adapter.service"; then
+    die "wpa_supplicant@$adapter.service is active or enabled; refusing to start iwd on the same adapter."
+  fi
   # This is the x86 handoff's iwd DHCP/DNS model. networkd keeps Ethernet.
   if [[ -e "$network_config" || -L "$network_config" ]]; then
     [[ -f "$network_config" && ! -L "$network_config" ]] || die "Refusing to replace a non-regular networkd file: $network_config"
@@ -229,6 +236,102 @@ wait_for_wifi() {
   return 1
 }
 
+wpa_connection_ready() {
+  local adapter=$1 ssid=$2 profile=$3 status service
+  [[ -f "$profile" && ! -L "$profile" && $(stat -c %a -- "$profile") == 600 ]] || return 1
+  status=$(wpa_cli -i "$adapter" status) || return 1
+  grep -Fxq 'wpa_state=COMPLETED' <<< "$status" || return 1
+  grep -Fxq "ssid=$ssid" <<< "$status" || return 1
+  for service in "wpa_supplicant@$adapter.service" systemd-networkd.service systemd-resolved.service; do
+    systemctl is-enabled --quiet "$service" || return 1
+    systemctl is-active --quiet "$service" || return 1
+  done
+  ip -4 -o address show dev "$adapter" scope global | grep -q . || return 1
+  ip -4 route show default dev "$adapter" | grep -q . || return 1
+  ping -I "$adapter" -c 3 -W 3 km-robota.com >/dev/null
+}
+
+restore_iwd_after_wpa_failure() {
+  local adapter=$1 profile=$2 network_config=$3
+  if ! systemctl disable --now "wpa_supplicant@$adapter.service" \
+    && systemctl is-active --quiet "wpa_supplicant@$adapter.service"; then
+    info 'Could not stop wpa_supplicant; iwd will NOT be started alongside it.'
+    return 1
+  fi
+  rm -f -- "$profile" "$network_config" || return 1
+  networkctl reload || return 1
+  networkctl reconfigure "$adapter" || return 1
+  systemctl enable --now iwd.service
+}
+
+configure_wpa_fallback() {
+  local adapter=$1 ssid=$2 passphrase=$3
+  local profile=${4:-/etc/wpa_supplicant/wpa_supplicant-$adapter.conf}
+  local network_config=${5:-/etc/systemd/network/25-wifi-dhcp.network} attempt
+  [[ ! -e "$profile" && ! -L "$profile" && ! -e "$network_config" && ! -L "$network_config" ]] \
+    || die 'Existing wpa_supplicant or Wi-Fi networkd configuration needs manual review; refusing to overwrite it.'
+  # wpa_passphrase reads from stdin; remove its plaintext #psk comment.
+  if ! printf '%s\n' "$passphrase" | wpa_passphrase "$ssid" | sed '/^[[:space:]]*#psk=/d' \
+    | install -Dm0600 /dev/stdin "$profile"; then
+    rm -f -- "$profile"
+    die 'Could not create the fallback Wi-Fi profile.'
+  fi
+  if ! install -Dm0644 /dev/stdin "$network_config" <<'EOF'
+[Match]
+Name=wl* wlan*
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+
+[DHCPv4]
+RouteMetric=600
+EOF
+  then
+    rm -f -- "$profile" "$network_config"
+    die 'Could not write the fallback networkd configuration.'
+  fi
+  if ! systemctl disable --now iwd.service; then
+    restore_iwd_after_wpa_failure "$adapter" "$profile" "$network_config" \
+      || die 'Fallback rollback failed; inspect wpa_supplicant and iwd before rebooting.'
+    die 'Could not stop iwd; refusing to run two Wi-Fi managers.'
+  fi
+  if ! systemctl enable --now systemd-networkd.service systemd-resolved.service \
+    || ! networkctl reload \
+    || ! networkctl reconfigure "$adapter" \
+    || ! systemctl enable --now "wpa_supplicant@$adapter.service"; then
+    restore_iwd_after_wpa_failure "$adapter" "$profile" "$network_config" \
+      || die 'Fallback rollback failed; inspect wpa_supplicant and iwd before rebooting.'
+    die 'Could not start the wpa_supplicant fallback; iwd restoration was attempted.'
+  fi
+  for ((attempt=0; attempt<12; attempt++)); do
+    if wpa_connection_ready "$adapter" "$ssid" "$profile"; then
+      info 'wpa_supplicant association, DHCP, route and Wi-Fi internet verified. A real reboot test is still required.'
+      return 0
+    fi
+    sleep 2
+  done
+  restore_iwd_after_wpa_failure "$adapter" "$profile" "$network_config" \
+    || die 'Fallback rollback failed; inspect wpa_supplicant and iwd before rebooting.'
+  die 'wpa_supplicant fallback was not verified; iwd restoration was attempted. Keep Ethernet connected.'
+}
+
+run_wpa_fallback() {
+  local adapter=$1 ssid passphrase
+  if ! command -v wpa_passphrase >/dev/null 2>&1 || ! command -v wpa_cli >/dev/null 2>&1; then
+    die 'wpa_supplicant is not installed. Use the provisioner with Ethernet to install the ARM package first.'
+  fi
+  if [[ -n "${SSH_CONNECTION:-}" ]] && ip -4 -o address show dev "$adapter" scope global | grep -q .; then
+    die 'Wi-Fi has an IP address during SSH. Use the local console to switch Wi-Fi managers safely.'
+  fi
+  read -r -p 'Fallback Wi-Fi SSID: ' ssid || return 2
+  read -r -s -p 'Fallback Wi-Fi passphrase: ' passphrase || return 2
+  printf '\n' >&2
+  validate_wifi_credentials "$ssid" "$passphrase" || die 'Invalid SSID or WPA passphrase.'
+  configure_wpa_fallback "$adapter" "$ssid" "$passphrase"
+  unset passphrase
+}
+
 connect_wifi_with_retries() {
   local adapter=$1 state_dir=$2 ssid passphrase hidden answer command profile backup_dir result
   while true; do
@@ -301,13 +404,14 @@ connect_wifi_with_retries() {
 }
 
 main() {
-  local adapter ssid answer
+  local adapter ssid answer fallback=0
   case "${1:-}" in
     -h|--help) usage; return ;;
+    --wpa-fallback) fallback=1 ;;
     '') ;;
     *) die "Unknown argument: $1" ;;
   esac
-  (($# == 0)) || die 'Unexpected arguments.'
+  (($# == 0 || ($# == 1 && fallback == 1))) || die 'Unexpected arguments.'
   [[ $(uname -m) == aarch64 ]] || die 'This helper is for AArch64 boards.'
   if ((EUID != 0)); then
     command -v sudo >/dev/null 2>&1 || die 'Root access is required, but sudo is unavailable.'
@@ -316,6 +420,10 @@ main() {
   fi
   adapter=$(detect_wifi_adapter) || die 'No wireless interface found. Check your adapter and its firmware.'
   info "Detected Wi-Fi interface: $adapter"
+  if ((fallback)); then
+    run_wpa_fallback "$adapter"
+    return
+  fi
   if command -v rfkill >/dev/null 2>&1; then
     rfkill unblock wifi || die 'Could not unblock the wireless adapter.'
   fi

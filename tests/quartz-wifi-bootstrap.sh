@@ -53,6 +53,7 @@ grep -Fxq 'SaeDisable=brcmfmac' "$fixture/legacy-iwd.conf"
   # Offline installation can start iwd before its Wi-Fi DHCP settings exist.
   connected_wifi_ssid() { :; }
   systemctl() {
+    [[ "${3:-}" != wpa_supplicant@wlan0.service ]] || return 1
     if [[ "$1" == is-active ]]; then return 0; fi
     if [[ "$1" == restart ]]; then
       grep -Fxq 'NameResolvingService=systemd' "$fixture/first-run-iwd.conf" || return 1
@@ -67,7 +68,7 @@ grep -qx 'enable:iwd.service' "$fixture/wifi-services"
 [[ ! -e "$fixture/first-run-network.conf" ]]
 cp "$fixture/first-run-iwd.conf" "$fixture/first-run-iwd-before"
 (
-  systemctl() { :; }
+  systemctl() { [[ "${3:-}" != wpa_supplicant@wlan0.service ]]; }
   networkctl() { :; }
   configure_wifi_network wlan0 "$fixture/first-run-iwd.conf" "$fixture/first-run-network.conf"
 )
@@ -75,6 +76,7 @@ cmp "$fixture/first-run-iwd-before" "$fixture/first-run-iwd.conf"
 (
   connected_wifi_ssid() { printf 'Current Wifi\n'; }
   systemctl() {
+    [[ "${3:-}" != wpa_supplicant@wlan0.service ]] || return 1
     [[ "$1" != restart ]] || { printf 'Active Wi-Fi was interrupted.\n' >&2; exit 1; }
     return 0
   }
@@ -102,7 +104,7 @@ EOF
 (
   SSH_CONNECTION=''
   connected_wifi_ssid() { :; }
-  systemctl() { return 0; }
+  systemctl() { [[ "${3:-}" != wpa_supplicant@wlan0.service ]]; }
   networkctl() { [[ "$1" == reload || "$1" == reconfigure ]]; }
   configure_wifi_network wlan0 "$fixture/migrated-iwd.conf" "$fixture/old-wifi.network"
 )
@@ -113,6 +115,7 @@ cp "$fixture/old-wifi.network.kmos-networkd-backup" "$fixture/active-wifi.networ
   SSH_CONNECTION=''
   connected_wifi_ssid() { printf 'Current Wifi\n'; }
   systemctl() {
+    [[ "${3:-}" != wpa_supplicant@wlan0.service ]] || return 1
     [[ "$1" != restart ]] || touch "$fixture/migration-restarted-iwd"
     return 0
   }
@@ -122,6 +125,7 @@ cp "$fixture/old-wifi.network.kmos-networkd-backup" "$fixture/active-wifi.networ
 [[ -f "$fixture/migration-restarted-iwd" ]]
 printf '[Match]\nName=wl*\n[Network]\nDHCP=yes\n' > "$fixture/custom-wifi.network"
 if (
+  systemctl() { return 1; }
   configure_wifi_network wlan0 "$fixture/must-not-exist.conf" "$fixture/custom-wifi.network"
 ) >"$fixture/networkd-error" 2>&1; then
   printf 'Custom networkd Wi-Fi configuration was overwritten.\n' >&2
@@ -132,6 +136,7 @@ grep -q 'Custom Wi-Fi networkd settings' "$fixture/networkd-error"
 cp "$fixture/old-wifi.network.kmos-networkd-backup" "$fixture/ssh-wifi.network"
 if (
   SSH_CONNECTION='192.0.2.1 12345 192.0.2.2 22'
+  systemctl() { return 1; }
   connected_wifi_ssid() { printf 'Current Wifi\n'; }
   configure_wifi_network wlan0 "$fixture/ssh-iwd.conf" "$fixture/ssh-wifi.network"
 ) >"$fixture/ssh-error" 2>&1; then
@@ -140,6 +145,104 @@ if (
 fi
 [[ -f "$fixture/ssh-wifi.network" && ! -e "$fixture/ssh-iwd.conf" ]]
 grep -q 'may drop SSH' "$fixture/ssh-error"
+if (
+  systemctl() { [[ "$1" == is-enabled && "$3" == wpa_supplicant@wlan0.service ]]; }
+  configure_wifi_network wlan0 "$fixture/dual-manager-iwd.conf" "$fixture/dual-manager.network"
+) >"$fixture/dual-manager-error" 2>&1; then
+  printf 'iwd was started alongside wpa_supplicant.\n' >&2
+  exit 1
+fi
+[[ ! -e "$fixture/dual-manager-iwd.conf" ]]
+grep -q 'refusing to start iwd' "$fixture/dual-manager-error"
+
+# Optional wpa_supplicant backend is exclusive with iwd and has a rollback.
+(
+  wpa_passphrase() {
+    [[ "$1" == 'Fallback Wifi' ]] || return 1
+    read -r secret
+    [[ "$secret" == 'correct password' ]] || return 1
+    printf 'network={\n\tssid="Fallback Wifi"\n\t#psk="%s"\n\tpsk=0123456789abcdef\n}\n' "$secret"
+  }
+  wpa_cli() { [[ "$1" == -i && "$2" == wlan0 && "$3" == status ]] && printf 'wpa_state=COMPLETED\nssid=Fallback Wifi\n'; }
+  systemctl() {
+    printf '%s:%s\n' "$1" "${!#}" >> "$fixture/wpa-services"
+    return 0
+  }
+  networkctl() { :; }
+  ip() {
+    if [[ "$1" == -4 && "$2" == -o ]]; then printf 'wlan0 192.0.2.10\n';
+    else printf 'default via 192.0.2.1 dev wlan0\n'; fi
+  }
+  ping() { [[ "$1" == -I && "$2" == wlan0 ]]; }
+  configure_wpa_fallback wlan0 'Fallback Wifi' 'correct password' \
+    "$fixture/wpa-working.conf" "$fixture/wpa-working.network"
+)
+[[ $(stat -c %a "$fixture/wpa-working.conf") == 600 ]]
+grep -Fxq $'\tpsk=0123456789abcdef' "$fixture/wpa-working.conf"
+if grep -q 'correct password' "$fixture/wpa-working.conf"; then
+  printf 'Fallback leaked plaintext credentials.\n' >&2
+  exit 1
+fi
+grep -qx 'disable:iwd.service' "$fixture/wpa-services"
+grep -qx 'enable:wpa_supplicant@wlan0.service' "$fixture/wpa-services"
+if (
+  wpa_passphrase() { printf 'network={\n\tssid="Fallback Wifi"\n\tpsk=0123456789abcdef\n}\n'; }
+  systemctl() {
+    printf '%s:%s\n' "$1" "${!#}" >> "$fixture/wpa-rollback-services"
+    [[ "$1" != enable || "${!#}" != wpa_supplicant@wlan0.service ]]
+  }
+  networkctl() { :; }
+  configure_wpa_fallback wlan0 'Fallback Wifi' 'correct password' \
+    "$fixture/wpa-failed.conf" "$fixture/wpa-failed.network"
+) >"$fixture/wpa-failure" 2>&1; then
+  printf 'Failed wpa_supplicant service was accepted.\n' >&2
+  exit 1
+fi
+[[ ! -e "$fixture/wpa-failed.conf" && ! -e "$fixture/wpa-failed.network" ]]
+grep -qx 'enable:iwd.service' "$fixture/wpa-rollback-services"
+grep -q 'restoration was attempted' "$fixture/wpa-failure"
+if (configure_wpa_fallback wlan0 'Fallback Wifi' 'correct password' \
+  "$fixture/wpa-working.conf" "$fixture/wpa-working.network") >"$fixture/wpa-existing-error" 2>&1; then
+  printf 'Existing fallback profile was overwritten.\n' >&2
+  exit 1
+fi
+grep -q 'refusing to overwrite' "$fixture/wpa-existing-error"
+if (
+  wpa_passphrase() { printf 'network={\n\tssid="Fallback Wifi"\n\tpsk=0123456789abcdef\n}\n'; }
+  systemctl() {
+    printf '%s:%s\n' "$1" "${!#}" >> "$fixture/wpa-stop-services"
+    [[ "$1" != disable || "${!#}" != iwd.service ]]
+  }
+  networkctl() { :; }
+  configure_wpa_fallback wlan0 'Fallback Wifi' 'correct password' \
+    "$fixture/wpa-stop-failed.conf" "$fixture/wpa-stop-failed.network"
+) >"$fixture/wpa-stop-error" 2>&1; then
+  printf 'Fallback started without stopping iwd.\n' >&2
+  exit 1
+fi
+[[ ! -e "$fixture/wpa-stop-failed.conf" && ! -e "$fixture/wpa-stop-failed.network" ]]
+grep -qx 'enable:iwd.service' "$fixture/wpa-stop-services"
+grep -q 'refusing to run two Wi-Fi managers' "$fixture/wpa-stop-error"
+if (
+  wpa_passphrase() { printf 'network={\n\tssid="Fallback Wifi"\n\tpsk=0123456789abcdef\n}\n'; }
+  systemctl() {
+    if [[ "$1" == enable && "${!#}" == iwd.service ]]; then
+      touch "$fixture/wpa-dual-manager"
+      return 1
+    fi
+    if [[ "$1" == disable && "${!#}" == wpa_supplicant@wlan0.service ]]; then return 1; fi
+    if [[ "$1" == is-active && "${!#}" == wpa_supplicant@wlan0.service ]]; then return 0; fi
+    [[ "$1" != enable || "${!#}" != wpa_supplicant@wlan0.service ]]
+  }
+  networkctl() { :; }
+  configure_wpa_fallback wlan0 'Fallback Wifi' 'correct password' \
+    "$fixture/wpa-rollback-incomplete.conf" "$fixture/wpa-rollback-incomplete.network"
+) >"$fixture/wpa-rollback-incomplete" 2>&1; then
+  printf 'An incomplete Wi-Fi backend rollback was accepted.\n' >&2
+  exit 1
+fi
+[[ ! -e "$fixture/wpa-dual-manager" ]]
+grep -q 'iwd will NOT be started alongside it' "$fixture/wpa-rollback-incomplete"
 
 # Fake ARM repository contents, with no external network or actual card.
 mkdir -p "$fixture/repo"

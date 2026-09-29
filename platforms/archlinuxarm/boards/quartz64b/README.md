@@ -90,6 +90,24 @@ backed up before updating its DHCP/DNS keys; driver quirks are preserved.
 Fresh configs leave SAE/WPA3 enabled; a previously configured
 `SaeDisable=brcmfmac` quirk is preserved, not added automatically. The Kasa
 network still showed authentication timeouts after reboot even with this quirk.
+If iwd fails and Ethernet is available, the provisioner can offer an optional
+**wpa_supplicant fallback** after the system update. It installs the ARM
+`wpa_supplicant` package, asks for the Wi-Fi SSID and passphrase on the board,
+stops/disables iwd, and uses wpa_supplicant for association with networkd for
+Wi-Fi DHCP and resolved for DNS. These backends never run together on Wi-Fi.
+The generated fallback profile contains a PSK, not a plaintext passphrase, and
+has mode `600`. If association, DHCP, route, or Wi-Fi-bound internet cannot be
+verified, the helper removes its new fallback files and attempts to restore
+iwd. The existing iwd profiles remain untouched. A real reboot test is still
+required to verify either backend reconnects. Without Ethernet, the fallback
+package cannot be installed during this provisioning step; keep the working
+network or configure it later. To select the fallback manually after the ARM
+package is available, run `./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh --wpa-fallback`
+from a local console or Ethernet connection, not over Wi-Fi SSH.
+On an already-provisioned board with Ethernet recovery, run
+`./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh wifi-fallback`
+to install the ARM package if necessary and switch without repeating the full
+installation. Confirm the update before proceeding if the package is missing.
 Like the x86 helper, `iwctl --passphrase` briefly exposes the passphrase in
 process arguments; do not use it on an untrusted multi-user system. Changing
 an active Wi-Fi connection over SSH is blocked: **use the local console** in

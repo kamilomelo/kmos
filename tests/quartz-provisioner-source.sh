@@ -75,8 +75,16 @@ chmod +x "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz6
   REPOSITORY_DIR="$fixture/board"
   detect_wifi_adapter() { printf 'wlan0\n'; }
   ethernet_available() { return 0; }
+  ask_yes_no() { [[ "$1" != 'iwd Wi-Fi was not verified. Try wpa_supplicant after updating over Ethernet?' ]]; }
   configure_wifi
   [[ -z "$WIFI_ADAPTER" ]]
+)
+(
+  REPOSITORY_DIR="$fixture/board"
+  detect_wifi_adapter() { printf 'wlan0\n'; }
+  ethernet_available() { return 0; }
+  configure_wifi
+  [[ "$WIFI_FALLBACK_REQUESTED" == 1 && "$WIFI_ADAPTER" == wlan0 ]]
 )
 if (
   REPOSITORY_DIR="$fixture/board"
@@ -90,16 +98,38 @@ fi
 grep -q 'Provisioning stopped' "$fixture/no-ethernet"
 cat > "$fixture/board/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" <<'EOF'
 #!/bin/sh
-printf 'helper\n' >> "$KMOS_WIFI_TEST_STEPS"
+printf '%s\n' "${1:-iwd}" >> "$KMOS_WIFI_TEST_STEPS"
 EOF
+export KMOS_WIFI_TEST_STEPS="$fixture/wifi-steps"
 (
-  export KMOS_WIFI_TEST_STEPS="$fixture/wifi-steps"
   REPOSITORY_DIR="$fixture/board"
   detect_wifi_adapter() { printf 'wlan0\n'; }
   configure_wifi
   [[ "$WIFI_ADAPTER" == wlan0 ]]
 )
-[[ $(cat "$fixture/wifi-steps") == helper ]]
+[[ $(cat "$fixture/wifi-steps") == iwd ]]
+(
+  REPOSITORY_DIR="$fixture/board"
+  WIFI_ADAPTER=wlan0
+  WIFI_FALLBACK_REQUESTED=1
+  pacman() { [[ "$*" == $'-S\n--needed\n--noconfirm\nwpa_supplicant' ]]; }
+  configure_wpa_fallback_after_update
+  [[ "$WIFI_BACKEND" == wpa ]]
+)
+[[ $(tail -n 1 "$fixture/wifi-steps") == --wpa-fallback ]]
+(
+  find_local_repository() { printf '%s\n' "$fixture/board"; }
+  require_root_and_arm() { :; }
+  pacman() {
+    [[ "$1" != -Q ]] || return 1
+    printf '%s\n' "$*" >> "$fixture/wpa-maintenance-packages"
+  }
+  ask_yes_no() { return 0; }
+  board_maintenance wifi-fallback
+)
+grep -q -- '-Syu' "$fixture/wpa-maintenance-packages"
+grep -q 'wpa_supplicant' "$fixture/wpa-maintenance-packages"
+[[ $(tail -n 1 "$fixture/wifi-steps") == --wpa-fallback ]]
 REPOSITORY_DIR=$repo
 
 pacman() {
