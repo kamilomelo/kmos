@@ -677,9 +677,12 @@ remove_alarm() {
 }
 
 configure_syncthing() {
-  pacman -Q syncthing >/dev/null 2>&1 || { warn 'Syncthing is not installed; its service will be skipped.'; return; }
-  ask_yes_no "Enable Syncthing for $PRIMARY_USER?" no || return
-  systemctl enable --now "syncthing@$PRIMARY_USER.service"
+  pacman -Q syncthing >/dev/null 2>&1 || { warn 'Syncthing is not installed; its service will be skipped.'; return 0; }
+  ask_yes_no "Enable Syncthing for $PRIMARY_USER?" no || { info 'Syncthing skipped; continuing installation.'; return 0; }
+  if ! systemctl enable --now "syncthing@$PRIMARY_USER.service"; then
+    warn "Could not enable or start syncthing@$PRIMARY_USER.service; continuing installation. Check: systemctl status syncthing@$PRIMARY_USER.service"
+  fi
+  return 0
 }
 
 install_aur_helper() {

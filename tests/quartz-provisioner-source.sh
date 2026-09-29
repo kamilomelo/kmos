@@ -216,11 +216,37 @@ if command -v starship >/dev/null 2>&1; then
     >"$fixture/login-output" 2>&1
 fi
 
-# Ethernet remains usable when optional Wi-Fi is declined; KDE stays disabled.
+# Both Syncthing answers must allow provisioning to reach verification/finish.
+(
+  PRIMARY_USER='admin'
+  pacman() { [[ "$1" == -Q && "$2" == syncthing ]]; }
+  ask_yes_no() { return 1; }
+  systemctl() { printf 'Syncthing was enabled despite being declined.\n' >&2; exit 1; }
+  configure_syncthing
+  printf 'continued\n' > "$fixture/syncthing-declined"
+)
+grep -qx continued "$fixture/syncthing-declined"
+(
+  PRIMARY_USER='admin'
+  pacman() { [[ "$1" == -Q && "$2" == syncthing ]]; }
+  ask_yes_no() { return 0; }
+  systemctl() {
+    [[ "$1" == enable && "$2" == --now && "$3" == syncthing@admin.service ]]
+    return 1
+  }
+  configure_syncthing
+  printf 'continued\n' > "$fixture/syncthing-failed"
+) 2>"$fixture/syncthing-warning"
+grep -qx continued "$fixture/syncthing-failed"
+grep -q 'continuing installation' "$fixture/syncthing-warning"
+
+# Ethernet remains usable when optional Wi-Fi and Syncthing are declined; KDE stays disabled.
 (
   find_local_repository() { printf '%s\n' "$repo"; }
   require_root_and_arm() { :; }
-  ask_yes_no() { [[ "$1" != 'Configure persistent Wi-Fi now?' ]]; }
+  ask_yes_no() { [[ "$1" != 'Configure persistent Wi-Fi now?' && "$1" != 'Enable Syncthing for admin?' ]]; }
+  PRIMARY_USER='admin'
+  pacman() { [[ "$1" == -Q && "$2" == syncthing ]]; }
   initialize_pacman() { :; }
   install_kmos_packages() { :; }
   install_kappa_mono_fonts() { printf 'fonts\n' >> "$fixture/steps"; }
@@ -230,7 +256,6 @@ fi
   configure_ssh() { :; }
   configure_networkd() { :; }
   configure_swap() { :; }
-  configure_syncthing() { :; }
   remove_alarm() { :; }
   # shellcheck disable=SC2329 # An invocation here would fail this test.
   offer_kde_desktop() { printf 'KDE ran during headless provisioning.\n' >&2; exit 1; }
