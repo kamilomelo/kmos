@@ -77,20 +77,19 @@ the helper indefinitely. On a physical board, the saved WPA2 profile for
 `KM-R-WiFi-GST` reconnected promptly after reboot and SSH worked over Wi-Fi.
 This is the same-machine equivalent of copying the working iwd profile from
 the live system into the target: it already lives in persistent `/var/lib/iwd`.
-The helper enables iwd, networkd and resolved for later boots and does not
+The helper enables iwd and resolved for later boots and does not
 write a speculative profile before association. A failed attempt offers retry
 or `CANCEL`; an existing profile is backed up before trying new credentials.
-It preserves an existing compatible `/etc/iwd/main.conf`, including driver
-quirks, instead of erasing them. On a fresh iwd config with the detected
-`brcmfmac` driver, it writes the board-tested `SaeDisable=brcmfmac` WPA2
-workaround **before starting/restarting iwd**; a new config also survives
-reboot. It does not add that quirk to an existing config automatically.
-This quirk disables SAE on brcmfmac, so WPA3-only networks cannot connect
-with it. If your network is WPA3-only, use `--allow-sae` with the checkout's
-standalone Wi-Fi helper on a **new** iwd config (and decline the provisioner's
-Wi-Fi prompt); it will not overwrite an existing quirk. SAE has not been
-validated on this board. None of this cures the repeated authentication
-timeouts seen on Kasa after reboot, even with the manual quirk in place.
+Like the x86 live-to-installed handoff, iwd owns Wi-Fi association, DHCP and
+DNS (through systemd-resolved). On Quartz64 no profile copy is needed: iwd
+creates it directly in the installed system's persistent `/var/lib/iwd`.
+Networkd remains enabled for Ethernet only. The helper backs up and removes
+KMOS's older Wi-Fi networkd file when switching an existing installation; it
+refuses to overwrite a custom networkd Wi-Fi file. An existing iwd config is
+backed up before updating its DHCP/DNS keys; driver quirks are preserved.
+Fresh configs leave SAE/WPA3 enabled; a previously configured
+`SaeDisable=brcmfmac` quirk is preserved, not added automatically. The Kasa
+network still showed authentication timeouts after reboot even with this quirk.
 Like the x86 helper, `iwctl --passphrase` briefly exposes the passphrase in
 process arguments; do not use it on an untrusted multi-user system. Changing
 an active Wi-Fi connection over SSH is blocked: **use the local console** in

@@ -7,6 +7,10 @@ repo=$(git rev-parse --show-toplevel)
 source "$repo/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh"
 
 [[ $(find_local_repository) == "$repo" ]]
+if grep -q 'cat > /etc/systemd/network/25-wifi-dhcp.network' "$repo/platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh"; then
+  printf 'Provisioning reintroduced competing networkd Wi-Fi DHCP.\n' >&2
+  exit 1
+fi
 if LC_ALL=C grep -q '[^ -~]' "$repo/platforms/archlinuxarm/boards/quartz64b/assets/starship-headless.toml"; then
   printf 'Quartz64 headless Starship preset contains non-ASCII glyphs.\n' >&2
   exit 1

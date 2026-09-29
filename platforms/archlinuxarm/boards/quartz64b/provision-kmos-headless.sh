@@ -519,17 +519,6 @@ IPv6AcceptRA=yes
 [DHCPv4]
 RouteMetric=100
 EOF
-  cat > /etc/systemd/network/25-wifi-dhcp.network <<'EOF'
-[Match]
-Name=wl* wlan*
-
-[Network]
-DHCP=yes
-IPv6AcceptRA=yes
-
-[DHCPv4]
-RouteMetric=600
-EOF
   ln -sfn /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
   systemctl enable systemd-networkd.service systemd-resolved.service
 }

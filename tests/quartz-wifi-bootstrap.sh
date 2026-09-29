@@ -29,32 +29,33 @@ if validate_wifi_credentials 'Test Wifi' 'short'; then
 fi
 
 configure_iwd_main "$fixture/iwd-main.conf"
-grep -Fxq 'EnableNetworkConfiguration=false' "$fixture/iwd-main.conf"
-[[ "$IWD_CONFIG_CREATED" == 1 ]]
+grep -Fxq 'EnableNetworkConfiguration=true' "$fixture/iwd-main.conf"
+grep -Fxq 'NameResolvingService=systemd' "$fixture/iwd-main.conf"
+[[ "$IWD_CONFIG_CHANGED" == 1 ]]
 printf '\n[DriverQuirks]\nSaeDisable=brcmfmac\n' >> "$fixture/iwd-main.conf"
 cp "$fixture/iwd-main.conf" "$fixture/iwd-main-before"
-configure_iwd_main "$fixture/iwd-main.conf" brcmfmac
+configure_iwd_main "$fixture/iwd-main.conf"
 cmp "$fixture/iwd-main-before" "$fixture/iwd-main.conf"
-[[ "$IWD_CONFIG_CREATED" == 0 ]]
-configure_iwd_main "$fixture/new-brcmfmac.conf" brcmfmac
-grep -Fxq 'SaeDisable=brcmfmac' "$fixture/new-brcmfmac.conf"
-configure_iwd_main "$fixture/new-generic.conf" other-driver
-if grep -q '^SaeDisable=' "$fixture/new-generic.conf"; then
-  printf 'A non-brcmfmac interface had SAE disabled.\n' >&2
+[[ "$IWD_CONFIG_CHANGED" == 0 ]]
+configure_iwd_main "$fixture/new-iwd.conf"
+if grep -q '^SaeDisable=' "$fixture/new-iwd.conf"; then
+  printf 'Fresh iwd config disabled WPA3 by default.\n' >&2
   exit 1
 fi
-mkdir -p "$fixture/drivers/brcmfmac" "$fixture/devices"
-ln -s "$fixture/drivers/brcmfmac" "$fixture/devices/driver"
-[[ $(wifi_driver wlan0 "$fixture/devices/driver") == brcmfmac ]]
+printf '[General]\nEnableNetworkConfiguration=false\n\n[DriverQuirks]\nSaeDisable=brcmfmac\n' > "$fixture/legacy-iwd.conf"
+configure_iwd_main "$fixture/legacy-iwd.conf"
+grep -Fxq 'EnableNetworkConfiguration=true' "$fixture/legacy-iwd.conf"
+grep -Fxq 'NameResolvingService=systemd' "$fixture/legacy-iwd.conf"
+grep -Fxq 'SaeDisable=brcmfmac' "$fixture/legacy-iwd.conf"
+[[ "$IWD_CONFIG_CHANGED" == 1 ]]
+[[ -f $(find "$fixture" -maxdepth 1 -name 'legacy-iwd.conf.before-kmos.*' -print -quit) ]]
 (
-  # The offline iwd installer starts the daemon before the helper configures it.
-  # A newly written quirk must be in place when that daemon is restarted.
-  wifi_driver() { printf 'brcmfmac\n'; }
+  # Offline installation can start iwd before its Wi-Fi DHCP settings exist.
   connected_wifi_ssid() { :; }
   systemctl() {
     if [[ "$1" == is-active ]]; then return 0; fi
     if [[ "$1" == restart ]]; then
-      grep -Fxq 'SaeDisable=brcmfmac' "$fixture/first-run-iwd.conf" || return 1
+      grep -Fxq 'NameResolvingService=systemd' "$fixture/first-run-iwd.conf" || return 1
     fi
     printf '%s:%s\n' "$1" "${@: -1}" >> "$fixture/wifi-services"
   }
@@ -63,17 +64,15 @@ ln -s "$fixture/drivers/brcmfmac" "$fixture/devices/driver"
 )
 grep -qx 'restart:iwd.service' "$fixture/wifi-services"
 grep -qx 'enable:iwd.service' "$fixture/wifi-services"
-[[ -s "$fixture/first-run-network.conf" ]]
+[[ ! -e "$fixture/first-run-network.conf" ]]
 cp "$fixture/first-run-iwd.conf" "$fixture/first-run-iwd-before"
 (
-  wifi_driver() { printf 'brcmfmac\n'; }
   systemctl() { :; }
   networkctl() { :; }
   configure_wifi_network wlan0 "$fixture/first-run-iwd.conf" "$fixture/first-run-network.conf"
 )
 cmp "$fixture/first-run-iwd-before" "$fixture/first-run-iwd.conf"
 (
-  wifi_driver() { printf 'brcmfmac\n'; }
   connected_wifi_ssid() { printf 'Current Wifi\n'; }
   systemctl() {
     [[ "$1" != restart ]] || { printf 'Active Wi-Fi was interrupted.\n' >&2; exit 1; }
@@ -82,33 +81,65 @@ cmp "$fixture/first-run-iwd-before" "$fixture/first-run-iwd.conf"
   networkctl() { :; }
   configure_wifi_network wlan0 "$fixture/connected-iwd.conf" "$fixture/connected-network.conf"
 )
-grep -Fxq 'SaeDisable=brcmfmac' "$fixture/connected-iwd.conf"
-(
-  ALLOW_SAE=1
-  wifi_driver() { printf 'brcmfmac\n'; }
-  systemctl() { :; }
-  networkctl() { :; }
-  configure_wifi_network wlan0 "$fixture/wpa3-iwd.conf" "$fixture/wpa3-network.conf"
-)
-if grep -q '^SaeDisable=' "$fixture/wpa3-iwd.conf"; then
-  printf '%s\n' '--allow-sae unexpectedly disabled SAE.' >&2
-  exit 1
-fi
-if (
-  ALLOW_SAE=1
-  wifi_driver() { printf 'brcmfmac\n'; }
-  configure_wifi_network wlan0 "$fixture/first-run-iwd.conf" "$fixture/wpa3-network.conf"
-) >"$fixture/wpa3-error" 2>&1; then
-  printf 'Existing brcmfmac quirk was silently ignored for --allow-sae.\n' >&2
-  exit 1
-fi
-grep -q 'will not overwrite' "$fixture/wpa3-error"
-printf '[General]\nEnableNetworkConfiguration=true\n' > "$fixture/conflicting-iwd.conf"
+grep -Fxq 'EnableNetworkConfiguration=true' "$fixture/connected-iwd.conf"
+printf '[General]\nEnableNetworkConfiguration=true\n\n[Network]\nNameResolvingService=other\n' > "$fixture/conflicting-iwd.conf"
 if (configure_iwd_main "$fixture/conflicting-iwd.conf") >"$fixture/iwd-error" 2>&1; then
   printf 'Accepted conflicting iwd DHCP configuration.\n' >&2
   exit 1
 fi
-grep -q 'conflicts with networkd' "$fixture/iwd-error"
+grep -q 'conflict with systemd-resolved' "$fixture/iwd-error"
+cat > "$fixture/old-wifi.network" <<'EOF'
+[Match]
+Name=wl* wlan*
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+
+[DHCPv4]
+RouteMetric=600
+EOF
+(
+  SSH_CONNECTION=''
+  connected_wifi_ssid() { :; }
+  systemctl() { return 0; }
+  networkctl() { [[ "$1" == reload || "$1" == reconfigure ]]; }
+  configure_wifi_network wlan0 "$fixture/migrated-iwd.conf" "$fixture/old-wifi.network"
+)
+[[ ! -e "$fixture/old-wifi.network" && -f "$fixture/old-wifi.network.kmos-networkd-backup" ]]
+grep -Fxq 'EnableNetworkConfiguration=true' "$fixture/migrated-iwd.conf"
+cp "$fixture/old-wifi.network.kmos-networkd-backup" "$fixture/active-wifi.network"
+(
+  SSH_CONNECTION=''
+  connected_wifi_ssid() { printf 'Current Wifi\n'; }
+  systemctl() {
+    [[ "$1" != restart ]] || touch "$fixture/migration-restarted-iwd"
+    return 0
+  }
+  networkctl() { :; }
+  configure_wifi_network wlan0 "$fixture/active-migrated-iwd.conf" "$fixture/active-wifi.network"
+)
+[[ -f "$fixture/migration-restarted-iwd" ]]
+printf '[Match]\nName=wl*\n[Network]\nDHCP=yes\n' > "$fixture/custom-wifi.network"
+if (
+  configure_wifi_network wlan0 "$fixture/must-not-exist.conf" "$fixture/custom-wifi.network"
+) >"$fixture/networkd-error" 2>&1; then
+  printf 'Custom networkd Wi-Fi configuration was overwritten.\n' >&2
+  exit 1
+fi
+[[ ! -e "$fixture/must-not-exist.conf" ]]
+grep -q 'Custom Wi-Fi networkd settings' "$fixture/networkd-error"
+cp "$fixture/old-wifi.network.kmos-networkd-backup" "$fixture/ssh-wifi.network"
+if (
+  SSH_CONNECTION='192.0.2.1 12345 192.0.2.2 22'
+  connected_wifi_ssid() { printf 'Current Wifi\n'; }
+  configure_wifi_network wlan0 "$fixture/ssh-iwd.conf" "$fixture/ssh-wifi.network"
+) >"$fixture/ssh-error" 2>&1; then
+  printf 'Active Wi-Fi was migrated during SSH.\n' >&2
+  exit 1
+fi
+[[ -f "$fixture/ssh-wifi.network" && ! -e "$fixture/ssh-iwd.conf" ]]
+grep -q 'may drop SSH' "$fixture/ssh-error"
 
 # Fake ARM repository contents, with no external network or actual card.
 mkdir -p "$fixture/repo"
