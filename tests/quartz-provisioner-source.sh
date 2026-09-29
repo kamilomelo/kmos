@@ -394,7 +394,7 @@ if (
 fi
 grep -q 'Live internet access could not be verified' "$fixture/no-internet"
 
-# Ethernet remains usable when final Wi-Fi and Syncthing are declined; KDE stays disabled.
+# Ethernet remains usable when final Wi-Fi, KDE and Syncthing are declined.
 (
   find_local_repository() { printf '%s\n' "$repo"; }
   require_root_and_arm() { :; }
@@ -402,6 +402,11 @@ grep -q 'Live internet access could not be verified' "$fixture/no-internet"
     if [[ "$1" == 'Configure persistent Wi-Fi with wpa_supplicant now?' ]]; then
       [[ "$2" == yes ]] || exit 1
       printf 'wifi-choice\n' >> "$fixture/steps"
+      return 1
+    fi
+    if [[ "$1" == 'Do you want to install a desktop?' ]]; then
+      [[ "$2" == yes ]] || exit 1
+      printf 'desktop-choice\n' >> "$fixture/steps"
       return 1
     fi
     [[ "$1" != 'Enable Syncthing for admin?' ]]
@@ -420,7 +425,7 @@ grep -q 'Live internet access could not be verified' "$fixture/no-internet"
   configure_swap() { :; }
   remove_alarm() { :; }
   # shellcheck disable=SC2329 # An invocation here would fail this test.
-  offer_kde_desktop() { printf 'KDE ran during headless provisioning.\n' >&2; exit 1; }
+  configure_kde_terminal() { printf 'KDE assets installed despite desktop being declined.\n' >&2; exit 1; }
   detect_wifi_adapter() { printf 'Wi-Fi adapter detection ran after Wi-Fi was declined.\n' >&2; exit 1; }
   verify_installation() { printf 'verify\n' >> "$fixture/steps"; }
   offer_aur_helper() { printf 'aur\n' >> "$fixture/steps"; }
@@ -428,7 +433,7 @@ grep -q 'Live internet access could not be verified' "$fixture/no-internet"
   finish_installation() { printf 'finish\n' >> "$fixture/steps"; }
   main
 )
-[[ $(cat "$fixture/steps") == $'fonts\nterminal\nverify\naur\nwifi-choice\nnetwork\nfinish' ]]
+[[ $(cat "$fixture/steps") == $'fonts\nterminal\nverify\nwifi-choice\ndesktop-choice\naur\nnetwork\nfinish' ]]
 (
   WIFI_REBOOT_UNSAFE=1
   countdown_or_reboot() { printf 'Unexpected reboot countdown.\n' >&2; exit 1; }

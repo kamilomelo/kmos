@@ -141,7 +141,7 @@ If the board remains online after a Wi-Fi association error, verify whether
 Ethernet or Wi-Fi carries the connection before rebooting. A Wi-Fi error does
 not require rerunning headless provisioning.
 
-## Provision KMOS headless
+## Provision KMOS (headless or KDE)
 
 After confirming internet access on the booted Quartz64, use `git` to clone
 the repository and run its executable provisioner. From the local root console:
@@ -193,13 +193,32 @@ new administrator session instead of repeating provisioning:
 ./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh remove-alarm
 ```
 
-The headless run offers Wi-Fi but not KDE. Keep Ethernet connected for recovery
+After the base headless setup and persistent Wi-Fi choice, the installer asks
+**“Do you want to install a desktop?”** (default **Yes**), like the x86
+installer. Answer **No** to keep it headless; answer **Yes** for KDE and select
+`full` (default) or `noapps`. KDE uses the same x86 package manifests, but only
+available AArch64 repository packages are selected. Missing optional packages
+are listed and can be skipped with one confirmation. If a core Plasma/SDDM
+component is absent, KDE is not installed and the headless boot target stays
+in place. The Linux text console and SSH remain available in either case.
+
+The x86 manifest includes NetworkManager, plasma-nm and another login manager.
+Quartz64 excludes those entries and keeps **wpa_supplicant + networkd** for
+Wi-Fi/Ethernet and **SDDM** for the login screen. A missing DRM graphics card
+requires explicit permission to try KDE; an installed package set cannot prove
+that a graphical session will work on the board. No x86 binaries or unreviewed
+AUR replacements are installed. For an already-provisioned board, use
+`./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh kde` to
+offer KDE without rerunning accounts, swap or Wi-Fi setup; it asks before the
+required full ARM package update.
+
+Keep Ethernet connected for recovery
 until Wi-Fi survives reboot and SSH over Wi-Fi is verified. Provisioning does
 not rewrite partitions, U-Boot, or extlinux boot files, but its initial system
 update may update the board's kernel packages.
 
-**KDE is not offered on Quartz64.** The earlier experimental stage failed on
-physical hardware and has been disabled pending a separate diagnosis. Over
+The earlier experimental KDE stage failed on physical hardware; **this KDE
+path is still unverified on a physical Quartz64**. Over
 **SSH**, headless Starship uses KMOS's icon-based `holow-light.toml` preset,
 as the x86_64 installer does. The physical Linux text console instead uses
 the ASCII-only `starship-headless.toml` preset. **Kappa Mono is installed as
@@ -211,7 +230,8 @@ the terminal on your *other computer*: select Kappa Mono there to display
 the prompt's Nerd glyphs. The provisioner checks that both Starship presets
 render and that a fresh SSH-style Bash selects the icon preset.
 
-After headless verification, the provisioner offers an **optional** AUR helper.
+After the headless/KDE choice, the provisioner offers an **optional** AUR helper
+for headless or `full` KDE installs; the `noapps` profile skips it.
 Answer once whether to install one, then select `1) paru` (default) or `2) yay`.
 That choice installs its board-side build dependencies (`base-devel` and `go`
 for yay, or `base-devel`, `rust`, and `cargo` for paru) and builds the AUR

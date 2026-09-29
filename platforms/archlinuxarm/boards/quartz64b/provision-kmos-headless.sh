@@ -20,6 +20,7 @@ AVAILABLE_PACKAGES=()
 SKIPPED_PACKAGES=()
 KDE_PACKAGES=()
 KDE_METAPACKAGES=()
+KDE_PROFILE=""
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -36,14 +37,15 @@ info() {
 
 usage() {
   cat <<'EOF'
-Usage: ./provision-kmos-headless.sh [provision|repair-prompt|fonts|aur|remove-alarm|wifi-fallback]
+Usage: ./provision-kmos-headless.sh [provision|kde|repair-prompt|fonts|aur|remove-alarm|wifi-fallback]
 
 Run this script from a complete local KMOS Git checkout on an already booted
 Quartz64. Optionally configures Wi-Fi before package updates with the standalone
 helper. Uses the checkout's package manifests, assets and helper scripts.
-No argument provisions KMOS headless. The other commands repair only the
-prompt, install only Kappa Mono, choose an AUR helper, remove alarm, or switch
-Wi-Fi to wpa_supplicant without rerunning provisioning.
+No argument provisions KMOS and offers KDE or headless mode at the end. The
+kde command offers KDE on an already-provisioned board without repeating user,
+swap or Wi-Fi setup. Other commands repair the prompt, install Kappa Mono,
+choose an AUR helper, remove alarm, or switch Wi-Fi to wpa_supplicant.
 They do not rerun system provisioning or modify the board's bootloader.
 EOF
 }
@@ -285,18 +287,40 @@ EOF
   fi
 }
 
-offer_kde_desktop() {
-  local profile package summary="" missing_summary="" graphics_device=""
-  local -a available=() missing=()
-  local -a full=(kmos-audio kmos-browsers kmos-devices kmos-docs kmos-filesystems kmos-fonts kmos-graphics kmos-kde-base kmos-kde-multimedia kmos-kde-utils kmos-maintenance kmos-network kmos-privacy)
-  local metapackage
-  ask_yes_no 'Install a KDE desktop now?' no || return 0
-  for graphics_device in /dev/dri/card[0-9]*; do
-    [[ -e "$graphics_device" ]] && break
+kde_graphics_available() {
+  local device
+  for device in /dev/dri/card[0-9]*; do
+    [[ -e "$device" ]] && return 0
   done
-  [[ -e "$graphics_device" ]] || { warn 'No DRM device found in /dev/dri; KDE will not be installed until Quartz64 graphics are verified.'; return 0; }
-  read -r -p 'KDE profile [noapps/full] (noapps): ' profile
-  profile=${profile:-noapps}
+  return 1
+}
+
+kde_network_conflict() {
+  # The x86 KDE manifest includes NM and plasma-nm; neither may take over the
+  # working Quartz64 wpa_supplicant/networkd adapter at the next boot.
+  case "$1" in
+    networkmanager|networkmanager-openvpn|plasma-nm|plasma-login-manager) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+offer_kde_desktop() {
+  local profile package summary="" missing_summary="" excluded_summary="" metapackage
+  local -a available=() installed=() missing=() excluded=()
+  local -a full=(kmos-audio kmos-browsers kmos-devices kmos-docs kmos-filesystems kmos-fonts kmos-graphics kmos-kde-base kmos-kde-multimedia kmos-kde-utils kmos-maintenance kmos-network kmos-privacy)
+  info 'Your base system is ready. Select no to keep it headless.'
+  ask_yes_no 'Do you want to install a desktop?' yes || return 0
+  if ! kde_graphics_available; then
+    warn 'No DRM graphics card was found; a KDE session may not render on this board.'
+    ask_yes_no 'Try KDE without detected DRM graphics?' no || return 0
+  fi
+  if systemctl is-enabled --quiet NetworkManager.service || systemctl is-active --quiet NetworkManager.service; then
+    die 'NetworkManager is already enabled or active. Review its ownership before installing KDE alongside wpa_supplicant/networkd.'
+  fi
+  read -r -p 'KDE profile [full/noapps] (full): ' profile
+  profile=${profile:-full}
+  KDE_PACKAGES=()
+  KDE_METAPACKAGES=()
   case "$profile" in
     noapps) resolve_kde_metapackage kmos-kde-noapps ;;
     full)
@@ -305,39 +329,57 @@ offer_kde_desktop() {
     *) die 'Invalid KDE profile; the headless system remains available.' ;;
   esac
   for package in "${KDE_PACKAGES[@]}"; do
-    if pacman -Si "$package" >/dev/null 2>&1; then
+    if kde_network_conflict "$package"; then
+      excluded+=("$package")
+    elif pacman -Si "$package" >/dev/null 2>&1; then
       available+=("$package")
+    elif pacman -Q "$package" >/dev/null 2>&1; then
+      installed+=("$package")
     else
       missing+=("$package")
     fi
   done
-  for package in plasma-desktop plasma-workspace kwin sddm networkmanager; do
-    if ! pacman -Si "$package" >/dev/null 2>&1; then
-      warn "Essential KDE component unavailable on ARM: $package. No KDE packages will be installed."
+  if ((${#excluded[@]} > 0)); then
+    printf -v excluded_summary '%s ' "${excluded[@]}"
+    info "Excluded to preserve wpa_supplicant/networkd and SDDM: ${excluded_summary% }."
+  fi
+  for package in plasma-desktop plasma-workspace kwin sddm; do
+    if ! printf '%s\n' "${available[@]}" "${installed[@]}" | grep -Fxq "$package"; then
+      warn "Essential KDE component unavailable on ARM: $package. Keeping the system headless."
       return 0
     fi
   done
   if ((${#missing[@]} > 0)); then
     printf -v missing_summary '%s ' "${missing[@]}"
-    warn "Optional KDE packages unavailable on ARM: ${missing_summary% }."
-    info 'Source builds and x86 binaries will not be used automatically.'
-    ask_yes_no 'Skip those packages and continue with KDE?' no || { info 'KDE deferred; the headless system remains available.'; return 0; }
+    warn "Unavailable ARM packages: ${missing_summary% }."
+    info 'No x86 binaries or unreviewed AUR replacements will be installed.'
+    ask_yes_no 'Skip these packages and continue with KDE?' yes || { info 'KDE deferred; the headless system remains available.'; return 0; }
   fi
-  ((${#available[@]} > 0)) || die 'No KDE packages are available.'
-  printf -v summary '%s ' "${available[@]}"
-  info "KDE $profile will install: ${summary% }"
+  if ((${#available[@]} > 0)); then
+    printf -v summary '%s ' "${available[@]}"
+    info "KDE $profile will install: ${summary% }"
+  else
+    info "KDE $profile packages are already installed."
+  fi
   ask_yes_no 'Install KDE on the Quartz64?' no || return 0
-  pacman -S --needed --noconfirm "${available[@]}"
-  for package in plasma-desktop plasma-workspace kwin sddm networkmanager; do
+  if ((${#available[@]} > 0)); then
+    pacman -S --needed --noconfirm "${available[@]}" || die 'KDE packages could not be installed; the headless boot target was not changed.'
+  fi
+  if systemctl is-enabled --quiet NetworkManager.service || systemctl is-active --quiet NetworkManager.service; then
+    die 'NetworkManager became enabled or active during KDE installation; resolve the competing network manager before changing the boot target.'
+  fi
+  for package in plasma-desktop plasma-workspace kwin sddm; do
     pacman -Q "$package" >/dev/null || die "KDE component missing after installation: $package"
   done
-  install_kappa_mono_fonts
   configure_kde_terminal "$REPOSITORY_DIR"
-  # Keep the selected Wi-Fi manager + networkd in charge until NM migration is
-  # verified on the physical board; never disable the working network here.
+  # Only SDDM takes the new graphical target; networking stays with networkd
+  # and wpa_supplicant. Never enable NM or a second Wi-Fi manager here.
   systemctl enable sddm.service
   systemctl set-default graphical.target
-  info 'KDE installed. Headless networking remains active; NetworkManager will not start until migration is validated on the board.'
+  systemctl is-enabled --quiet sddm.service || die 'SDDM was not enabled.'
+  [[ $(systemctl get-default) == graphical.target ]] || die 'Graphical boot target was not selected.'
+  KDE_PROFILE=$profile
+  info 'KDE installed. NetworkManager remains disabled; verify graphics on a real reboot.'
 }
 
 configure_kmos_terminal() {
@@ -822,7 +864,11 @@ countdown_or_reboot() {
 finish_installation() {
   local fd
   printf '\n+-------------------------------------+\n' >&2
-  printf '| KMOS headless installation complete |\n' >&2
+  if [[ -n "$KDE_PROFILE" ]]; then
+    printf '| KMOS KDE installation complete      |\n' >&2
+  else
+    printf '| KMOS headless installation complete |\n' >&2
+  fi
   printf '+-------------------------------------+\n' >&2
   if ((WIFI_REBOOT_UNSAFE)); then
     warn 'Automatic reboot skipped: persistent Wi-Fi was declined and Ethernet is unavailable. Reboot only after arranging a recovery connection.'
@@ -857,10 +903,10 @@ main() {
   configure_swap
   configure_syncthing
   remove_alarm
-  info 'Quartz64 KDE provisioning is disabled until it can be validated on physical hardware.'
   verify_installation
-  offer_aur_helper
   configure_persistent_wifi
+  offer_kde_desktop
+  if [[ "$KDE_PROFILE" != noapps ]]; then offer_aur_helper; fi
   verify_runtime_network
   finish_installation
 }
@@ -885,6 +931,13 @@ board_maintenance() {
     fonts)
       install_kappa_mono_fonts
       info 'Kappa Mono is installed on the Quartz64. SSH glyphs depend on the client terminal font.'
+      ;;
+    kde)
+      warn 'KDE installation requires a full Arch Linux ARM update, which may update the board kernel.'
+      ask_yes_no 'Update Arch Linux ARM and offer KDE?' no || die 'Cancelled without changing the desktop.'
+      pacman -Syu --needed --noconfirm
+      offer_kde_desktop
+      verify_runtime_network
       ;;
     wifi-fallback)
       if ! pacman -Q wpa_supplicant >/dev/null 2>&1; then
@@ -921,7 +974,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   case "${1:-provision}" in
     -h|--help) usage ;;
     provision) (($# <= 1)) || die 'Unexpected arguments. Run --help for commands.'; main ;;
-    repair-prompt|fonts|aur|remove-alarm|wifi-fallback)
+    repair-prompt|fonts|aur|remove-alarm|wifi-fallback|kde)
       (($# == 1)) || die 'Unexpected arguments. Run --help for commands.'
       board_maintenance "$1"
       ;;
