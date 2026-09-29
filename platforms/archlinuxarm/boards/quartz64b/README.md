@@ -146,6 +146,8 @@ available. The provisioner validates the local checkout and reports its commit
 before asking permission to make changes. It never fetches another copy or
 replaces files in your clone. Its initial `pacman -Syu` can update the board
 kernel, so back up the working card before confirming provisioning. The
+initial provisioning confirmation and optional Wi-Fi setup both default to
+**Yes** when you press Enter; explicitly answer **No** to skip either one. The
 Arch Linux ARM `starship` package is required; provisioning stops rather than
 claiming a working prompt if it cannot be installed or rendered.
 

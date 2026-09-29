@@ -546,7 +546,7 @@ ethernet_available() {
 }
 
 configure_wifi() {
-  ask_yes_no 'Configure persistent Wi-Fi now?' no || { info 'Wi-Fi skipped; continuing with the existing network.'; return 0; }
+  ask_yes_no 'Configure persistent Wi-Fi now?' yes || { info 'Wi-Fi skipped; continuing with the existing network.'; return 0; }
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
   [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter detected. Ethernet remains configured.'; return; }
   if "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"; then
@@ -836,7 +836,7 @@ main() {
     warn 'This checkout has local changes; the files used may differ from the displayed commit.'
   fi
   info 'Arch Linux ARM will be updated and configured from this KMOS checkout.'
-  ask_yes_no 'Continue with provisioning?' no || die 'Cancelled without modifying the system.'
+  ask_yes_no 'Continue with provisioning and the full Arch Linux ARM update?' yes || die 'Cancelled without modifying the system.'
   configure_wifi
   initialize_pacman
   configure_wpa_fallback_after_update

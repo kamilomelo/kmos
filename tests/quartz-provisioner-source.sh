@@ -39,7 +39,10 @@ SCRIPT_DIR="$repo/platforms/archlinuxarm/boards/quartz64b"
 
 # Declining the initial confirmation must not invoke pacman or change the board.
 # shellcheck disable=SC2329 # Used by the sourced provisioner's main function.
-ask_yes_no() { return 1; }
+ask_yes_no() {
+  [[ "$1" == 'Continue with provisioning and the full Arch Linux ARM update?' && "$2" == yes ]] || exit 1
+  return 1
+}
 require_root_and_arm() { :; }
 initialize_pacman() { printf 'Unexpected pacman initialization.\n' >&2; exit 1; }
 if (main) > "$fixture/declined-output" 2>&1; then
@@ -50,7 +53,10 @@ grep -q 'Cancelled without modifying the system' "$fixture/declined-output"
 
 # With consent, optional Wi-Fi precedes the first package stage, using this checkout.
 (
-  ask_yes_no() { return 0; }
+  ask_yes_no() {
+    [[ "$1" == 'Continue with provisioning and the full Arch Linux ARM update?' && "$2" == yes ]] || exit 1
+    return 0
+  }
   configure_wifi() { printf 'wifi\n' >> "$fixture/early-steps"; }
   initialize_pacman() { printf 'pacman\n' >> "$fixture/early-steps"; }
   install_kmos_packages() {
@@ -62,10 +68,11 @@ grep -q 'Cancelled without modifying the system' "$fixture/declined-output"
 [[ $(cat "$fixture/early-steps") == $'wifi\npacman' ]]
 
 # Even an affirmative Wi-Fi answer is harmless when no adapter is present.
-ask_yes_no() { return 0; }
+ask_yes_no() { [[ "$1" == 'Configure persistent Wi-Fi now?' && "$2" == yes ]]; }
 detect_wifi_adapter() { return 1; }
 configure_wifi 2> "$fixture/wifi-warning"
 grep -q 'No Wi-Fi adapter detected' "$fixture/wifi-warning"
+ask_yes_no() { return 0; }
 
 # A deliberate Wi-Fi cancellation can finish only with an explicit Ethernet choice.
 mkdir -p "$fixture/board/platforms/archlinuxarm/boards/quartz64b"
