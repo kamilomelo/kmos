@@ -178,6 +178,7 @@ grep -q 'refusing to start iwd' "$fixture/dual-manager-error"
     "$fixture/wpa-working.conf" "$fixture/wpa-working.network"
 )
 [[ $(stat -c %a "$fixture/wpa-working.conf") == 600 ]]
+[[ $(head -n 1 "$fixture/wpa-working.conf") == 'ctrl_interface=/run/wpa_supplicant' ]]
 grep -Fxq $'\tpsk=0123456789abcdef' "$fixture/wpa-working.conf"
 if grep -q 'correct password' "$fixture/wpa-working.conf"; then
   printf 'Fallback leaked plaintext credentials.\n' >&2

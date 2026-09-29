@@ -96,7 +96,9 @@ from the board's local console. This is separate from provisioning. If the ARM
 package is missing, it asks before the required full system update (which may
 also update the kernel); if present, it does not update packages. It prompts
 for Wi-Fi credentials locally, stops iwd before enabling wpa_supplicant, and
-checks Wi-Fi-bound connectivity. **Reboot**, then run
+checks Wi-Fi-bound connectivity. The generated profile includes the control
+socket required by `wpa_cli`; older trial copies lacking `ctrl_interface` must
+be replaced before retrying. **Reboot**, then run
 `./platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh --check`.
 The read-only check works without Ethernet and verifies the saved backend,
 association, address, route and Wi-Fi internet. Do not include this trial in

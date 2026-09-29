@@ -270,9 +270,11 @@ configure_wpa_fallback() {
   local network_config=${5:-/etc/systemd/network/25-wifi-dhcp.network} attempt
   [[ ! -e "$profile" && ! -L "$profile" && ! -e "$network_config" && ! -L "$network_config" ]] \
     || die 'Existing wpa_supplicant or Wi-Fi networkd configuration needs manual review; refusing to overwrite it.'
-  # wpa_passphrase reads from stdin; remove its plaintext #psk comment.
-  if ! printf '%s\n' "$passphrase" | wpa_passphrase "$ssid" | sed '/^[[:space:]]*#psk=/d' \
-    | install -Dm0600 /dev/stdin "$profile"; then
+  # wpa_cli needs a per-interface control socket; wpa_passphrase alone only
+  # emits the network block. Remove its plaintext #psk comment.
+  if ! { printf 'ctrl_interface=/run/wpa_supplicant\n';
+      printf '%s\n' "$passphrase" | wpa_passphrase "$ssid" | sed '/^[[:space:]]*#psk=/d';
+    } | install -Dm0600 /dev/stdin "$profile"; then
     rm -f -- "$profile"
     die 'Could not create the fallback Wi-Fi profile.'
   fi
