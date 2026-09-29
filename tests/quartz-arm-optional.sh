@@ -16,8 +16,8 @@ grep -q 'Before=sshd.service systemd-user-sessions.service' "$fixture/target/etc
 (
   SUDO_USER=alarm
   PRIMARY_USER='admin'
-  # shellcheck disable=SC2329 # Invoked by the sourced removal function.
-  ask_yes_no() { return 0; }
+  # shellcheck disable=SC2329 # Alarm removal must not ask a question.
+  ask_yes_no() { printf 'Unexpected alarm prompt.\n' >&2; exit 1; }
   # shellcheck disable=SC2329 # Invoked indirectly by remove_alarm.
   getent() { [[ "$1" == passwd && "$2" == alarm ]] && printf 'alarm:x:1000:1000::/home/alarm:/bin/bash\n'; }
   # shellcheck disable=SC2329
@@ -32,6 +32,41 @@ grep -q 'Before=sshd.service systemd-user-sessions.service' "$fixture/target/etc
   [[ "$REMOVE_ALARM_REQUESTED" == 1 && "$ALARM_REMOVAL_PENDING" == 1 ]]
 )
 [[ -f "$fixture/scheduled" ]]
+
+# Remove the login without asking or deleting its home/checkout files.
+touch "$fixture/alarm-record"
+(
+  PRIMARY_USER='admin'
+  # shellcheck disable=SC2034 # Read by the sourced removal function.
+  SUDO_USER='admin'
+  # shellcheck disable=SC2329 # An alarm confirmation must never be invoked.
+  ask_yes_no() { printf 'Unexpected alarm prompt.\n' >&2; exit 1; }
+  getent() {
+    [[ "$1" == passwd && "$2" == alarm && -e "$fixture/alarm-record" ]] || return 2
+    printf 'alarm:x:1000:1000::/home/alarm:/bin/bash\n'
+  }
+  id() { if [[ "$1" == -nG ]]; then printf 'admin wheel\n'; else [[ "$1" == admin ]]; fi; }
+  userdel() { [[ "$*" == alarm ]] && rm -- "$fixture/alarm-record"; }
+  remove_alarm
+  [[ "$REMOVE_ALARM_REQUESTED" == 1 && "$ALARM_REMOVAL_PENDING" == 0 ]]
+)
+[[ ! -e "$fixture/alarm-record" ]]
+touch "$fixture/alarm-record"
+if (
+  PRIMARY_USER='admin'
+  getent() {
+    [[ "$1" == passwd && "$2" == alarm && -e "$fixture/alarm-record" ]] || return 2
+    printf 'alarm:x:1000:1000::/home/alarm:/bin/bash\n'
+  }
+  id() { if [[ "$1" == -nG ]]; then printf 'admin users\n'; else [[ "$1" == admin ]]; fi; }
+  userdel() { printf 'Removed alarm without a wheel administrator.\n' >&2; exit 1; }
+  remove_alarm
+) >"$fixture/no-wheel" 2>&1; then
+  printf 'Alarm was removed without a wheel administrator.\n' >&2
+  exit 1
+fi
+[[ -e "$fixture/alarm-record" ]]
+grep -q 'Administrator lacks sudo' "$fixture/no-wheel"
 
 # A key cancels the reboot; ten timeouts request it once. No reboot is real.
 (
@@ -73,7 +108,7 @@ printf 'alarm:x:1000:1000::/home/alarm:/usr/bin/nologin\n'
 EOF
   cat > "$fixture/mock-bin/userdel" <<'EOF'
 #!/usr/bin/env bash
-[[ "$*" == '-r alarm' ]] || exit 1
+[[ "$*" == alarm ]] || exit 1
 rm -- "$MOCK_ALARM_RECORD"
 EOF
   cat > "$fixture/mock-bin/systemctl" <<'EOF'

@@ -96,9 +96,11 @@ if the package is present but unconfigured, it sets up wpa_supplicant directly.
 With Ethernet, it installs the ARM package after the full system update, then
 asks for Wi-Fi credentials locally. Without Ethernet, it first uses staged iwd
 packages to bootstrap connectivity, updates and installs wpa_supplicant, then
-switches the Wi-Fi adapter. This temporary iwd connection requires entering
-the Wi-Fi credentials a second time for wpa_supplicant; iwd profiles are kept
-for rollback, but iwd is stopped and disabled before wpa_supplicant starts.
+switches the Wi-Fi adapter. For that switch it reuses a usable WPA2 PSK or
+passphrase from the active, root-only iwd profile, without asking a second
+time. If the saved credentials cannot be safely read, it asks again. iwd
+profiles are kept for rollback, but iwd is stopped and disabled before
+wpa_supplicant starts.
 Networkd supplies Wi-Fi DHCP and resolved supplies DNS. No two Wi-Fi managers
 should run together. A failed switch attempts to restore iwd, and provisioning
 stops rather than claiming a persistent Wi-Fi setup. The generated profile
@@ -174,9 +176,10 @@ reboot. Board maintenance commands (`repair-prompt`, `fonts`, `aur`, and
 If SSH, networking, or live internet access is unavailable at the end, the
 provisioner stops without claiming completion or rebooting; keep the recovery
 connection attached and diagnose the failure instead of repeating provisioning.
-Syncthing and removal of the default `alarm` account are optional. Confirming
-removal deletes `/home/alarm` and all its contents, including any checkout
-there. If the installer is running from `alarm`, it locks the account and
+Syncthing is optional. Once the replacement wheel administrator exists, the
+installer removes the default `alarm` login automatically without a prompt.
+It **does not delete `/home/alarm`** or any checkout/files there; review them
+manually later. If the installer is running from `alarm`, it locks the account and
 schedules removal before SSH logins on the next boot; it does not claim removal
 until it succeeds. After reboot, `getent passwd alarm` must print nothing.
 For a board already installed with `alarm` still present, run this from the

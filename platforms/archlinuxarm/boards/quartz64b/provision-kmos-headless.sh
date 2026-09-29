@@ -15,7 +15,6 @@ WIFI_BACKEND=""
 WIFI_WPA_REQUESTED=0
 REMOVE_ALARM_REQUESTED=0
 ALARM_REMOVAL_PENDING=0
-ALARM_HOME=""
 AVAILABLE_PACKAGES=()
 SKIPPED_PACKAGES=()
 KDE_PACKAGES=()
@@ -633,18 +632,14 @@ if record=$(getent passwd alarm); then
     printf 'ERROR: alarm changed since removal was scheduled; refusing to remove it.\n' >&2
     exit 1
   fi
-  userdel -r alarm
+  userdel alarm
 fi
 if getent passwd alarm >/dev/null; then
   printf 'ERROR: alarm still exists; retry or inspect the service logs.\n' >&2
   exit 1
 fi
-if [[ -e /home/alarm || -L /home/alarm ]]; then
-  printf 'ERROR: /home/alarm still exists; inspect it before removing anything.\n' >&2
-  exit 1
-fi
 systemctl disable kmos-remove-alarm.service
-printf 'Initial alarm account and home have been removed.\n'
+printf 'Initial alarm account removed; /home/alarm retained for manual review.\n'
 ALARM_CLEANUP
   install -Dm0644 /dev/stdin "$root/etc/systemd/system/kmos-remove-alarm.service" <<'EOF'
 [Unit]
@@ -666,33 +661,25 @@ EOF
 }
 
 remove_alarm() {
-  local record
+  local record alarm_home
   if ! record=$(getent passwd alarm); then
-    [[ ! -e /home/alarm && ! -L /home/alarm ]] || die 'alarm account is absent but /home/alarm remains; inspect it before deletion.'
-    info 'Initial alarm account and home are already absent.'
+    info 'Initial alarm account is already absent; any old home directory is preserved.'
     return 0
   fi
-  warn 'Removing alarm also deletes /home/alarm and everything inside it, including any checkout stored there.'
-  ask_yes_no 'Remove the initial alarm user and its home directory?' yes || return 0
   REMOVE_ALARM_REQUESTED=1
-  ALARM_HOME=$(printf '%s\n' "$record" | awk -F: '{print $6}')
-  [[ "$ALARM_HOME" == /home/alarm ]] || die 'Unexpected alarm home directory; refusing automatic removal.'
+  alarm_home=$(printf '%s\n' "$record" | awk -F: '{print $6}')
+  [[ "$alarm_home" == /home/alarm ]] || die 'Unexpected alarm home directory; refusing automatic removal.'
   [[ "$PRIMARY_USER" != alarm ]] || die 'Cannot remove the primary administrator account.'
   id "$PRIMARY_USER" >/dev/null || die 'Administrator account is missing; alarm will not be removed.'
   id -nG "$PRIMARY_USER" | grep -qw wheel || die 'Administrator lacks sudo; alarm will not be removed.'
-  # The checkout (and current directory) may live under the home being removed.
-  if [[ "$PWD" == /home/alarm || "$PWD" == /home/alarm/* ]]; then
-    cd /
-  fi
-  if [[ "${SUDO_USER:-}" != alarm ]] && userdel -r alarm; then
+  # Remove the login without deleting files or a checkout under /home/alarm.
+  if [[ "${SUDO_USER:-}" != alarm ]] && userdel alarm; then
     getent passwd alarm >/dev/null && die 'alarm still exists after userdel.'
-    [[ ! -e "$ALARM_HOME" && ! -L "$ALARM_HOME" ]] || die "alarm home still exists: $ALARM_HOME"
-    info 'Initial alarm account and home removed.'
+    info 'Initial alarm account removed; /home/alarm retained for manual review.'
     return 0
   fi
   if ! getent passwd alarm >/dev/null; then
-    [[ ! -e "$ALARM_HOME" && ! -L "$ALARM_HOME" ]] || die "alarm home still exists: $ALARM_HOME"
-    info 'Initial alarm account and home removed.'
+    info 'Initial alarm account removed; /home/alarm retained for manual review.'
     return 0
   fi
   # userdel cannot remove the account that owns the active installer session.
@@ -780,7 +767,6 @@ verify_installation() {
       [[ $(getent passwd alarm | awk -F: '{print $7}') == /usr/bin/nologin ]] || die 'alarm is not blocked from logging in before removal.'
     else
       getent passwd alarm >/dev/null && die 'alarm was requested for removal but still exists.'
-      [[ ! -e "$ALARM_HOME" && ! -L "$ALARM_HOME" ]] || die "alarm home still exists: $ALARM_HOME"
     fi
   fi
   if [[ "$WIFI_BACKEND" == iwd ]]; then
@@ -914,7 +900,7 @@ board_maintenance() {
       else
         remove_alarm
         if ((REMOVE_ALARM_REQUESTED == 0)); then
-          info 'alarm removal was declined; no account was removed.'
+          info 'alarm account was already absent.'
         elif ((ALARM_REMOVAL_PENDING)); then
           info 'After reboot, check: getent passwd alarm (must produce no output).'
         else

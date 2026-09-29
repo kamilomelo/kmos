@@ -155,6 +155,87 @@ fi
 [[ ! -e "$fixture/dual-manager-iwd.conf" ]]
 grep -q 'refusing to start iwd' "$fixture/dual-manager-error"
 
+# Reuse the active iwd network's saved credential without prompting again.
+mkdir -p "$fixture/iwd-state"
+printf '[Security]\nPassphrase=correct password\n' > "$fixture/iwd-state/Fallback Wifi.psk"
+chmod 600 "$fixture/iwd-state/Fallback Wifi.psk"
+(
+  systemctl() { [[ "$1" == is-active && "$3" == iwd.service ]]; }
+  connected_wifi_ssid() { printf 'Fallback Wifi\n'; }
+  stat() { if [[ "$1" == -c && "$2" == %u ]]; then printf '0\n'; else command stat "$@"; fi; }
+  read_connected_iwd_secret wlan0 "$fixture/iwd-state"
+  [[ "$IWD_SAVED_KIND" == passphrase && "$IWD_SAVED_SSID" == 'Fallback Wifi' && "$IWD_SAVED_SECRET" == 'correct password' ]]
+)
+printf '[Security]\nPreSharedKey=%064d\n' 0 > "$fixture/iwd-state/Fallback Wifi.psk"
+(
+  systemctl() { [[ "$1" == is-active && "$3" == iwd.service ]]; }
+  connected_wifi_ssid() { printf 'Fallback Wifi\n'; }
+  stat() { if [[ "$1" == -c && "$2" == %u ]]; then printf '0\n'; else command stat "$@"; fi; }
+  read_connected_iwd_secret wlan0 "$fixture/iwd-state"
+  [[ "$IWD_SAVED_KIND" == psk && "$IWD_SAVED_SECRET" == "$(printf '%064d' 0)" ]]
+)
+(
+  wpa_passphrase() { printf 'Unexpected passphrase derivation.\n' >&2; exit 1; }
+  wpa_cli() { printf 'wpa_state=COMPLETED\nssid=Fallback Wifi\n'; }
+  systemctl() { return 0; }
+  networkctl() { :; }
+  ip() { printf 'default via 192.0.2.1 dev wlan0\n'; }
+  ping() { :; }
+  configure_wpa_fallback wlan0 'Fallback Wifi' "$(printf '%064d' 0)" \
+    "$fixture/wpa-psk.conf" "$fixture/wpa-psk.network" psk
+)
+grep -Fxq "$(printf '\tpsk=%064d' 0)" "$fixture/wpa-psk.conf"
+[[ $(stat -c %a "$fixture/wpa-psk.conf") == 600 ]]
+printf '[Security]\nPreSharedKey=invalid\n' > "$fixture/iwd-state/Fallback Wifi.psk"
+if (
+  systemctl() { return 0; }
+  connected_wifi_ssid() { printf 'Fallback Wifi\n'; }
+  stat() { if [[ "$1" == -c && "$2" == %u ]]; then printf '0\n'; else command stat "$@"; fi; }
+  read_connected_iwd_secret wlan0 "$fixture/iwd-state"
+); then
+  printf 'Unusable iwd secret was reused.\n' >&2
+  exit 1
+fi
+(
+  # shellcheck disable=SC2329 # Used by the sourced fallback helper.
+  command() {
+    if [[ "$1" == -v && ( "$2" == wpa_passphrase || "$2" == wpa_cli ) ]]; then return 0; fi
+    builtin command "$@"
+  }
+  read_connected_iwd_secret() {
+    IWD_SAVED_SSID='Fallback Wifi'
+    IWD_SAVED_SECRET='correct password'
+    IWD_SAVED_KIND=passphrase
+  }
+  configure_wpa_fallback() {
+    [[ "$1" == wlan0 && "$2" == 'Fallback Wifi' && "$3" == 'correct password' && "$6" == passphrase ]]
+    touch "$fixture/no-second-prompt"
+  }
+  run_wpa_fallback wlan0 </dev/null
+)
+[[ -e "$fixture/no-second-prompt" ]]
+chmod 644 "$fixture/iwd-state/Fallback Wifi.psk"
+if (
+  systemctl() { return 0; }
+  connected_wifi_ssid() { printf 'Fallback Wifi\n'; }
+  stat() { if [[ "$1" == -c && "$2" == %u ]]; then printf '0\n'; else command stat "$@"; fi; }
+  read_connected_iwd_secret wlan0 "$fixture/iwd-state"
+); then
+  printf 'World-readable iwd secret was reused.\n' >&2
+  exit 1
+fi
+chmod 600 "$fixture/iwd-state/Fallback Wifi.psk"
+mv "$fixture/iwd-state/Fallback Wifi.psk" "$fixture/iwd-state/original.psk"
+ln -s original.psk "$fixture/iwd-state/Fallback Wifi.psk"
+if (
+  systemctl() { return 0; }
+  connected_wifi_ssid() { printf 'Fallback Wifi\n'; }
+  read_connected_iwd_secret wlan0 "$fixture/iwd-state"
+); then
+  printf 'Symlinked iwd secret was reused.\n' >&2
+  exit 1
+fi
+
 # Optional wpa_supplicant backend is exclusive with iwd and has a rollback.
 (
   wpa_passphrase() {

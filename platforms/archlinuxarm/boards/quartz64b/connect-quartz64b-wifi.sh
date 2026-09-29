@@ -3,6 +3,9 @@
 set -Eeuo pipefail
 NETWORK_NAMES=()
 IWD_CONFIG_CHANGED=0
+IWD_SAVED_SECRET=""
+IWD_SAVED_KIND=""
+IWD_SAVED_SSID=""
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*" >&2; }
@@ -55,6 +58,8 @@ Existing iwd driver settings and saved network profiles are preserved.
 --wpa-fallback switches this adapter to wpa_supplicant plus networkd DHCP.
 It requires the ARM wpa_supplicant package installed and must be run from the
 local console or over Ethernet, not over the Wi-Fi connection being switched.
+When iwd is connected and has a valid root-only saved PSK/passphrase, the
+switch reuses it rather than prompting again; otherwise it asks locally.
 EOF
 }
 
@@ -269,13 +274,18 @@ restore_iwd_after_wpa_failure() {
 configure_wpa_fallback() {
   local adapter=$1 ssid=$2 passphrase=$3
   local profile=${4:-/etc/wpa_supplicant/wpa_supplicant-$adapter.conf}
-  local network_config=${5:-/etc/systemd/network/25-wifi-dhcp.network} attempt
+  local network_config=${5:-/etc/systemd/network/25-wifi-dhcp.network} mode=${6:-passphrase} attempt
   [[ ! -e "$profile" && ! -L "$profile" && ! -e "$network_config" && ! -L "$network_config" ]] \
     || die 'Existing wpa_supplicant or Wi-Fi networkd configuration needs manual review; refusing to overwrite it.'
-  # wpa_cli needs a per-interface control socket; wpa_passphrase alone only
-  # emits the network block. Remove its plaintext #psk comment.
+  # A saved iwd PreSharedKey is already the derived PSK. Never write an iwd
+  # Passphrase or wpa_passphrase's plaintext #psk comment to this file.
   if ! { printf 'ctrl_interface=/run/wpa_supplicant\n';
-      printf '%s\n' "$passphrase" | wpa_passphrase "$ssid" | sed '/^[[:space:]]*#psk=/d';
+      if [[ "$mode" == psk ]]; then
+        [[ "$passphrase" =~ ^[[:xdigit:]]{64}$ ]] || return 1
+        printf 'network={\n\tssid="%s"\n\tpsk=%s\n}\n' "$ssid" "$passphrase"
+      else
+        printf '%s\n' "$passphrase" | wpa_passphrase "$ssid" | sed '/^[[:space:]]*#psk=/d'
+      fi;
     } | install -Dm0600 /dev/stdin "$profile"; then
     rm -f -- "$profile"
     die 'Could not create the fallback Wi-Fi profile.'
@@ -317,23 +327,69 @@ EOF
   done
   restore_iwd_after_wpa_failure "$adapter" "$profile" "$network_config" \
     || die 'Fallback rollback failed; inspect wpa_supplicant and iwd before rebooting.'
-  die 'wpa_supplicant fallback was not verified; iwd restoration was attempted. Keep Ethernet connected.'
+  die 'wpa_supplicant was not verified; iwd restoration was attempted. Do not reboot expecting Wi-Fi.'
+}
+
+read_connected_iwd_secret() {
+  local adapter=$1 state_dir=${2:-/var/lib/iwd} ssid profile line section='' key value passphrase='' psk=''
+  IWD_SAVED_SECRET=""
+  IWD_SAVED_KIND=""
+  IWD_SAVED_SSID=""
+  systemctl is-active --quiet iwd.service || return 1
+  ssid=$(connected_wifi_ssid "$adapter") || return 1
+  [[ "$ssid" =~ ^[a-zA-Z0-9_\ -]{1,32}$ ]] || return 1
+  profile="$state_dir/$ssid.psk"
+  [[ -f "$profile" && ! -L "$profile" ]] || return 1
+  [[ $(stat -c %u -- "$profile") == 0 && $(stat -c %a -- "$profile") == 600 ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      '[Security]') section=Security; continue ;;
+      \[*\]) section=other; continue ;;
+    esac
+    [[ "$section" == Security && "$line" == *=* ]] || continue
+    key=${line%%=*}
+    value=${line#*=}
+    case "$key" in
+      Passphrase) [[ -z "$passphrase" ]] || return 1; passphrase=$value ;;
+      PreSharedKey) [[ -z "$psk" ]] || return 1; psk=$value ;;
+    esac
+  done < "$profile"
+  if [[ "$psk" =~ ^[[:xdigit:]]{64}$ ]]; then
+    IWD_SAVED_SECRET=$psk
+    IWD_SAVED_KIND=psk
+  elif validate_wifi_credentials "$ssid" "$passphrase"; then
+    IWD_SAVED_SECRET=$passphrase
+    IWD_SAVED_KIND=passphrase
+  else
+    return 1
+  fi
+  IWD_SAVED_SSID=$ssid
 }
 
 run_wpa_fallback() {
-  local adapter=$1 ssid passphrase
+  local adapter=$1 ssid passphrase mode=passphrase
   if ! command -v wpa_passphrase >/dev/null 2>&1 || ! command -v wpa_cli >/dev/null 2>&1; then
     die 'wpa_supplicant is not installed. Use the provisioner with Ethernet to install the ARM package first.'
   fi
   if [[ -n "${SSH_CONNECTION:-}" ]] && ip -4 -o address show dev "$adapter" scope global | grep -q .; then
     die 'Wi-Fi has an IP address during SSH. Use the local console to switch Wi-Fi managers safely.'
   fi
-  read -r -p 'Fallback Wi-Fi SSID: ' ssid || return 2
-  read -r -s -p 'Fallback Wi-Fi passphrase: ' passphrase || return 2
-  printf '\n' >&2
-  validate_wifi_credentials "$ssid" "$passphrase" || die 'Invalid SSID or WPA passphrase.'
-  configure_wpa_fallback "$adapter" "$ssid" "$passphrase"
+  if read_connected_iwd_secret "$adapter"; then
+    ssid=$IWD_SAVED_SSID
+    passphrase=$IWD_SAVED_SECRET
+    mode=$IWD_SAVED_KIND
+    info "Reusing the saved iwd credentials for $ssid without another password prompt."
+  else
+    read -r -p 'Fallback Wi-Fi SSID: ' ssid || return 2
+    read -r -s -p 'Fallback Wi-Fi passphrase: ' passphrase || return 2
+    printf '\n' >&2
+    validate_wifi_credentials "$ssid" "$passphrase" || die 'Invalid SSID or WPA passphrase.'
+  fi
+  configure_wpa_fallback "$adapter" "$ssid" "$passphrase" \
+    "/etc/wpa_supplicant/wpa_supplicant-$adapter.conf" /etc/systemd/network/25-wifi-dhcp.network "$mode"
   unset passphrase
+  IWD_SAVED_SECRET=""
+  IWD_SAVED_SSID=""
 }
 
 connect_wifi_with_retries() {
