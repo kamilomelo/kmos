@@ -67,6 +67,18 @@ and the final confirmation names the exact devices and EFI action. Back up
 important data before installing; reusing an EFI partition does not make the
 root-formatting step reversible.
 
+The x86 Bash installer now collects the desktop (KDE or headless), AUR,
+account and other configuration choices **before** the install plan review.
+With existing partitions, the typed `FORMAT ...` confirmation is the GO point;
+the installer rechecks the selected disk identity before formatting and runs
+the selected installation without a later desktop-choice prompt. If you choose
+to edit partitions, it first asks for `GO <disk>` **before opening cfdisk**:
+cfdisk can write the partition table on exit. It then selects and validates
+the resulting partitions and requires a separate `FORMAT ...` confirmation
+before touching their filesystems. No partition edits can be rolled back by
+the installer once cfdisk writes them. Wi-Fi connection needed to fetch the
+checkout may also happen separately before running this installer.
+
 #### 4) If Ethernet Is NOT Available
 
 Use the repository from external media, then run Wi-Fi setup first:

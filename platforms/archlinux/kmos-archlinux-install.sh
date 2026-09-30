@@ -33,6 +33,11 @@ TARGET_DISK=""
 ROOT_PARTITION=""
 BOOT_PARTITION=""
 BOOT_PARTITION_ACTION=""
+PARTITION_MODE="existing"
+DISK_EDIT_APPROVED=0
+FORMAT_APPROVED=0
+CONFIRMED_DISK_ID=""
+CONFIRMED_DISK_SIZE=""
 ROOT_FILESYSTEM="xfs"
 TIMEZONE="Europe/Zurich"
 LOCALE="en_US.UTF-8"
@@ -42,6 +47,8 @@ SWAPFILE_SIZE="4G"
 KRUB_ID="krub"
 ENABLE_OS_PROBER="no"
 INSTALL_KDE_AUR="yes"
+INSTALL_KDE="no"
+INSTALL_HEADLESS_AUR="no"
 AUR_HELPER="${kmos_AUR_HELPER:-paru}"
 KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
 ENABLE_WIFI_AFTER_BOOT="no"
@@ -241,13 +248,13 @@ ask_yes_no() {
 
   while true; do
     if [[ "$default" == "yes" ]]; then
-      read -r -p "$prompt [Y/n]: " answer
+      read -r -p "$prompt [Y/n]: " answer || die 'Input closed before installation was approved.'
       answer="${answer:-Y}"
     elif [[ "$default" == "no" ]]; then
-      read -r -p "$prompt [y/N]: " answer
+      read -r -p "$prompt [y/N]: " answer || die 'Input closed before installation was approved.'
       answer="${answer:-N}"
     else
-      read -r -p "$prompt [y/n]: " answer
+      read -r -p "$prompt [y/n]: " answer || die 'Input closed before installation was approved.'
     fi
 
     case "$answer" in
@@ -326,7 +333,7 @@ prompt_default() {
   local default="$2"
   local value=""
 
-  read -r -p "$prompt [$default]: " value
+  read -r -p "$prompt [$default]: " value || die 'Input closed while collecting installation choices.'
   printf '%s\n' "${value:-$default}"
 }
 
@@ -352,7 +359,7 @@ prompt_choice() {
   done
 
   while true; do
-    read -r -p "Select [1-${#options[@]}] (default: $default_index): " choice
+    read -r -p "Select [1-${#options[@]}] (default: $default_index): " choice || die 'Input closed while collecting installation choices.'
     choice="${choice:-$default_index}"
     if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#options[@]})); then
       printf '%s\n' "${options[$((choice - 1))]}"
@@ -368,7 +375,7 @@ prompt_secret() {
   local second=""
 
   while true; do
-    read -r -s -p "$prompt: " first
+    read -r -s -p "$prompt: " first || die 'Input closed while collecting a password.'
     printf '\n' >&2
     if [[ -z "$first" ]]; then
       if ask_yes_no "Leave $prompt empty?" "no"; then
@@ -378,7 +385,7 @@ prompt_secret() {
       continue
     fi
 
-    read -r -s -p "Confirm $prompt: " second
+    read -r -s -p "Confirm $prompt: " second || die 'Input closed while confirming a password.'
     printf '\n' >&2
 
     if [[ "$first" != "$second" ]]; then
@@ -615,14 +622,21 @@ select_root_partition() {
 }
 
 choose_partitions() {
+  local mode=${1:-existing}
   while true; do
     info "Current partition layout:"
     lsblk -fp "$TARGET_DISK" >&2
 
-    if ask_yes_no "Open cfdisk for this disk before selecting partitions?" "no"; then
+    if [[ "$mode" == edit ]]; then
+      ((DISK_EDIT_APPROVED == 1)) || die 'cfdisk requires the disk-specific GO confirmation.'
+      verify_target_disk_snapshot
+      if lsblk -nrpo MOUNTPOINTS "$TARGET_DISK" | grep -q .; then
+        die 'A partition on the selected disk is mounted. Unmount it before opening cfdisk.'
+      fi
       cfdisk "$TARGET_DISK"
       partprobe "$TARGET_DISK" || true
       udevadm settle || true
+      mode=existing
       continue
     fi
 
@@ -637,6 +651,30 @@ choose_partitions() {
     warn "Partition selection is incomplete or invalid."
     ask_yes_no "Run detection again?" "yes" || die "No valid partition selection."
   done
+}
+
+choose_partition_mode() {
+  if ask_yes_no "Edit the partition table with cfdisk after the first GO?" no; then
+    PARTITION_MODE=edit
+    info 'cfdisk can write the partition table. It will not open until after GO.'
+  else
+    PARTITION_MODE=existing
+    choose_partitions
+  fi
+}
+
+snapshot_target_disk() {
+  CONFIRMED_DISK_ID=$(lsblk -dnro MAJ:MIN "$TARGET_DISK") || die 'Could not identify the target disk.'
+  CONFIRMED_DISK_SIZE=$(lsblk -bdnro SIZE "$TARGET_DISK") || die 'Could not read target disk size.'
+  [[ "$CONFIRMED_DISK_ID" =~ ^[0-9]+:[0-9]+$ && "$CONFIRMED_DISK_SIZE" =~ ^[0-9]+$ ]] \
+    || die 'Target disk identity is incomplete.'
+}
+
+verify_target_disk_snapshot() {
+  [[ -n "$CONFIRMED_DISK_ID" && -n "$CONFIRMED_DISK_SIZE" ]] || die 'Target disk was not confirmed.'
+  [[ $(lsblk -dnro MAJ:MIN "$TARGET_DISK") == "$CONFIRMED_DISK_ID" \
+    && $(lsblk -bdnro SIZE "$TARGET_DISK") == "$CONFIRMED_DISK_SIZE" ]] \
+    || die 'Target disk identity or size changed after GO. Stopping before writes.'
 }
 
 validate_partitions() {
@@ -921,6 +959,68 @@ collect_system_config() {
   done
 }
 
+collect_desktop_config() {
+  info 'Select desktop and AUR options now; installation will not ask again later.'
+  if ask_yes_no "Do you want to install a desktop?" yes; then
+    INSTALL_KDE=yes
+    if [[ "$KDE_PROFILE" == full ]] && ask_yes_no "Install an AUR helper and AUR desktop packages?" yes; then
+      INSTALL_KDE_AUR=yes
+      AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
+    else
+      INSTALL_KDE_AUR=no
+    fi
+  else
+    INSTALL_KDE=no
+    if ask_yes_no "Install an AUR helper for this headless system?" yes; then
+      INSTALL_HEADLESS_AUR=yes
+      AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
+    else
+      INSTALL_HEADLESS_AUR=no
+    fi
+  fi
+}
+
+confirm_disk_edit() {
+  local answer
+  printf '\n' >&2
+  info 'Installation choices have been collected. Disk edits are still pending.'
+  detail "Disk" "$TARGET_DISK"
+  detail "Disk identity" "$CONFIRMED_DISK_ID / $CONFIRMED_DISK_SIZE bytes"
+  detail "Partitioning" "Open cfdisk after GO; partition paths cannot be known yet"
+  detail "Root fs" "$ROOT_FILESYSTEM"
+  detail "Bootloader" "$KRUB_ID"
+  detail "OS detection" "$ENABLE_OS_PROBER"
+  detail "Graphics" "$GRAPHICS_SUMMARY"
+  detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
+  detail "Microcode" "$MICROCODE_SUMMARY"
+  if [[ "$ENABLE_WIFI_AFTER_BOOT" == yes ]]; then
+    detail "Wi-Fi boot" "$WIFI_ADAPTER -> $WIFI_SSID"
+  else
+    detail "Wi-Fi boot" "not configured"
+  fi
+  detail "Hostname" "$HOSTNAME"
+  detail "Timezone" "$TIMEZONE"
+  detail "Locale" "$LOCALE"
+  detail "Keymap" "${KEYMAP:-unchanged}"
+  detail "Primary user" "$PRIMARY_USER"
+  if ((${#EXTRA_USERS[@]} > 0)); then detail "Other users" "${EXTRA_USERS[*]}"; fi
+  detail "Swap file" "$SWAPFILE_SIZE"
+  if [[ "$INSTALL_KDE" == yes ]]; then
+    detail "Desktop" "KDE $KDE_PROFILE"
+    detail "AUR packages" "$INSTALL_KDE_AUR"
+  else
+    detail "Desktop" "headless"
+    detail "AUR helper" "$INSTALL_HEADLESS_AUR"
+  fi
+  if [[ "$INSTALL_KDE" == yes && "$INSTALL_KDE_AUR" == yes || "$INSTALL_KDE" == no && "$INSTALL_HEADLESS_AUR" == yes ]]; then
+    detail "AUR helper" "$AUR_HELPER"
+  fi
+  warn 'cfdisk may write the partition table when you exit it. No partitions have been formatted yet.'
+  read -r -p "Type 'GO $TARGET_DISK' to allow cfdisk, or EXIT: " answer || die 'Cancelled; disk was not changed.'
+  [[ "$answer" == "GO $TARGET_DISK" ]] || die 'Cancelled before opening cfdisk.'
+  DISK_EDIT_APPROVED=1
+}
+
 confirm_install_plan() {
   local extra_user_summary=""
   local extra_sudo_summary=""
@@ -930,6 +1030,7 @@ confirm_install_plan() {
   printf '\n' >&2
   info "Install plan:"
   detail "Disk" "$TARGET_DISK"
+  detail "Disk identity" "$CONFIRMED_DISK_ID / $CONFIRMED_DISK_SIZE bytes"
   detail "Boot" "$BOOT_PARTITION -> /boot"
   detail "Boot action" "$BOOT_PARTITION_ACTION"
   detail "Root" "$ROOT_PARTITION -> /"
@@ -949,6 +1050,7 @@ confirm_install_plan() {
   fi
   detail "Timezone" "$TIMEZONE"
   detail "Locale" "$LOCALE"
+  detail "Keymap" "${KEYMAP:-unchanged}"
   if [[ ${#ADDITIONAL_LOCALES[@]} -gt 0 ]]; then
     detail "Extra locales" "${ADDITIONAL_LOCALES[*]}"
   fi
@@ -965,6 +1067,16 @@ confirm_install_plan() {
     detail "Other sudo" "${extra_sudo_summary:-none}"
   fi
   detail "Swap file" "$SWAPFILE_SIZE"
+  if [[ "$INSTALL_KDE" == yes ]]; then
+    detail "Desktop" "KDE $KDE_PROFILE"
+    detail "AUR packages" "$INSTALL_KDE_AUR"
+  else
+    detail "Desktop" "headless"
+    detail "AUR helper" "$INSTALL_HEADLESS_AUR"
+  fi
+  if [[ "$INSTALL_KDE_AUR" == yes && "$INSTALL_KDE" == yes || "$INSTALL_HEADLESS_AUR" == yes && "$INSTALL_KDE" == no ]]; then
+    detail "AUR helper" "$AUR_HELPER"
+  fi
 
   printf '\n%b%s%b\n' "${UI_DANGER}${UI_BOLD}" "Destructive action" "$UI_RESET" >&2
   log "The root partition will be formatted. Data on $ROOT_PARTITION will be erased."
@@ -976,7 +1088,7 @@ confirm_install_plan() {
     confirmation="FORMAT $ROOT_PARTITION KEEP $BOOT_PARTITION"
   fi
   while true; do
-    read -r -p "Type '$confirmation' to continue or EXIT to cancel: " confirm
+    read -r -p "Type '$confirmation' to continue or EXIT to cancel: " confirm || die 'Input closed before final confirmation; no filesystem was formatted.'
     case "$confirm" in
       EXIT)
         die "Install cancelled."
@@ -985,6 +1097,7 @@ confirm_install_plan() {
     [[ "$confirm" == "$confirmation" ]] && break
     warn "Confirmation did not match the target partitions and action."
   done
+  FORMAT_APPROVED=1
 }
 
 preflight_partitions() {
@@ -1030,6 +1143,8 @@ check_reused_efi_space() (
 format_and_mount() {
   local detected_root_fstype=""
 
+  ((FORMAT_APPROVED == 1)) || die 'Formatting requires the exact partition/action confirmation.'
+  verify_target_disk_snapshot
   preflight_partitions
 
   case "$ROOT_FILESYSTEM" in
@@ -1703,25 +1818,10 @@ run_kde_installer() {
 }
 
 offer_kde_desktop() {
-  printf '\n' >&2
-  info "Your base system is ready. Select no to keep it headless."
-  if ask_yes_no "Do you want to install a desktop?" "yes"; then
-    if [[ "$KDE_PROFILE" == "noapps" ]]; then
-      INSTALL_KDE_AUR="no"
-    else
-      if ask_yes_no "Install an AUR helper and AUR desktop packages?" "yes"; then
-        INSTALL_KDE_AUR="yes"
-        AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
-      else
-        INSTALL_KDE_AUR="no"
-      fi
-    fi
+  if [[ "$INSTALL_KDE" == yes ]]; then
     run_kde_installer
-  else
-    if ask_yes_no "Install an AUR helper for this headless system?" "yes"; then
-      AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
-      bootstrap_aur_helper
-    fi
+  elif [[ "$INSTALL_HEADLESS_AUR" == yes ]]; then
+    bootstrap_aur_helper
   fi
 }
 
@@ -1758,14 +1858,23 @@ main() {
   advance_step "Verifying live environment"
   verify_boot_mode
 
-  advance_step "Selecting disk and partitions"
+  advance_step "Planning target disk"
   select_disk
-  choose_partitions
+  snapshot_target_disk
+  choose_partition_mode
 
-  advance_step "Collecting base configuration"
+  advance_step "Collecting all installation choices"
   collect_system_config
+  collect_desktop_config
+  if [[ "$PARTITION_MODE" == edit ]]; then
+    confirm_disk_edit
+    verify_target_disk_snapshot
+    choose_partitions edit
+  fi
   preflight_partitions
+  verify_target_disk_snapshot
   confirm_install_plan
+  verify_target_disk_snapshot
 
   advance_step "Formatting and mounting"
   format_and_mount

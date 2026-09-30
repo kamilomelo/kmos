@@ -27,6 +27,7 @@ scripts+=(
   scripts/check-shell.sh
   tests/archarm-dispatch.sh
   tests/arch-partition-safety.sh
+  tests/arch-plan-before-go.sh
   tests/quartz-disk-safety.sh
   tests/quartz-bootloader-extraction.sh
   tests/quartz-workdir-safety.sh
@@ -66,6 +67,7 @@ printf 'Bash syntax and ShellCheck passed for %d scoped scripts (%d known diagno
   "${#scripts[@]}" "$(wc -l < "$normalized")"
 
 bash tests/arch-partition-safety.sh
+bash tests/arch-plan-before-go.sh
 bash tests/archarm-dispatch.sh
 bash tests/quartz-disk-safety.sh
 bash tests/quartz-bootloader-extraction.sh
