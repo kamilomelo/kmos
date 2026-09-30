@@ -49,6 +49,7 @@ ENABLE_OS_PROBER="no"
 INSTALL_KDE_AUR="yes"
 INSTALL_KDE="no"
 INSTALL_HEADLESS_AUR="no"
+DESKTOP_CHOICE_MADE=0
 AUR_HELPER="${kmos_AUR_HELPER:-paru}"
 KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
 ENABLE_WIFI_AFTER_BOOT="no"
@@ -960,28 +961,38 @@ collect_system_config() {
 }
 
 collect_desktop_config() {
+  local choice
   info 'Select desktop and AUR options now; installation will not ask again later.'
-  if ask_yes_no "Do you want to install a desktop?" yes; then
-    INSTALL_KDE=yes
+  DESKTOP_CHOICE_MADE=0
+  printf '  1) Headless (no KDE)\n  2) KDE desktop (%s)\n' "$KDE_PROFILE" >&2
+  while true; do
+    printf 'Choose system type [1/2] (required, no default): ' >&2
+    read -r choice || die 'No desktop/headless choice received; installation cancelled before GO.'
+    case "$choice" in
+      1) INSTALL_KDE=no; break ;;
+      2) INSTALL_KDE=yes; break ;;
+      *) warn 'Choose 1 for headless or 2 for KDE. Enter alone does not select KDE.' ;;
+    esac
+  done
+  DESKTOP_CHOICE_MADE=1
+  if [[ "$INSTALL_KDE" == yes ]]; then
     if [[ "$KDE_PROFILE" == full ]] && ask_yes_no "Install an AUR helper and AUR desktop packages?" yes; then
       INSTALL_KDE_AUR=yes
       AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
     else
       INSTALL_KDE_AUR=no
     fi
+  elif ask_yes_no "Install an AUR helper for this headless system?" yes; then
+    INSTALL_HEADLESS_AUR=yes
+    AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
   else
-    INSTALL_KDE=no
-    if ask_yes_no "Install an AUR helper for this headless system?" yes; then
-      INSTALL_HEADLESS_AUR=yes
-      AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
-    else
-      INSTALL_HEADLESS_AUR=no
-    fi
+    INSTALL_HEADLESS_AUR=no
   fi
 }
 
 confirm_disk_edit() {
   local answer
+  ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; cannot approve disk edits.'
   printf '\n' >&2
   info 'Installation choices have been collected. Disk edits are still pending.'
   detail "Disk" "$TARGET_DISK"
@@ -1026,6 +1037,7 @@ confirm_install_plan() {
   local extra_sudo_summary=""
   local idx=0
   local confirmation=""
+  ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; cannot approve formatting.'
 
   printf '\n' >&2
   info "Install plan:"
@@ -1818,6 +1830,7 @@ run_kde_installer() {
 }
 
 offer_kde_desktop() {
+  ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; refusing automatic KDE installation.'
   if [[ "$INSTALL_KDE" == yes ]]; then
     run_kde_installer
   elif [[ "$INSTALL_HEADLESS_AUR" == yes ]]; then

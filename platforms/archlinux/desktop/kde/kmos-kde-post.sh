@@ -20,12 +20,10 @@ ASSET_KONSOLE_DOLPHIN_PROFILE="$REPO_ROOT/assets/konsole/kmos-dolphin.profile"
 ASSET_YAKUAKE_SKIN_DIR="$REPO_ROOT/assets/yakuake/monochrome"
 ASSET_KATE_THEME_AYU="$REPO_ROOT/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$REPO_ROOT/assets/kate/kmos-github.theme"
-ASSET_DASHBOARD_ICON="$REPO_ROOT/assets/icons/kmos.ico"
 ASSET_AUR_PACKAGE_LIST="$REPO_AUR_DIR/aur-packages.kmos"
 TARGET_WALLPAPER="/opt/kmos/assets/wallpapers/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
-TARGET_DASHBOARD_ICON="/opt/kmos/assets/icons/kmos.ico"
 TARGET_AUR_PACKAGE_LIST="/opt/kmos/assets/aur/aur-packages.kmos"
 KAPPA_TYPE_API_BASE="https://api.github.com/repos/kamilomelo/kappa-type/contents/fonts"
 
@@ -415,188 +413,6 @@ for (var i = 0; i < allDesktops.length; ++i) {
 EOF
 
   success "Desktop wallpaper defaults staged for first Plasma start."
-}
-
-apply_application_dashboard_defaults() {
-  local layout_template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
-  local icon=""
-  local -a theme_dirs=(
-    "$MOUNT_POINT/usr/share/icons/breeze"
-    "$MOUNT_POINT/usr/share/icons/breeze-dark"
-  )
-  local -a sizes=(16 22 24 32 64 96)
-
-  [[ -r "$ASSET_DASHBOARD_ICON" ]] || die "Missing dashboard icon asset: $ASSET_DASHBOARD_ICON"
-
-  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT$TARGET_DASHBOARD_ICON"
-  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/kmos.svg"
-  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/plasma-symbolic.svg"
-
-  for icon in "${theme_dirs[@]}"; do
-    for size in "${sizes[@]}"; do
-      install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/places/$size/start-here-kde.svg"
-      install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/places/$size/start-here-kde-symbolic.svg"
-      install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/places/$size/start-here-kde-plasma.svg"
-      install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/places/$size/start-here-kde-plasma-symbolic.svg"
-    done
-    install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/apps/22/plasma-symbolic.svg"
-    install -Dm0644 "$ASSET_DASHBOARD_ICON" "$icon/apps/24/plasma-symbolic.svg"
-  done
-
-  if [[ -f "$layout_template" ]]; then
-    sed -i 's/org.kde.plasma.kickoff/org.kde.plasma.kickerdash/' "$layout_template"
-  fi
-
-  install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-kickerdash.js" <<'EOF'
-var panels = panelIds;
-for (var i = 0; i < panels.length; ++i) {
-    var panel = panelById(panels[i]);
-    if (!panel || !panel.widgetIds) {
-        continue;
-    }
-
-    var widgets = panel.widgetIds;
-    for (var j = 0; j < widgets.length; ++j) {
-        var widget = panel.widgetById(widgets[j]);
-        if (!widget) {
-            continue;
-        }
-
-        if (widget.type === "org.kde.plasma.kicker" || widget.type === "org.kde.plasma.kickoff") {
-            panel.removeWidget(widget);
-            var dashboard = panel.addWidget("org.kde.plasma.kickerdash");
-            if (dashboard) {
-                dashboard.currentConfigGroup = ["General"];
-                dashboard.writeConfig("icon", "start-here-kde");
-                dashboard.writeConfig("Icon", "start-here-kde");
-            }
-            break;
-        }
-    }
-}
-EOF
-
-  success "Application Dashboard staged as default launcher."
-}
-
-apply_panel_widget_defaults() {
-  local layout_template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
-
-  if [[ -f "$layout_template" ]]; then
-    perl -0pi -e 's/panel\.addWidget\("org\.kde\.plasma\.systemtray"\)\npanel\.addWidget\("org\.kde\.plasma\.digitalclock"\)\npanel\.addWidget\("org\.kde\.plasma\.showdesktop"\)/panel.addWidget("org.kde.plasma.systemtray")\npanel.addWidget("org.kde.plasma.systemmonitor.kmos-cpu-gpu")\npanel.addWidget("org.kde.plasma.systemmonitor.kmos-mem")\npanel.addWidget("org.kde.plasma.systemmonitor.kmos-disk")\npanel.addWidget("org.kde.plasma.systemmonitor.net")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.digitalclock")\npanel.addWidget("org.kde.plasma.showdesktop")/' "$layout_template"
-  fi
-
-  install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-panel-widgets.js" <<'EOF'
-function configureDigitalClock(widget, timezone, showDate, dateFormat, timezoneFormat) {
-    if (!widget) {
-        return;
-    }
-
-    widget.currentConfigGroup = ["Appearance"];
-    widget.writeConfig("selectedTimeZones", [timezone]);
-    widget.writeConfig("lastSelectedTimezone", timezone);
-    widget.writeConfig("showDate", showDate);
-    widget.writeConfig("dateFormat", dateFormat);
-    widget.writeConfig("displayTimezoneFormat", timezoneFormat);
-    widget.writeConfig("showLocalTimezone", true);
-    widget.reloadConfig();
-}
-
-function firstWidgetByTypes(panel, types) {
-    for (var i = 0; i < types.length; ++i) {
-        var widgets = panel.widgets(types[i]);
-        if (widgets.length > 0) {
-            return widgets[0];
-        }
-    }
-
-    return null;
-}
-
-function ensureWidgets(panel, type, count) {
-    var widgets = panel.widgets(type).slice();
-
-    while (widgets.length < count) {
-        var widget = panel.addWidget(type);
-        if (!widget) {
-            break;
-        }
-        widgets.push(widget);
-    }
-
-    return widgets;
-}
-
-var panels = panelIds;
-for (var i = 0; i < panels.length; ++i) {
-    var panel = panelById(panels[i]);
-    if (!panel) {
-        continue;
-    }
-
-    panel.widgets("org.kde.plasma.networkmonitor").forEach(function(widget) {
-        widget.remove();
-    });
-    panel.widgets("org.kde.plasma.systemmonitor").forEach(function(widget) {
-        widget.remove();
-    });
-
-    var clocks = ensureWidgets(panel, "org.kde.plasma.digitalclock", 3);
-    var cpuGpuWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.kmos-cpu-gpu", 1);
-    var memWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.kmos-mem", 1);
-    var diskWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.kmos-disk", 1);
-    var networkWidgets = ensureWidgets(panel, "org.kde.plasma.systemmonitor.net", 1);
-    var systemTray = firstWidgetByTypes(panel, ["org.kde.plasma.systemtray"]);
-    var peekWidget = firstWidgetByTypes(panel, ["org.kde.plasma.minimizeall", "org.kde.plasma.showdesktop"]);
-
-    if (!peekWidget || !systemTray || clocks.length < 3 || cpuGpuWidgets.length < 1 || memWidgets.length < 1 || diskWidgets.length < 1 || networkWidgets.length < 1) {
-        continue;
-    }
-
-    configureDigitalClock(clocks[0], "America/Bogota", false, "isoDate", "FullText");
-    configureDigitalClock(clocks[1], "Local", true, "isoDate", "FullText");
-    configureDigitalClock(clocks[2], "Asia/Shanghai", false, "isoDate", "FullText");
-
-    var anchorIndex = systemTray.index + 1;
-    cpuGpuWidgets[0].index = anchorIndex;
-    memWidgets[0].index = anchorIndex + 1;
-    diskWidgets[0].index = anchorIndex + 2;
-    networkWidgets[0].index = anchorIndex + 3;
-    clocks[0].index = anchorIndex + 4;
-    clocks[1].index = anchorIndex + 5;
-    clocks[2].index = anchorIndex + 6;
-    peekWidget.index = anchorIndex + 7;
-}
-EOF
-
-  success "Panel widget defaults staged."
-}
-
-apply_taskmanager_unpin_defaults() {
-  install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-unpin-taskmanager.js" <<'EOF'
-var panels = panelIds;
-for (var i = 0; i < panels.length; ++i) {
-    var panel = panelById(panels[i]);
-    if (!panel || !panel.widgetIds) {
-        continue;
-    }
-
-    var widgets = panel.widgetIds;
-    for (var j = 0; j < widgets.length; ++j) {
-        var widget = panel.widgetById(widgets[j]);
-        if (!widget) {
-            continue;
-        }
-
-        if (widget.type === "org.kde.plasma.taskmanager" || widget.type === "org.kde.plasma.icontasks") {
-            widget.currentConfigGroup = ["General"];
-            widget.writeConfig("launchers", "");
-        }
-    }
-}
-EOF
-
-  success "Task Manager launchers staged as unpinned."
 }
 
 apply_color_scheme_defaults() {
@@ -1033,15 +849,41 @@ EOF
   success "AUR package set installed."
 }
 
+disable_legacy_panel_updates() {
+  local updates="$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates"
+  local name marker path
+  local -a names=(zz-kmos-kickerdash.js zz-kmos-panel-widgets.js zz-kmos-unpin-taskmanager.js)
+  local -a markers=('panel.addWidget("org.kde.plasma.kickerdash")' 'function configureDigitalClock(widget' 'widget.writeConfig("launchers", "")')
+  local index
+  # Inspect every hook before moving any, so a modified file cannot leave a
+  # half-disabled panel setup. Never replace an existing backup.
+  for index in "${!names[@]}"; do
+    name=${names[$index]}
+    marker=${markers[$index]}
+    path="$updates/$name"
+    [[ -e "$path" || -L "$path" ]] || continue
+    if [[ ! -f "$path" || -L "$path" ]] || ! grep -Fq "$marker" "$path"; then
+      die "Existing panel hook differs from KMOS's generated file: $path. Preserve it and review manually."
+    fi
+    [[ ! -e "$path.kmos-disabled" && ! -L "$path.kmos-disabled" ]] \
+      || die "Panel hook backup already exists: $path.kmos-disabled. Review before rerunning."
+  done
+  for index in "${!names[@]}"; do
+    path="$updates/${names[$index]}"
+    [[ -e "$path" ]] || continue
+    mv -- "$path" "$path.kmos-disabled"
+    warn "Disabled old KMOS panel hook; backup: $path.kmos-disabled"
+  done
+}
+
 apply_post_tweaks() {
+  # Never add, remove, reorder or unpin widgets. Plasma owns the panel.
+  disable_legacy_panel_updates
   stage_repo_assets
   apply_splash_defaults
   apply_sddm_defaults
   apply_lockscreen_defaults
   apply_desktop_wallpaper_defaults
-  apply_application_dashboard_defaults
-  apply_panel_widget_defaults
-  apply_taskmanager_unpin_defaults
   apply_color_scheme_defaults
   apply_konsole_defaults
   apply_yakuake_defaults
@@ -1065,4 +907,6 @@ main() {
   final_success "KDE post-install stage complete."
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

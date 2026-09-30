@@ -67,8 +67,9 @@ and the final confirmation names the exact devices and EFI action. Back up
 important data before installing; reusing an EFI partition does not make the
 root-formatting step reversible.
 
-The x86 Bash installer now collects the desktop (KDE or headless), AUR,
-account and other configuration choices **before** the install plan review.
+The x86 Bash installer now collects the desktop (**explicitly choose 1 for
+headless or 2 for KDE; Enter alone cannot select KDE**), AUR, account and
+other configuration choices **before** the install plan review.
 With existing partitions, the typed `FORMAT ...` confirmation is the GO point;
 the installer rechecks the selected disk identity before formatting and runs
 the selected installation without a later desktop-choice prompt. If you choose
@@ -78,6 +79,16 @@ the resulting partitions and requires a separate `FORMAT ...` confirmation
 before touching their filesystems. No partition edits can be rolled back by
 the installer once cfdisk writes them. Wi-Fi connection needed to fetch the
 checkout may also happen separately before running this installer.
+
+The KDE post-install stage no longer installs scripts that add, remove, unpin
+or reorder Plasma panel widgets, or modify the default panel template. An
+existing install can disable only the old KMOS-generated panel update scripts
+with `./platforms/archlinux/desktop/kde/disable-kmos-panel-hooks.sh`; it saves
+each as a `.kmos-disabled` file and leaves other files alone. **This prevents
+future changes but cannot infer or reconstruct an already-modified personal
+panel layout.** Your panel configuration is in
+`~/.config/plasma-org.kde.plasma.desktop-appletsrc`; back it up before
+rearranging widgets in Plasma or restoring a known-good copy.
 
 #### 4) If Ethernet Is NOT Available
 

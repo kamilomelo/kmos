@@ -31,7 +31,6 @@ mock_setup() {
   ask_yes_no() {
     case "$1" in
       'Edit the partition table with cfdisk after the first GO?') [[ "${EDIT_PARTITIONS:-no}" == yes ]] ;;
-      'Do you want to install a desktop?') [[ "${KDE_CHOICE:-no}" == yes ]] ;;
       'Install an AUR helper for this headless system?') return 1 ;;
       'Install an AUR helper and AUR desktop packages?') return 1 ;;
       *) printf 'Unplanned installer question: %s\n' "$1" >&2; exit 1 ;;
@@ -54,15 +53,21 @@ mock_setup() {
 (
   mock_setup
   EDIT_PARTITIONS=existing
-  KDE_CHOICE=yes
-  main <<< 'FORMAT /dev/testdisk2 KEEP /dev/testdisk1'
+  main <<< $'2\nFORMAT /dev/testdisk2 KEEP /dev/testdisk1'
 ) > "$fixture/existing-output" 2>&1
 [[ $(cat "$fixture/order") == $'partitions\nchoices\npreflight\nformat' ]]
 grep -q 'KDE full' "$fixture/existing-output"
+grep -q 'Choose system type \[1/2\] (required, no default)' "$fixture/existing-output"
 (
   mock_setup
-  KDE_CHOICE=yes
-  collect_desktop_config
+  KDE_PROFILE=noapps
+  collect_desktop_config <<< $'\n2'
+  [[ "$DESKTOP_CHOICE_MADE" == 1 && "$INSTALL_KDE" == yes && "$INSTALL_KDE_AUR" == no ]]
+) > "$fixture/noapps-output" 2>&1
+grep -q 'Enter alone does not select KDE' "$fixture/noapps-output"
+(
+  mock_setup
+  collect_desktop_config <<< '2'
   # shellcheck disable=SC2329 # Must never be called after collecting the choice.
   ask_yes_no() { printf 'Late desktop question after GO.\n' >&2; exit 1; }
   # shellcheck disable=SC2329 # Called by the sourced installer's desktop stage.
@@ -72,8 +77,8 @@ grep -q 'KDE full' "$fixture/existing-output"
 [[ $(cat "$fixture/desktop-execution") == kde ]]
 (
   mock_setup
-  KDE_CHOICE=no
   INSTALL_HEADLESS_AUR=yes
+  DESKTOP_CHOICE_MADE=1
   # shellcheck disable=SC2329 # Must never be called after collecting the choice.
   ask_yes_no() { printf 'Late AUR question after GO.\n' >&2; exit 1; }
   # shellcheck disable=SC2329 # Called by the sourced installer's desktop stage.
@@ -85,7 +90,24 @@ grep -q 'KDE full' "$fixture/existing-output"
 if (
   mock_setup
   EDIT_PARTITIONS=existing
-  main <<< 'EXIT'
+  main <<< ''
+) > "$fixture/no-desktop-choice" 2>&1; then
+  printf 'Blank desktop choice unexpectedly continued to GO.\n' >&2; exit 1
+fi
+[[ $(cat "$fixture/order") == $'partitions\nchoices' ]]
+grep -q 'No desktop/headless choice received' "$fixture/no-desktop-choice"
+if (
+  run_kde_installer() { printf 'KDE must not run without a choice.\n' >&2; exit 1; }
+  offer_kde_desktop
+) > "$fixture/desktop-unset" 2>&1; then
+  printf 'Unset desktop choice unexpectedly ran.\n' >&2; exit 1
+fi
+grep -q 'Desktop/headless choice was not collected' "$fixture/desktop-unset"
+: > "$fixture/order"
+if (
+  mock_setup
+  EDIT_PARTITIONS=existing
+  main <<< $'1\nEXIT'
 ) > "$fixture/declined-output" 2>&1; then
   printf 'Declined GO unexpectedly formatted a partition.\n' >&2; exit 1
 fi
@@ -97,7 +119,7 @@ fi
 if (
   mock_setup
   EDIT_PARTITIONS=yes
-  main <<< 'EXIT'
+  main <<< $'1\nEXIT'
 ) > "$fixture/edit-declined" 2>&1; then
   printf 'Declined disk edit unexpectedly continued.\n' >&2; exit 1
 fi
@@ -106,7 +128,7 @@ fi
 (
   mock_setup
   EDIT_PARTITIONS=yes
-  main <<< $'GO /dev/testdisk\nFORMAT /dev/testdisk2 KEEP /dev/testdisk1'
+  main <<< $'1\nGO /dev/testdisk\nFORMAT /dev/testdisk2 KEEP /dev/testdisk1'
 ) > "$fixture/edit-output" 2>&1
 [[ $(cat "$fixture/order") == $'choices\ncfdisk\npartitions\npreflight\nformat' ]]
 grep -q 'cfdisk may write the partition table' "$fixture/edit-output"
@@ -114,7 +136,7 @@ grep -q 'cfdisk may write the partition table' "$fixture/edit-output"
 if (
   mock_setup
   EDIT_PARTITIONS=yes
-  main <<< $'GO /dev/testdisk\nEXIT'
+  main <<< $'1\nGO /dev/testdisk\nEXIT'
 ) > "$fixture/edit-no-format" 2>&1; then
   printf 'A declined post-cfdisk format was accepted.\n' >&2; exit 1
 fi
@@ -124,7 +146,7 @@ if (
   mock_setup
   EDIT_PARTITIONS=yes
   MOUNTED_DISK=yes
-  main <<< $'GO /dev/testdisk\nFORMAT /dev/testdisk2 KEEP /dev/testdisk1'
+  main <<< $'1\nGO /dev/testdisk\nFORMAT /dev/testdisk2 KEEP /dev/testdisk1'
 ) > "$fixture/mounted-disk" 2>&1; then
   printf 'cfdisk accepted a mounted disk.\n' >&2; exit 1
 fi
