@@ -114,13 +114,30 @@ export KMOS_WIFI_TEST_STEPS="$fixture/wifi-steps"
   [[ "$WIFI_BOOTSTRAP_IWD" == 1 && "$WIFI_BACKEND" == iwd ]]
 )
 [[ $(cat "$fixture/wifi-steps") == iwd ]]
-# At the end, wpa_supplicant is offered regardless of how updates were reached.
+# A normal end-of-run default installs Impala/iwd and verifies the saved
+# connection without a TUI when there is no interactive terminal.
+(
+  REPOSITORY_DIR="$fixture/board"
+  detect_wifi_adapter() { printf 'wlan0\n'; }
+  systemctl() { return 1; }
+  pacman() {
+    case "$1" in
+      -Q) return 1 ;;
+      -Si) [[ "$2" == impala ]] ;;
+      -S) [[ "$*" == $'-S\n--needed\n--noconfirm\nimpala\niwd' ]] ;;
+    esac
+  }
+  configure_persistent_wifi <<< ''
+  [[ "$WIFI_BACKEND" == iwd ]]
+)
+[[ $(tail -n 2 "$fixture/wifi-steps") == $'--prepare-iwd\n--check-iwd' ]]
+# At the end, the wpa_supplicant fallback can still be selected explicitly.
 (
   REPOSITORY_DIR="$fixture/board"
   detect_wifi_adapter() { printf 'wlan0\n'; }
   systemctl() { return 1; }
   pacman() { [[ "$*" == $'-S\n--needed\n--noconfirm\nwpa_supplicant' ]]; }
-  configure_persistent_wifi
+  configure_persistent_wifi <<< '2'
   [[ "$WIFI_ADAPTER" == wlan0 && "$WIFI_BACKEND" == wpa ]]
 )
 [[ $(tail -n 1 "$fixture/wifi-steps") == --wpa-fallback ]]
@@ -135,7 +152,7 @@ chmod +x "$fixture/board/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-w
   detect_wifi_adapter() { printf 'wlan0\n'; }
   systemctl() { [[ "$1" == is-enabled && "$3" == wpa_supplicant@wlan0.service ]]; }
   pacman() { printf 'Unexpected package install.\n' >&2; exit 1; }
-  configure_persistent_wifi
+  configure_persistent_wifi <<< ''
   [[ "$WIFI_BACKEND" == wpa ]]
 )
 [[ $(tail -n 1 "$fixture/wifi-steps") == check ]]
@@ -151,7 +168,7 @@ chmod +x "$fixture/board/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-w
 (
   detect_wifi_adapter() { return 1; }
   pacman() { printf 'Unexpected package install without an adapter.\n' >&2; exit 1; }
-  configure_persistent_wifi
+  configure_persistent_wifi <<< '2'
   [[ -z "$WIFI_BACKEND" ]]
 ) 2>"$fixture/no-final-adapter"
 grep -q 'No Wi-Fi adapter found' "$fixture/no-final-adapter"
@@ -159,10 +176,10 @@ grep -q 'No Wi-Fi adapter found' "$fixture/no-final-adapter"
   WIFI_BOOTSTRAP_IWD=1
   WIFI_BACKEND=iwd
   ethernet_available() { return 1; }
-  ask_yes_no() { [[ "$1" == 'Configure persistent Wi-Fi with wpa_supplicant now?' && "$2" == yes ]] && return 1; exit 1; }
   systemctl() { [[ "$1" == disable && "$2" == iwd.service ]]; }
   pacman() { printf 'Unexpected package install.\n' >&2; exit 1; }
-  configure_persistent_wifi
+  detect_wifi_adapter() { return 1; }
+  configure_persistent_wifi <<< '3'
   [[ "$WIFI_REBOOT_UNSAFE" == 1 && -z "$WIFI_BACKEND" ]]
 )
 (
@@ -399,11 +416,6 @@ grep -q 'Live internet access could not be verified' "$fixture/no-internet"
   find_local_repository() { printf '%s\n' "$repo"; }
   require_root_and_arm() { :; }
   ask_yes_no() {
-    if [[ "$1" == 'Configure persistent Wi-Fi with wpa_supplicant now?' ]]; then
-      [[ "$2" == yes ]] || exit 1
-      printf 'wifi-choice\n' >> "$fixture/steps"
-      return 1
-    fi
     if [[ "$1" == 'Do you want to install a desktop?' ]]; then
       [[ "$2" == yes ]] || exit 1
       printf 'desktop-choice\n' >> "$fixture/steps"
@@ -426,7 +438,8 @@ grep -q 'Live internet access could not be verified' "$fixture/no-internet"
   remove_alarm() { :; }
   # shellcheck disable=SC2329 # An invocation here would fail this test.
   configure_kde_terminal() { printf 'KDE assets installed despite desktop being declined.\n' >&2; exit 1; }
-  detect_wifi_adapter() { printf 'Wi-Fi adapter detection ran after Wi-Fi was declined.\n' >&2; exit 1; }
+  detect_wifi_adapter() { return 1; }
+  configure_persistent_wifi() { printf 'wifi-choice\n' >> "$fixture/steps"; }
   verify_installation() { printf 'verify\n' >> "$fixture/steps"; }
   offer_aur_helper() { printf 'aur\n' >> "$fixture/steps"; }
   verify_runtime_network() { printf 'network\n' >> "$fixture/steps"; }

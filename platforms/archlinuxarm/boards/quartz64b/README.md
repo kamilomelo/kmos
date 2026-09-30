@@ -91,21 +91,32 @@ Fresh configs leave SAE/WPA3 enabled; a previously configured
 `SaeDisable=brcmfmac` quirk is preserved, not added automatically. The Kasa
 network still showed authentication timeouts after reboot even with this quirk.
 At the **end of provisioning**, whether the update used Ethernet or Wi-Fi, the
-installer asks once (default **Yes**) whether to configure persistent Wi-Fi
-with **wpa_supplicant**. If it is already enabled, it checks and preserves the
-connection; otherwise it installs the ARM package and configures it. A board
-without Ethernet uses staged iwd packages only to bootstrap connectivity for
-package updates. If persistent Wi-Fi is accepted, iwd is then replaced by
-wpa_supplicant. For that switch it reuses a usable WPA2 PSK or
+installer offers **Impala/iwd (default), wpa_supplicant fallback, or Skip**.
+If wpa_supplicant is already active or enabled, that tested backend becomes
+the default instead: selecting Impala will not replace its working profile.
+Impala is the interactive Wi-Fi picker, not a background service: **iwd**
+retains the profile in `/var/lib/iwd` and reconnects at boot. The script
+installs `impala` and `iwd` from the ARM repositories, configures iwd DHCP/DNS,
+opens Impala on an interactive terminal (ASCII mode), then checks a saved,
+autoconnecting profile, address, route, and Wi-Fi-bound internet. Run `impala`
+later to change SSIDs. When Impala is unavailable in a configured repository,
+the installer offers iwd/iwctl instead; it does not silently substitute a
+downloaded executable or source build. A board without Ethernet can still
+use iwd to bootstrap the initial update before Impala is installed.
+
+Selecting the **wpa_supplicant fallback** preserves and verifies an existing
+profile; otherwise it installs the ARM package and switches backends. For that
+switch it reuses a usable WPA2 PSK or
 passphrase from the active, root-only iwd profile, without asking a second
 time. If the saved credentials cannot be safely read, it asks again. iwd
 profiles are kept for rollback, but iwd is stopped and disabled before
 wpa_supplicant starts.
-If Wi-Fi is declined after iwd was used for bootstrap, iwd is disabled for
+If Wi-Fi is skipped after iwd was used for bootstrap, iwd is disabled for
 future boots but the current connection is left up; without Ethernet the
 installer skips automatic reboot and warns that a recovery connection is needed.
-Networkd supplies Wi-Fi DHCP and resolved supplies DNS. No two Wi-Fi managers
-should run together. A failed switch attempts to restore iwd, and provisioning
+For the fallback, networkd supplies Wi-Fi DHCP and resolved supplies DNS;
+for Impala/iwd, iwd supplies Wi-Fi DHCP and resolved supplies DNS. No two Wi-Fi
+managers should run together. A failed fallback switch attempts to restore iwd, and provisioning
 stops rather than claiming a persistent Wi-Fi setup. The generated profile
 has mode `600`, a PSK rather than a plaintext passphrase, and the control socket
 needed for `wpa_cli`. An older trial profile lacking `ctrl_interface` needs
@@ -130,8 +141,8 @@ route and internet before relying on Wi-Fi-only SSH. If the adapter or
 firmware is missing, the helper stops before installing packages; temporary
 networking or a compatible adapter will be necessary.
 
-The headless provisioner configures persistent Wi-Fi **after other setup and
-optional AUR builds**, before its final network check and reboot. Run the
+The provisioner chooses persistent Wi-Fi **after base setup**, before the KDE
+choice, optional AUR helper, final network check and reboot. Run the
 standalone bootstrap helper when networking is needed before cloning the checkout:
 `./platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh`.
 Updating the Git checkout does not update an older SD-card copy at
@@ -159,8 +170,10 @@ available. The provisioner validates the local checkout and reports its commit
 before asking permission to make changes. It never fetches another copy or
 replaces files in your clone. Its initial `pacman -Syu` can update the board
 kernel, so back up the working card before confirming provisioning. The
-initial provisioning confirmation and optional Wi-Fi setup both default to
-**Yes** when you press Enter; explicitly answer **No** to skip either one. The
+initial provisioning confirmation defaults to **Yes**; the Wi-Fi backend
+question defaults to Impala/iwd unless a wpa_supplicant service is already
+active or enabled, in which case it defaults to preserving wpa_supplicant.
+Select **3** to skip Wi-Fi. The
 Arch Linux ARM `starship` package is required; provisioning stops rather than
 claiming a working prompt if it cannot be installed or rendered.
 
@@ -203,8 +216,17 @@ component is absent, KDE is not installed and the headless boot target stays
 in place. The Linux text console and SSH remain available in either case.
 
 The x86 manifest includes NetworkManager, plasma-nm and another login manager.
-Quartz64 excludes those entries and keeps **wpa_supplicant + networkd** for
-Wi-Fi/Ethernet and **SDDM** for the login screen. A missing DRM graphics card
+Quartz64 excludes those entries and keeps the **selected standalone Wi-Fi
+backend** (iwd or wpa_supplicant) and **SDDM** for the login screen. Installing
+KDE does **not** automatically migrate Wi-Fi to NetworkManager or remove
+Impala. If NetworkManager is migrated and **survives a reboot**, the optional
+`./platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh remove-impala`
+command checks that NetworkManager is active and enabled, standalone iwd and
+wpa_supplicant are inactive and disabled, no KMOS Wi-Fi networkd DHCP file is
+present, and Wi-Fi has an address, default route and internet. It then asks
+before removing **only the Impala TUI**; saved iwd profiles are preserved for
+recovery. Merely installing NetworkManager is not sufficient to remove it.
+A missing DRM graphics card
 requires explicit permission to try KDE; an installed package set cannot prove
 that a graphical session will work on the board. No x86 binaries or unreviewed
 AUR replacements are installed. For an already-provisioned board, use

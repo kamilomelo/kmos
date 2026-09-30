@@ -44,7 +44,7 @@ install_offline_wifi() (
 
 usage() {
   cat <<'EOF'
-Usage: ./connect-quartz64b-wifi.sh [--wpa-fallback|--help]
+Usage: ./connect-quartz64b-wifi.sh [--prepare-iwd|--check-iwd|--wpa-fallback|--help]
 
 Connect a detected Wi-Fi adapter using iwctl first, then verify internet over
 that adapter and keep the working iwd profile for later boots. If iwd is missing, offer
@@ -60,6 +60,9 @@ It requires the ARM wpa_supplicant package installed and must be run from the
 local console or over Ethernet, not over the Wi-Fi connection being switched.
 When iwd is connected and has a valid root-only saved PSK/passphrase, the
 switch reuses it rather than prompting again; otherwise it asks locally.
+--prepare-iwd configures iwd DHCP/DNS without prompting for a network, ready
+for the impala TUI. --check-iwd verifies the saved profile and Wi-Fi-bound
+internet after leaving impala or after reboot; it does not modify the system.
 EOF
 }
 
@@ -157,6 +160,9 @@ EOF
 
 configure_wifi_network() {
   local adapter=$1 iwd_config=${2:-/etc/iwd/main.conf} network_config=${3:-/etc/systemd/network/25-wifi-dhcp.network} legacy migrate=0
+  if systemctl is-active --quiet NetworkManager.service || systemctl is-enabled --quiet NetworkManager.service; then
+    die 'NetworkManager is active or enabled; refusing to start standalone iwd alongside it.'
+  fi
   if systemctl is-active --quiet "wpa_supplicant@$adapter.service" \
     || systemctl is-enabled --quiet "wpa_supplicant@$adapter.service"; then
     die "wpa_supplicant@$adapter.service is active or enabled; refusing to start iwd on the same adapter."
@@ -215,13 +221,21 @@ connected_wifi_ssid() {
 }
 
 wifi_connection_ready() {
-  local adapter=$1 state_dir=$2 ssid=$3 profile service
-  profile="$state_dir/$ssid.psk"
+  local adapter=$1 state_dir=$2 ssid=$3 profile service suffix found=0
+  # iwd saves WPA, open, and enterprise networks with different suffixes.
+  # Verify only an unambiguous, regular root-owned saved profile.
+  for suffix in psk open 8021x; do
+    if [[ -e "$state_dir/$ssid.$suffix" || -L "$state_dir/$ssid.$suffix" ]]; then
+      profile="$state_dir/$ssid.$suffix"
+      ((found += 1))
+    fi
+  done
+  ((found == 1)) || return 1
   [[ -f "$profile" && ! -L "$profile" ]] || return 1
   [[ $(stat -c %u -- "$profile") == 0 ]] || return 1
   [[ $(stat -c %a -- "$profile") == 600 ]] || return 1
   # iwd's generated profiles default to autoconnect even without this key.
-  ! grep -Fxq 'AutoConnect=false' "$profile" || return 1
+  ! grep -Eq '^[[:space:]]*AutoConnect[[:space:]]*=[[:space:]]*false[[:space:]]*$' "$profile" || return 1
   for service in iwd.service systemd-resolved.service; do
     systemctl is-active --quiet "$service" || return 1
     systemctl is-enabled --quiet "$service" || return 1
@@ -463,15 +477,36 @@ connect_wifi_with_retries() {
   done
 }
 
+check_iwd_wifi() {
+  local adapter=$1 attempt ssid
+  if systemctl is-active --quiet NetworkManager.service || systemctl is-enabled --quiet NetworkManager.service; then
+    die 'NetworkManager is active or enabled; standalone iwd must not compete with it.'
+  fi
+  if systemctl is-active --quiet "wpa_supplicant@$adapter.service" || systemctl is-enabled --quiet "wpa_supplicant@$adapter.service"; then
+    die 'wpa_supplicant is active or enabled; iwd must not manage this adapter.'
+  fi
+  for ((attempt=0; attempt<15; attempt++)); do
+    ssid=$(connected_wifi_ssid "$adapter" 2>/dev/null) || ssid=""
+    if [[ -n "$ssid" ]] && wifi_connection_ready "$adapter" /var/lib/iwd "$ssid"; then
+      info "iwd Wi-Fi verified on $adapter: $ssid (reboot persistence still requires a real reboot)."
+      return 0
+    fi
+    sleep 2
+  done
+  die 'iwd Wi-Fi association, saved autoconnect profile, DHCP, route or internet was not verified after 30 seconds.'
+}
+
 main() {
-  local adapter ssid answer fallback=0
+  local adapter ssid answer mode=connect
   case "${1:-}" in
     -h|--help) usage; return ;;
-    --wpa-fallback) fallback=1 ;;
+    --wpa-fallback) mode=wpa ;;
+    --prepare-iwd) mode=prepare ;;
+    --check-iwd) mode=check ;;
     '') ;;
     *) die "Unknown argument: $1" ;;
   esac
-  (($# == 0 || ($# == 1 && fallback == 1))) || die 'Unexpected arguments.'
+  (($# <= 1)) || die 'Unexpected arguments.'
   [[ $(uname -m) == aarch64 ]] || die 'This helper is for AArch64 boards.'
   if ((EUID != 0)); then
     command -v sudo >/dev/null 2>&1 || die 'Root access is required, but sudo is unavailable.'
@@ -480,8 +515,15 @@ main() {
   fi
   adapter=$(detect_wifi_adapter) || die 'No wireless interface found. Check your adapter and its firmware.'
   info "Detected Wi-Fi interface: $adapter"
-  if ((fallback)); then
+  if [[ "$mode" == wpa ]]; then
+    if systemctl is-active --quiet NetworkManager.service || systemctl is-enabled --quiet NetworkManager.service; then
+      die 'NetworkManager is active or enabled; refusing to start standalone wpa_supplicant alongside it.'
+    fi
     run_wpa_fallback "$adapter"
+    return
+  fi
+  if [[ "$mode" == check ]]; then
+    check_iwd_wifi "$adapter"
     return
   fi
   if command -v rfkill >/dev/null 2>&1; then
@@ -497,6 +539,10 @@ main() {
   fi
   command -v timeout >/dev/null 2>&1 || die 'Coreutils timeout is required so Wi-Fi connect cannot hang indefinitely.'
   configure_wifi_network "$adapter"
+  if [[ "$mode" == prepare ]]; then
+    info 'iwd DHCP/DNS is ready. Connect using impala, then verify with --check-iwd.'
+    return 0
+  fi
   ssid=$(connected_wifi_ssid "$adapter") || true
   if [[ -n "$ssid" ]] && wifi_connection_ready "$adapter" /var/lib/iwd "$ssid"; then
     info "Working Wi-Fi link ($ssid) and saved iwd profile verified. A real reboot test is still required."

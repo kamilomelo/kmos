@@ -37,7 +37,7 @@ info() {
 
 usage() {
   cat <<'EOF'
-Usage: ./provision-kmos-headless.sh [provision|kde|repair-prompt|fonts|aur|remove-alarm|wifi-fallback]
+Usage: ./provision-kmos-headless.sh [provision|kde|remove-impala|repair-prompt|fonts|aur|remove-alarm|wifi-fallback]
 
 Run this script from a complete local KMOS Git checkout on an already booted
 Quartz64. Optionally configures Wi-Fi before package updates with the standalone
@@ -46,6 +46,8 @@ No argument provisions KMOS and offers KDE or headless mode at the end. The
 kde command offers KDE on an already-provisioned board without repeating user,
 swap or Wi-Fi setup. Other commands repair the prompt, install Kappa Mono,
 choose an AUR helper, remove alarm, or switch Wi-Fi to wpa_supplicant.
+remove-impala removes only the TUI package after a separately tested reboot
+with NetworkManager; it never deletes saved iwd profiles or switches managers.
 They do not rerun system provisioning or modify the board's bootloader.
 EOF
 }
@@ -297,7 +299,7 @@ kde_graphics_available() {
 
 kde_network_conflict() {
   # The x86 KDE manifest includes NM and plasma-nm; neither may take over the
-  # working Quartz64 wpa_supplicant/networkd adapter at the next boot.
+  # selected standalone Quartz64 Wi-Fi backend at the next boot.
   case "$1" in
     networkmanager|networkmanager-openvpn|plasma-nm|plasma-login-manager) return 0 ;;
     *) return 1 ;;
@@ -315,7 +317,7 @@ offer_kde_desktop() {
     ask_yes_no 'Try KDE without detected DRM graphics?' no || return 0
   fi
   if systemctl is-enabled --quiet NetworkManager.service || systemctl is-active --quiet NetworkManager.service; then
-    die 'NetworkManager is already enabled or active. Review its ownership before installing KDE alongside wpa_supplicant/networkd.'
+    die 'NetworkManager is already enabled or active. Review its ownership before installing KDE alongside standalone Wi-Fi.'
   fi
   read -r -p 'KDE profile [full/noapps] (full): ' profile
   profile=${profile:-full}
@@ -341,7 +343,7 @@ offer_kde_desktop() {
   done
   if ((${#excluded[@]} > 0)); then
     printf -v excluded_summary '%s ' "${excluded[@]}"
-    info "Excluded to preserve wpa_supplicant/networkd and SDDM: ${excluded_summary% }."
+    info "Excluded to preserve the selected Wi-Fi backend and SDDM: ${excluded_summary% }."
   fi
   for package in plasma-desktop plasma-workspace kwin sddm; do
     if ! printf '%s\n' "${available[@]}" "${installed[@]}" | grep -Fxq "$package"; then
@@ -372,8 +374,8 @@ offer_kde_desktop() {
     pacman -Q "$package" >/dev/null || die "KDE component missing after installation: $package"
   done
   configure_kde_terminal "$REPOSITORY_DIR"
-  # Only SDDM takes the new graphical target; networking stays with networkd
-  # and wpa_supplicant. Never enable NM or a second Wi-Fi manager here.
+  # Only SDDM takes the new graphical target; networking stays with the
+  # selected standalone backend. Never enable a second Wi-Fi manager here.
   systemctl enable sddm.service
   systemctl set-default graphical.target
   systemctl is-enabled --quiet sddm.service || die 'SDDM was not enabled.'
@@ -609,16 +611,63 @@ bootstrap_network() {
 }
 
 configure_persistent_wifi() {
-  if ! ask_yes_no 'Configure persistent Wi-Fi with wpa_supplicant now?' yes; then
-    info 'wpa_supplicant setup skipped; existing Wi-Fi configuration was not replaced.'
-    if ((WIFI_BOOTSTRAP_IWD)); then
-      systemctl disable iwd.service || die 'Could not disable the temporary iwd boot service.'
-      warn 'Temporary iwd will not start after reboot. Connect Ethernet or configure persistent Wi-Fi before rebooting.'
-      ethernet_available || WIFI_REBOOT_UNSAFE=1
-    fi
-    WIFI_BACKEND=""
-    return 0
+  local selection default=1 adapter
+  adapter=$(detect_wifi_adapter || true)
+  if [[ -n "$adapter" ]] && { systemctl is-enabled --quiet "wpa_supplicant@$adapter.service" || systemctl is-active --quiet "wpa_supplicant@$adapter.service"; }; then default=2; fi
+  info 'Persistent Wi-Fi choices: 1) Impala/iwd (change networks in a TUI)  2) wpa_supplicant (tested fallback)  3) Skip'
+  read -r -p "Select Wi-Fi backend [1/2/3] ($default): " selection || selection=""
+  case "${selection:-$default}" in
+    1) configure_impala_wifi; return ;;
+    2) configure_wpa_wifi; return ;;
+    3) ;;
+    *) die 'Invalid Wi-Fi choice; no backend was changed.' ;;
+  esac
+  info 'Persistent Wi-Fi skipped; existing Wi-Fi configuration was not replaced.'
+  if ((WIFI_BOOTSTRAP_IWD)); then
+    systemctl disable iwd.service || die 'Could not disable the temporary iwd boot service.'
+    warn 'Temporary iwd will not start after reboot. Connect Ethernet or configure persistent Wi-Fi before rebooting.'
+    ethernet_available || WIFI_REBOOT_UNSAFE=1
   fi
+  WIFI_BACKEND=""
+}
+
+configure_impala_wifi() {
+  WIFI_ADAPTER=$(detect_wifi_adapter || true)
+  [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter found; persistent Wi-Fi was not configured.'; return 0; }
+  if systemctl is-enabled --quiet NetworkManager.service || systemctl is-active --quiet NetworkManager.service; then
+    die 'NetworkManager owns networking; do not start Impala/iwd alongside it.'
+  fi
+  if systemctl is-enabled --quiet "wpa_supplicant@$WIFI_ADAPTER.service" || systemctl is-active --quiet "wpa_supplicant@$WIFI_ADAPTER.service"; then
+    die 'wpa_supplicant is enabled on this adapter. Select option 2 to keep it; switching to iwd needs an explicit recovery migration.'
+  fi
+  if ! pacman -Q impala >/dev/null 2>&1 && ! pacman -Si impala >/dev/null 2>&1; then
+    warn 'Impala is unavailable in the configured ARM repositories. iwd and wpa_supplicant remain available without it.'
+    ask_yes_no 'Continue with iwd using iwctl instead of Impala?' no || return 0
+    pacman -S --needed --noconfirm iwd
+  else
+    pacman -S --needed --noconfirm impala iwd
+  fi
+  "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --prepare-iwd
+  if [[ -n "${SSH_CONNECTION:-}" ]] && ip -4 -o address show dev "$WIFI_ADAPTER" scope global | grep -q .; then
+    warn 'SSH may be using Wi-Fi; not launching a TUI that could disconnect it. Use the local console to change SSIDs.'
+  elif [[ -t 0 && -t 1 ]]; then
+    if command -v impala >/dev/null 2>&1; then
+      info 'Select or inspect Wi-Fi in Impala; quit the TUI when ready.'
+      impala --ascii || die 'Impala exited with an error; iwd settings were preserved.'
+    else
+      info 'Connect with the existing iwd helper; no Impala TUI is installed.'
+      "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh"
+    fi
+  else
+    info 'No interactive terminal: verifying the existing iwd connection without opening Impala.'
+  fi
+  "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --check-iwd \
+    || die 'iwd Wi-Fi was not verified. Do not reboot expecting Wi-Fi; use a local console or Ethernet to repair it.'
+  WIFI_BACKEND=iwd
+  info 'iwd owns Wi-Fi at boot; use Impala when installed to change SSIDs. Verify reconnection after a real reboot.'
+}
+
+configure_wpa_wifi() {
   WIFI_ADAPTER=$(detect_wifi_adapter || true)
   [[ -n "$WIFI_ADAPTER" ]] || { warn 'No Wi-Fi adapter found; persistent Wi-Fi was not configured.'; return 0; }
   if systemctl is-enabled --quiet "wpa_supplicant@$WIFI_ADAPTER.service"; then
@@ -630,7 +679,35 @@ configure_persistent_wifi() {
       || die 'wpa_supplicant was not verified; inspect the rollback before rebooting.'
   fi
   WIFI_BACKEND=wpa
-  info 'wpa_supplicant is configured for Wi-Fi boot; verify a real reboot before relying on it.'
+  info 'wpa_supplicant is configured as the exclusive Wi-Fi fallback; verify a real reboot before relying on it.'
+}
+
+remove_impala_if_nm_ready() {
+  local adapter state
+  pacman -Q impala >/dev/null 2>&1 || { info 'Impala is already absent.'; return 0; }
+  pacman -Q networkmanager >/dev/null 2>&1 || die 'NetworkManager is not installed; preserving Impala.'
+  if ! systemctl is-enabled --quiet NetworkManager.service || ! systemctl is-active --quiet NetworkManager.service; then
+    die 'NetworkManager must be active and enabled before Impala can be removed.'
+  fi
+  adapter=$(detect_wifi_adapter) || die 'No Wi-Fi adapter available to verify NetworkManager takeover.'
+  if systemctl is-active --quiet iwd.service || systemctl is-enabled --quiet iwd.service \
+    || systemctl is-active --quiet "wpa_supplicant@$adapter.service" \
+    || systemctl is-enabled --quiet "wpa_supplicant@$adapter.service"; then
+    die 'A standalone Wi-Fi manager is still active or enabled; preserving Impala until NetworkManager exclusively owns Wi-Fi.'
+  fi
+  [[ ! -e /etc/systemd/network/25-wifi-dhcp.network && ! -L /etc/systemd/network/25-wifi-dhcp.network ]] \
+    || die 'networkd still has a Wi-Fi DHCP file; resolve the competing configuration first.'
+  state=$(nmcli -g GENERAL.STATE device show "$adapter") || die 'Could not query NetworkManager Wi-Fi state.'
+  [[ "$state" == 100* ]] || die 'NetworkManager Wi-Fi is not connected; preserving Impala.'
+  if ! ip -4 -o address show dev "$adapter" scope global | grep -q . \
+    || ! ip -4 route show default dev "$adapter" | grep -q . \
+    || ! ping -I "$adapter" -c 2 -W 3 km-robota.com >/dev/null; then
+    die 'NetworkManager Wi-Fi address, route, or internet was not verified; preserving Impala.'
+  fi
+  info 'The current NetworkManager link passed; this cannot prove reboot persistence. Test a real reboot before removing the fallback TUI.'
+  ask_yes_no 'Remove Impala TUI now? Saved iwd profiles will be kept.' no || return 0
+  pacman -R --noconfirm impala
+  info 'Impala removed. iwd profiles are preserved; test NetworkManager again after reboot.'
 }
 
 disable_active_swapfile() {
@@ -832,6 +909,9 @@ verify_runtime_network() {
       || die 'wpa_supplicant is not active. Do not reboot expecting Wi-Fi.'
     "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh" --check \
       || die 'wpa_supplicant Wi-Fi was lost during provisioning. Do not reboot expecting Wi-Fi.'
+  elif [[ "$WIFI_BACKEND" == iwd ]]; then
+    "$REPOSITORY_DIR/platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh" --check-iwd \
+      || die 'iwd Wi-Fi was lost during provisioning. Do not reboot expecting Wi-Fi.'
   fi
   [[ -n $(ip -4 route show default) ]] || die 'No IPv4 default route. Fix networking before rebooting.'
   command -v curl >/dev/null 2>&1 || die 'curl is needed to verify live internet access before rebooting.'
@@ -939,6 +1019,9 @@ board_maintenance() {
       offer_kde_desktop
       verify_runtime_network
       ;;
+    remove-impala)
+      remove_impala_if_nm_ready
+      ;;
     wifi-fallback)
       if ! pacman -Q wpa_supplicant >/dev/null 2>&1; then
         warn 'Installing ARM wpa_supplicant needs a full package update and may update the board kernel.'
@@ -974,7 +1057,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   case "${1:-provision}" in
     -h|--help) usage ;;
     provision) (($# <= 1)) || die 'Unexpected arguments. Run --help for commands.'; main ;;
-    repair-prompt|fonts|aur|remove-alarm|wifi-fallback|kde)
+    repair-prompt|fonts|aur|remove-alarm|wifi-fallback|kde|remove-impala)
       (($# == 1)) || die 'Unexpected arguments. Run --help for commands.'
       board_maintenance "$1"
       ;;

@@ -53,7 +53,7 @@ grep -Fxq 'SaeDisable=brcmfmac' "$fixture/legacy-iwd.conf"
   # Offline installation can start iwd before its Wi-Fi DHCP settings exist.
   connected_wifi_ssid() { :; }
   systemctl() {
-    [[ "${3:-}" != wpa_supplicant@wlan0.service ]] || return 1
+    [[ "${3:-}" != wpa_supplicant@wlan0.service && "${3:-}" != NetworkManager.service ]] || return 1
     if [[ "$1" == is-active ]]; then return 0; fi
     if [[ "$1" == restart ]]; then
       grep -Fxq 'NameResolvingService=systemd' "$fixture/first-run-iwd.conf" || return 1
@@ -68,7 +68,7 @@ grep -qx 'enable:iwd.service' "$fixture/wifi-services"
 [[ ! -e "$fixture/first-run-network.conf" ]]
 cp "$fixture/first-run-iwd.conf" "$fixture/first-run-iwd-before"
 (
-  systemctl() { [[ "${3:-}" != wpa_supplicant@wlan0.service ]]; }
+  systemctl() { [[ "${3:-}" != wpa_supplicant@wlan0.service && "${3:-}" != NetworkManager.service ]]; }
   networkctl() { :; }
   configure_wifi_network wlan0 "$fixture/first-run-iwd.conf" "$fixture/first-run-network.conf"
 )
@@ -76,7 +76,7 @@ cmp "$fixture/first-run-iwd-before" "$fixture/first-run-iwd.conf"
 (
   connected_wifi_ssid() { printf 'Current Wifi\n'; }
   systemctl() {
-    [[ "${3:-}" != wpa_supplicant@wlan0.service ]] || return 1
+    [[ "${3:-}" != wpa_supplicant@wlan0.service && "${3:-}" != NetworkManager.service ]] || return 1
     [[ "$1" != restart ]] || { printf 'Active Wi-Fi was interrupted.\n' >&2; exit 1; }
     return 0
   }
@@ -104,7 +104,7 @@ EOF
 (
   SSH_CONNECTION=''
   connected_wifi_ssid() { :; }
-  systemctl() { [[ "${3:-}" != wpa_supplicant@wlan0.service ]]; }
+  systemctl() { [[ "${3:-}" != wpa_supplicant@wlan0.service && "${3:-}" != NetworkManager.service ]]; }
   networkctl() { [[ "$1" == reload || "$1" == reconfigure ]]; }
   configure_wifi_network wlan0 "$fixture/migrated-iwd.conf" "$fixture/old-wifi.network"
 )
@@ -115,7 +115,7 @@ cp "$fixture/old-wifi.network.kmos-networkd-backup" "$fixture/active-wifi.networ
   SSH_CONNECTION=''
   connected_wifi_ssid() { printf 'Current Wifi\n'; }
   systemctl() {
-    [[ "${3:-}" != wpa_supplicant@wlan0.service ]] || return 1
+    [[ "${3:-}" != wpa_supplicant@wlan0.service && "${3:-}" != NetworkManager.service ]] || return 1
     [[ "$1" != restart ]] || touch "$fixture/migration-restarted-iwd"
     return 0
   }
@@ -413,7 +413,11 @@ iwctl() {
   else
     [[ "$1" == station && "$2" == wlan0 ]] || return 1
     case "$3" in
-      show) [[ -f "$fixture/retry-profiles/Good Wifi.psk" ]] && printf '  Connected network    Good Wifi\n' ;;
+      show)
+        if [[ -f "$fixture/retry-profiles/Good Wifi.psk" || -f "$fixture/retry-profiles/Good Wifi.open" || -f "$fixture/retry-profiles/Good Wifi.8021x" ]]; then
+          printf '  Connected network    Good Wifi\n'
+        fi
+        ;;
       scan)
         printf 'scanned\n' >> "$fixture/attempts"
         [[ ! -f "$fixture/scan-in-progress" ]]
@@ -484,7 +488,24 @@ grep -q 'iwctl timed out' "$fixture/timed-out"
 if grep -q 'valid password' "$fixture/timed-out"; then
   printf 'Timed-out password appeared in helper output.\n' >&2; exit 1
 fi
-wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'
+wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi' || { printf 'PSK fixture not ready.\n' >&2; exit 1; }
+cp -p "$fixture/retry-profiles/Good Wifi.psk" "$fixture/good-profile"
+printf '[Settings]\nAutoConnect=true\n' > "$fixture/retry-profiles/Good Wifi.open"
+chmod 600 "$fixture/retry-profiles/Good Wifi.open"
+if wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'; then
+  printf 'Ambiguous iwd profiles were accepted.\n' >&2; exit 1
+fi
+rm "$fixture/retry-profiles/Good Wifi.psk"
+wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi' || { printf 'Open fixture not ready.\n' >&2; exit 1; }
+printf '[Settings]\nAutoConnect = false\n' > "$fixture/retry-profiles/Good Wifi.open"
+if wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'; then
+  printf 'Disabled autoconnect was accepted.\n' >&2; exit 1
+fi
+mv "$fixture/retry-profiles/Good Wifi.open" "$fixture/retry-profiles/Good Wifi.8021x"
+printf '[Settings]\nAutoConnect=true\n' > "$fixture/retry-profiles/Good Wifi.8021x"
+wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi' || { printf 'Enterprise fixture not ready.\n' >&2; exit 1; }
+rm "$fixture/retry-profiles/Good Wifi.8021x"
+cp -p "$fixture/good-profile" "$fixture/retry-profiles/Good Wifi.psk"
 touch "$fixture/no-route"
 if wifi_connection_ready wlan0 "$fixture/retry-profiles" 'Good Wifi'; then
   printf 'Wi-Fi without a route was reported as connected.\n' >&2; exit 1
