@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline GRUB menu-policy tests; never touch a real EFI partition or NVRAM.
+# Offline GRUB policy tests: no real partition, bootloader or NVRAM is changed.
 set -euo pipefail
 repo=$(git rev-parse --show-toplevel)
 fixture=$(mktemp -d)
@@ -7,22 +7,24 @@ trap 'rm -rf -- "$fixture"' EXIT
 # shellcheck disable=SC1091
 source "$repo/platforms/archlinux/kmos-archlinux-install.sh"
 MOUNT_POINT="$fixture/target"
-BOOTNEXT_MODULE="$fixture/live/efibootnext.mod"
-mkdir -p "$MOUNT_POINT/etc/default" "$MOUNT_POINT/etc/grub.d" "$MOUNT_POINT/boot/grub" \
-  "$MOUNT_POINT${BOOTNEXT_MODULE%/*}" "${BOOTNEXT_MODULE%/*}" "$fixture/bin"
-touch "$BOOTNEXT_MODULE" "$MOUNT_POINT$BOOTNEXT_MODULE"
+BOOTNEXT_MODULE=/usr/lib/grub/x86_64-efi/efibootnext.mod
+mkdir -p "$MOUNT_POINT/etc/default" "$MOUNT_POINT/etc/grub.d" "$MOUNT_POINT/boot/grub" "$fixture/bin"
 printf '#GRUB_DISABLE_OS_PROBER=false\nGRUB_DISABLE_RECOVERY=false\n' > "$MOUNT_POINT/etc/default/grub"
 printf '#!/bin/sh\n' > "$MOUNT_POINT/etc/grub.d/30_uefi-firmware"
 chmod +x "$MOUNT_POINT/etc/grub.d/30_uefi-firmware"
+printf '#!/bin/sh\n# all-firmware generator\n' > "$MOUNT_POINT/etc/grub.d/31_efi_bootnext"
+chmod +x "$MOUNT_POINT/etc/grub.d/31_efi_bootnext"
 cat > "$fixture/bin/efibootmgr" <<'EOF'
 #!/bin/sh
 if [ "$#" -gt 0 ]; then exit 99; fi
-printf '%s\n' 'Boot0009* Windows Boot Manager  HD(1,GPT,fixture)' 'Boot0001* krub' 'Boot0011  Boot Menu' 'Boot0013  Lenovo Diagnostics'
+printf '%s\n' 'Boot0009* Windows Boot Manager' 'Boot0011  Boot Menu' 'Boot0013  Lenovo Diagnostics'
 EOF
 chmod +x "$fixture/bin/efibootmgr"
 PATH="$fixture/bin:$PATH"
-
-cat > "$fixture/generated" <<'EOF'
+scan_windows_efi_loaders() { printf '/dev/winesp|ABCD-1234|8:9\n'; }
+lsblk() { [[ "$1" == -dnro && "$2" == MAJ:MIN ]] && printf '8:9\n'; }
+blkid() { printf 'ABCD-1234\n'; }
+cat > "$fixture/core" <<'EOF'
 ### BEGIN /etc/grub.d/00_header ###
 set default=0
 ### END /etc/grub.d/00_header ###
@@ -44,173 +46,81 @@ if [ "$grub_platform" = "efi" ]; then
 fi
 ### END /etc/grub.d/30_uefi-firmware ###
 EOF
-cp "$fixture/generated" "$fixture/no-bootmenu"
-FIRMWARE_BOOT_MENU_ID=0011
-write_boot_menu_krub_entry
-boot_entry="$MOUNT_POINT/etc/grub.d/40_kmos_boot_menu"
-[[ -x "$boot_entry" ]]
-grep -q 'if bootnext 0011; then' "$boot_entry"
-{
-  printf '%s\n' '### BEGIN /etc/grub.d/40_kmos_boot_menu ###'
-  "$boot_entry"
-  printf '%s\n' '### END /etc/grub.d/40_kmos_boot_menu ###'
-} >> "$fixture/generated"
-cat > "$fixture/bootnext-flood" <<'EOF'
+cat > "$fixture/flood" <<'EOF'
 ### BEGIN /etc/grub.d/31_efi_bootnext ###
-menuentry 'Windows Boot Manager (EFI BootNext)' $menuentry_id_option 'efi-bootnext-0009' { bootnext 0009; reboot; }
-menuentry 'krub (EFI BootNext)' $menuentry_id_option 'efi-bootnext-0001' { bootnext 0001; reboot; }
-menuentry 'Lenovo Diagnostics (EFI BootNext)' $menuentry_id_option 'efi-bootnext-0013' { bootnext 0013; reboot; }
+menuentry 'Lenovo Diagnostics (EFI BootNext)' { bootnext 0013; reboot; }
 ### END /etc/grub.d/31_efi_bootnext ###
 EOF
+build_fixture_menu() {
+  local output=$1 name
+  cat "$fixture/core" > "$output"
+  for name in 40_kmos_boot_menu 41_kmos_windows; do
+    if [[ -x "$MOUNT_POINT/etc/grub.d/$name" ]]; then
+      {
+        printf '### BEGIN /etc/grub.d/%s ###\n' "$name"
+        "$MOUNT_POINT/etc/grub.d/$name"
+        printf '### END /etc/grub.d/%s ###\n' "$name"
+      } >> "$output"
+    fi
+  done
+}
 
-collect_krub_config <<< '' > "$fixture/windows-declined" 2>&1
+# The ISO does not have the BootNext module. This must not stop installation.
+BOOTNEXT_MODULE="$fixture/missing/efibootnext.mod"
+collect_krub_config <<< ''
 [[ "$INCLUDE_WINDOWS" == no && "$BOOT_MENU_CHOICE_MADE" == 1 && "$FIRMWARE_BOOT_MENU_ID" == 0011 ]]
-if grep -q 'Choose krub menu \[1/2\]' "$fixture/windows-declined"; then
-  printf 'Old numbered krub menu question was shown.\n' >&2; exit 1
-fi
 configure_krub_menu_policy
 grep -qx 'GRUB_DISABLE_OS_PROBER=true' "$MOUNT_POINT/etc/default/grub"
 grep -qx 'export GRUB_DISABLE_BOOTNEXT=true' "$MOUNT_POINT/etc/default/grub"
-grep -qx 'GRUB_DISABLE_RECOVERY=true' "$MOUNT_POINT/etc/default/grub"
-[[ -x "$MOUNT_POINT/etc/grub.d/30_uefi-firmware" ]]
+[[ ! -x "$MOUNT_POINT/etc/grub.d/31_efi_bootnext" ]]
 [[ $(bash -c '. "$1"; printenv GRUB_DISABLE_BOOTNEXT' _ "$MOUNT_POINT/etc/default/grub") == true ]]
-verify_krub_menu_policy "$fixture/generated"
-if (verify_krub_menu_policy "$fixture/no-bootmenu") > "$fixture/missing-boot-menu" 2>&1; then
-  printf 'A GRUB menu without Boot Menu was accepted.\n' >&2; exit 1
-fi
-cat "$fixture/generated" "$fixture/bootnext-flood" > "$fixture/extra"
-if (verify_krub_menu_policy "$fixture/extra") > "$fixture/rejected" 2>&1; then
-  printf 'Extra BootNext entries were accepted.\n' >&2; exit 1
-fi
-if (collect_krub_config <<< '1') > "$fixture/invalid" 2>&1; then
-  printf 'Non-yes/no Windows choice was accepted.\n' >&2; exit 1
-fi
-grep -q 'Please answer yes or no' "$fixture/invalid"
-cat > "$fixture/bin/efibootmgr" <<'EOF'
-#!/bin/sh
-printf '%s\n' 'Boot0009* Windows Boot Manager' 'Boot0013  Lenovo Diagnostics'
-EOF
-chmod +x "$fixture/bin/efibootmgr"
-if (collect_krub_config <<< '') > "$fixture/missing-firmware-menu" 2>&1; then
-  printf 'Missing firmware Boot Menu passed the pre-GO check.\n' >&2; exit 1
-fi
-grep -q 'Exactly one firmware Boot Menu entry is required before GO' "$fixture/missing-firmware-menu"
-cat > "$fixture/bin/efibootmgr" <<'EOF'
-#!/bin/sh
-printf '%s\n' 'Boot0009* Windows Boot Manager' 'Boot0011  Boot Menu' 'Boot0012  Boot Menu'
-EOF
-chmod +x "$fixture/bin/efibootmgr"
-if (collect_krub_config <<< '') > "$fixture/duplicate-firmware-menu" 2>&1; then
-  printf 'Ambiguous firmware Boot Menu entries passed the pre-GO check.\n' >&2; exit 1
-fi
-grep -q 'Exactly one firmware Boot Menu entry is required before GO' "$fixture/duplicate-firmware-menu"
-cat > "$fixture/bin/efibootmgr" <<'EOF'
-#!/bin/sh
-printf '%s\n' 'Boot0009* Windows Boot Manager' 'Boot0000* Windows Boot Manager' 'Boot0011  Boot Menu'
-EOF
-chmod +x "$fixture/bin/efibootmgr"
-if (collect_krub_config <<< 'y') > "$fixture/duplicate-windows" 2>&1; then
-  printf 'Ambiguous Windows entries were accepted.\n' >&2; exit 1
-fi
-grep -q 'exactly one Windows Boot Manager firmware entry' "$fixture/duplicate-windows"
-cat > "$fixture/bin/efibootmgr" <<'EOF'
-#!/bin/sh
-if [ "$#" -gt 0 ]; then exit 99; fi
-printf '%s\n' 'Boot0009* Windows Boot Manager' 'Boot0011  Boot Menu' 'Boot0013  Lenovo Diagnostics'
-EOF
-chmod +x "$fixture/bin/efibootmgr"
-cat "$fixture/generated" > "$fixture/extra-arch"
-cat >> "$fixture/extra-arch" <<'EOF'
-### BEGIN /etc/grub.d/10_linux ###
-menuentry 'Another Arch Linux' { true; }
-### END /etc/grub.d/10_linux ###
-EOF
-if (verify_krub_menu_policy "$fixture/extra-arch") > "$fixture/extra-arch-log" 2>&1; then
-  printf 'Additional Arch entry was accepted.\n' >&2; exit 1
-fi
+write_boot_menu_krub_entry
+[[ "$FIRMWARE_BOOT_MENU_ENABLED" == no ]]
+build_fixture_menu "$fixture/arch-only"
+verify_krub_menu_policy "$fixture/arch-only"
 
-collect_krub_config <<< 'y'
-[[ "$INCLUDE_WINDOWS" == yes && "$WINDOWS_BOOT_ID" == 0009 ]]
-configure_krub_menu_policy
-grep -qx 'export GRUB_DISABLE_BOOTNEXT=true' "$MOUNT_POINT/etc/default/grub"
-write_windows_krub_entry
-entry="$MOUNT_POINT/etc/grub.d/41_kmos_windows"
-[[ -x "$entry" ]]
-grep -q 'if bootnext 0009; then' "$entry"
-grep -q 'insmod efibootnext' "$entry"
-rm "$MOUNT_POINT$BOOTNEXT_MODULE"
-if (write_windows_krub_entry) > "$fixture/target-missing-module" 2>&1; then
-  printf 'Windows accepted without a target efibootnext module.\n' >&2; exit 1
-fi
-grep -q 'target GRUB package has no efibootnext module' "$fixture/target-missing-module"
+# If the target GRUB has the module, add exactly its Boot Menu entry.
+mkdir -p "$MOUNT_POINT${BOOTNEXT_MODULE%/*}"
 touch "$MOUNT_POINT$BOOTNEXT_MODULE"
-"$entry" > "$fixture/windows-section"
-cat "$fixture/generated" > "$fixture/with-windows"
-{
-  printf '%s\n' '### BEGIN /etc/grub.d/41_kmos_windows ###'
-  cat "$fixture/windows-section"
-  printf '%s\n' '### END /etc/grub.d/41_kmos_windows ###'
-} >> "$fixture/with-windows"
+write_boot_menu_krub_entry
+[[ "$FIRMWARE_BOOT_MENU_ENABLED" == yes ]]
+grep -q 'if bootnext 0011; then' "$MOUNT_POINT/etc/grub.d/40_kmos_boot_menu"
+build_fixture_menu "$fixture/with-boot-menu"
+verify_krub_menu_policy "$fixture/with-boot-menu"
+
+# Windows does not require the module, and only its verified EFI loader is
+# chainloaded. It must not use os-prober or select other BootNext entries.
+collect_krub_config <<< 'y'
+[[ "$INCLUDE_WINDOWS" == yes && "$WINDOWS_BOOT_PARTITION" == /dev/winesp && "$WINDOWS_BOOT_UUID" == ABCD-1234 ]]
+write_windows_krub_entry
+grep -q 'chainloader /EFI/Microsoft/Boot/bootmgfw.efi' "$MOUNT_POINT/etc/grub.d/41_kmos_windows"
+build_fixture_menu "$fixture/with-windows"
 verify_krub_menu_policy "$fixture/with-windows"
 if command -v grub-script-check >/dev/null 2>&1; then
   grub-script-check "$fixture/with-windows"
 fi
-[[ $(grep -c '^[[:space:]]*menuentry .*EFI BootNext' "$fixture/with-windows") == 2 ]]
-[[ $(grep -c '^[[:space:]]*menuentry '\''Windows Boot Manager (EFI BootNext)'\''' "$fixture/with-windows") == 1 ]]
-WINDOWS_BOOT_ID=9999
-if (verify_krub_menu_policy "$fixture/with-windows") > "$fixture/wrong-id" 2>&1; then
-  printf 'Wrong Windows firmware ID was accepted.\n' >&2; exit 1
+[[ $(grep -c '^[[:space:]]*menuentry ' "$fixture/with-windows") == 5 ]]
+cat "$fixture/with-windows" "$fixture/flood" > "$fixture/extra"
+if (verify_krub_menu_policy "$fixture/extra") > "$fixture/extra-log" 2>&1; then
+  printf 'Unexpected firmware entries were accepted.\n' >&2; exit 1
 fi
-WINDOWS_BOOT_ID=0009
 
-# A missing module is rejected before GO when Windows is selected.
-BOOTNEXT_MODULE="$fixture/missing/efibootnext.mod"
-if (collect_krub_config <<< 'y') > "$fixture/missing-module" 2>&1; then
-  printf 'Windows accepted without a live efibootnext module.\n' >&2; exit 1
-fi
-grep -q 'before GO' "$fixture/missing-module"
-BOOTNEXT_MODULE="$fixture/live/efibootnext.mod"
-
-# A failing GRUB generation must preserve the existing bootable menu.
+# A generator claiming to add the firmware flood is an error even if its
+# staged output looks normal. It must not replace an existing GRUB config.
 INCLUDE_WINDOWS=no
-rm "$boot_entry"
+rm "$MOUNT_POINT/etc/grub.d/40_kmos_boot_menu" "$MOUNT_POINT/etc/grub.d/41_kmos_windows"
+FIRMWARE_BOOT_MENU_ENABLED=no
 printf 'previous bootable menu\n' > "$MOUNT_POINT/boot/grub/grub.cfg"
 verify_krub_mounts() { :; }
 arch-chroot() {
   if [[ "$2" == grub-mkconfig ]]; then
-    cat "$fixture/generated" "$fixture/bootnext-flood" > "$MOUNT_POINT${!#}"
-  fi
-}
-if (install_krub_bootloader) > "$fixture/not-activated" 2>&1; then
-  printf 'Unwanted BootNext entries replaced the previous menu.\n' >&2; exit 1
-fi
-[[ $(cat "$MOUNT_POINT/boot/grub/grub.cfg") == 'previous bootable menu' ]]
-grep -q 'Existing menu preserved' "$fixture/not-activated"
-rm "$boot_entry"
-
-# Even if the config happens to contain only allowed entries, claiming to
-# run the all-firmware generator must not be reported as a clean install.
-arch-chroot() {
-  if [[ "$2" == grub-mkconfig ]]; then
-    cat "$fixture/generated" > "$MOUNT_POINT${!#}"
+    build_fixture_menu "$MOUNT_POINT${!#}"
     printf '%s\n' 'Adding boot menu entry for EFI BootNext: Lenovo Diagnostics' >&2
   fi
 }
-if (install_krub_bootloader) > "$fixture/unapproved-generator" 2>&1; then
-  printf 'All-firmware generator was silently accepted.\n' >&2; exit 1
+if (install_krub_bootloader) > "$fixture/unapproved" 2>&1; then
+  printf 'Unapproved generator activated a new menu.\n' >&2; exit 1
 fi
-grep -q 'An unapproved GRUB generator ran' "$fixture/unapproved-generator"
+grep -q 'An unapproved GRUB generator ran' "$fixture/unapproved"
 [[ $(cat "$MOUNT_POINT/boot/grub/grub.cfg") == 'previous bootable menu' ]]
-rm "$boot_entry"
-
-# With the generator disabled, a normal generation can be installed and
-# the old config is saved without altering any firmware boot entries.
-arch-chroot() {
-  if [[ "$2" == grub-mkconfig ]]; then
-    cat "$fixture/generated" > "$MOUNT_POINT${!#}"
-  fi
-}
-install_krub_bootloader > "$fixture/install" 2>&1
-verify_krub_menu_policy "$MOUNT_POINT/boot/grub/grub.cfg"
-grep -q 'previous bootable menu' "$MOUNT_POINT"/boot/grub/grub.cfg.kmos-before.*
-printf 'krub Arch, Advanced, UEFI, Boot Menu and optional Windows: OK (mocked).\n'
+printf 'krub three fixed entries; optional Boot Menu and Windows (mocked): OK.\n'

@@ -33,7 +33,7 @@ mock_setup() {
   format_and_mount() { printf 'format\n' >> "$fixture/order"; exit 0; }
   ask_yes_no() {
     case "$1" in
-      'Edit the partition table with cfdisk after the first GO?') [[ "${EDIT_PARTITIONS:-no}" == yes ]] ;;
+      'Open cfdisk now, before selecting partitions?') [[ "${EDIT_PARTITIONS:-no}" == yes ]] ;;
       'Install an AUR helper for this headless system?') return 1 ;;
       'Install an AUR helper and AUR desktop packages?') return 1 ;;
       *) printf 'Unplanned installer question: %s\n' "$1" >&2; exit 1 ;;
@@ -74,7 +74,7 @@ if (
   EDIT_PARTITIONS=existing
   main <<< '1'
 ) > "$fixture/no-impala" 2>&1; then
-  printf 'Headless install proceeded without Impala available before GO.\n' >&2; exit 1
+  printf 'Headless install proceeded without Impala available before FORMAT.\n' >&2; exit 1
 fi
 grep -q 'cannot approve a headless install' "$fixture/no-impala"
 if (
@@ -96,7 +96,7 @@ grep -q 'Enter alone does not select KDE' "$fixture/noapps-output"
   mock_setup
   collect_desktop_config <<< '2'
   # shellcheck disable=SC2329 # Must never be called after collecting the choice.
-  ask_yes_no() { printf 'Late desktop question after GO.\n' >&2; exit 1; }
+  ask_yes_no() { printf 'Late desktop question after FORMAT.\n' >&2; exit 1; }
   # shellcheck disable=SC2329 # Called by the sourced installer's desktop stage.
   run_kde_installer() { printf 'kde\n' > "$fixture/desktop-execution"; }
   offer_kde_desktop
@@ -107,7 +107,7 @@ grep -q 'Enter alone does not select KDE' "$fixture/noapps-output"
   INSTALL_HEADLESS_AUR=yes
   DESKTOP_CHOICE_MADE=1
   # shellcheck disable=SC2329 # Must never be called after collecting the choice.
-  ask_yes_no() { printf 'Late AUR question after GO.\n' >&2; exit 1; }
+  ask_yes_no() { printf 'Late AUR question after FORMAT.\n' >&2; exit 1; }
   # shellcheck disable=SC2329 # Called by the sourced installer's desktop stage.
   bootstrap_aur_helper() { printf 'aur\n' > "$fixture/desktop-execution"; }
   offer_kde_desktop
@@ -119,7 +119,7 @@ if (
   EDIT_PARTITIONS=existing
   main <<< ''
 ) > "$fixture/no-desktop-choice" 2>&1; then
-  printf 'Blank desktop choice unexpectedly continued to GO.\n' >&2; exit 1
+  printf 'Blank desktop choice unexpectedly continued to FORMAT.\n' >&2; exit 1
 fi
 [[ $(cat "$fixture/order") == $'partitions\nchoices' ]]
 grep -q 'No desktop/headless choice received' "$fixture/no-desktop-choice"
@@ -136,57 +136,48 @@ if (
   EDIT_PARTITIONS=existing
   main <<< $'1\nEXIT'
 ) > "$fixture/declined-output" 2>&1; then
-  printf 'Declined GO unexpectedly formatted a partition.\n' >&2; exit 1
+  printf 'Declined FORMAT unexpectedly formatted a partition.\n' >&2; exit 1
 fi
 [[ $(cat "$fixture/order") == $'partitions\nchoices\npreflight' ]]
 
-# cfdisk is not reachable before the explicit GO. After it runs,
-# the concrete partitions need a separate FORMAT confirmation.
+# cfdisk opens immediately after the early yes/no choice; FORMAT still gates
+# filesystem writes after all choices and a concrete partition summary.
 : > "$fixture/order"
 if (
   mock_setup
   EDIT_PARTITIONS=yes
   main <<< $'1\nEXIT'
 ) > "$fixture/edit-declined" 2>&1; then
-  printf 'Declined disk edit unexpectedly continued.\n' >&2; exit 1
+  printf 'Declined post-cfdisk FORMAT unexpectedly continued.\n' >&2; exit 1
 fi
-[[ $(cat "$fixture/order") == choices ]]
+[[ $(cat "$fixture/order") == $'cfdisk\npartitions\nchoices\npreflight' ]]
 : > "$fixture/order"
 (
   mock_setup
   EDIT_PARTITIONS=yes
-  main <<< $'1\nGO\nFORMAT'
+  main <<< $'1\nFORMAT'
 ) > "$fixture/edit-output" 2>&1
-[[ $(cat "$fixture/order") == $'choices\ncfdisk\npartitions\npreflight\nformat' ]]
-grep -q 'cfdisk may write the partition table' "$fixture/edit-output"
-grep -q 'press Ctrl+C and restart the installer before GO' "$fixture/edit-output"
-if (
-  mock_setup
-  EDIT_PARTITIONS=yes
-  main <<< $'1\nGO /dev/testdisk'
-) > "$fixture/old-go" 2>&1; then
-  printf 'Old disk-specific GO token unexpectedly opened cfdisk.\n' >&2; exit 1
-fi
-grep -q 'Cancelled before opening cfdisk' "$fixture/old-go"
+[[ $(cat "$fixture/order") == $'cfdisk\npartitions\nchoices\npreflight\nformat' ]]
+grep -q 'cfdisk can write the partition table' "$fixture/edit-output"
 : > "$fixture/order"
 if (
   mock_setup
   EDIT_PARTITIONS=yes
-  main <<< $'1\nGO\nEXIT'
+  main <<< $'1\nEXIT'
 ) > "$fixture/edit-no-format" 2>&1; then
   printf 'A declined post-cfdisk format was accepted.\n' >&2; exit 1
 fi
-[[ $(cat "$fixture/order") == $'choices\ncfdisk\npartitions\npreflight' ]]
+[[ $(cat "$fixture/order") == $'cfdisk\npartitions\nchoices\npreflight' ]]
 : > "$fixture/order"
 if (
   mock_setup
   EDIT_PARTITIONS=yes
   MOUNTED_DISK=yes
-  main <<< $'1\nGO\nFORMAT'
+  main <<< $'1\nFORMAT'
 ) > "$fixture/mounted-disk" 2>&1; then
   printf 'cfdisk accepted a mounted disk.\n' >&2; exit 1
 fi
-[[ $(cat "$fixture/order") == choices ]]
+[[ ! -s "$fixture/order" ]]
 grep -q 'partition on the selected disk is mounted' "$fixture/mounted-disk"
 
 # If the selected disk changes identity, never proceed to disk edits.
@@ -201,20 +192,12 @@ if (
 fi
 grep -q 'identity or size changed' "$fixture/changed-device"
 if (
-  preflight_partitions() { printf 'Unexpected preflight without GO.\n' >&2; exit 1; }
+  preflight_partitions() { printf 'Unexpected preflight without FORMAT.\n' >&2; exit 1; }
   format_and_mount
 ) > "$fixture/no-format-token" 2>&1; then
   printf 'Formatting without the approval token was allowed.\n' >&2; exit 1
 fi
 grep -q 'Formatting requires the explicit FORMAT' "$fixture/no-format-token"
-if (
-  TARGET_DISK=/dev/testdisk
-  lsblk() { :; }
-  choose_partitions edit
-) > "$fixture/no-edit-token" 2>&1; then
-  printf 'cfdisk was reachable without explicit GO.\n' >&2; exit 1
-fi
-grep -q 'cfdisk requires the explicit GO' "$fixture/no-edit-token"
 
 # Headless first boot prefers the handed-off iwd profile. WPA is neither
 # installed nor configured unless that profile is unavailable.
@@ -276,4 +259,4 @@ grep -q 'cfdisk requires the explicit GO' "$fixture/no-edit-token"
   grep -q 'systemctl enable iwd.service' "$fixture/wired-services"
   grep -q 'systemctl enable dhcpcd.service' "$fixture/wired-services"
 ) > "$fixture/wired-output" 2>&1
-printf 'Arch decisions precede GO; cfdisk and format remain gated (mocked).\n'
+printf 'Arch cfdisk is early; all choices and FORMAT still precede filesystem writes (mocked).\n'

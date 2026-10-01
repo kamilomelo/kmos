@@ -33,8 +33,6 @@ TARGET_DISK=""
 ROOT_PARTITION=""
 BOOT_PARTITION=""
 BOOT_PARTITION_ACTION=""
-PARTITION_MODE="existing"
-DISK_EDIT_APPROVED=0
 FORMAT_APPROVED=0
 CONFIRMED_DISK_ID=""
 CONFIRMED_DISK_SIZE=""
@@ -49,7 +47,10 @@ BOOTNEXT_MODULE="/usr/lib/grub/x86_64-efi/efibootnext.mod"
 INCLUDE_WINDOWS="no"
 BOOT_MENU_CHOICE_MADE=0
 FIRMWARE_BOOT_MENU_ID=""
-WINDOWS_BOOT_ID=""
+FIRMWARE_BOOT_MENU_ENABLED=no
+WINDOWS_BOOT_PARTITION=""
+WINDOWS_BOOT_UUID=""
+WINDOWS_BOOT_PARTITION_ID=""
 INSTALL_KDE_AUR="yes"
 INSTALL_KDE="no"
 INSTALL_HEADLESS_AUR="no"
@@ -645,7 +646,6 @@ choose_partitions() {
     lsblk -fp "$TARGET_DISK" >&2
 
     if [[ "$mode" == edit ]]; then
-      ((DISK_EDIT_APPROVED == 1)) || die 'cfdisk requires the explicit GO confirmation.'
       verify_target_disk_snapshot
       if lsblk -nrpo MOUNTPOINTS "$TARGET_DISK" | grep -q .; then
         die 'A partition on the selected disk is mounted. Unmount it before opening cfdisk.'
@@ -671,11 +671,10 @@ choose_partitions() {
 }
 
 choose_partition_mode() {
-  if ask_yes_no "Edit the partition table with cfdisk after the first GO?" no; then
-    PARTITION_MODE=edit
-    info 'cfdisk can write the partition table. It will not open until after GO.'
+  if ask_yes_no "Open cfdisk now, before selecting partitions?" no; then
+    warn 'cfdisk can write the partition table when you exit it; this cannot be undone by restarting the installer.'
+    choose_partitions edit
   else
-    PARTITION_MODE=existing
     choose_partitions
   fi
 }
@@ -691,7 +690,7 @@ verify_target_disk_snapshot() {
   [[ -n "$CONFIRMED_DISK_ID" && -n "$CONFIRMED_DISK_SIZE" ]] || die 'Target disk was not confirmed.'
   [[ $(lsblk -dnro MAJ:MIN "$TARGET_DISK") == "$CONFIRMED_DISK_ID" \
     && $(lsblk -bdnro SIZE "$TARGET_DISK") == "$CONFIRMED_DISK_SIZE" ]] \
-    || die 'Target disk identity or size changed after GO. Stopping before writes.'
+    || die 'Target disk identity or size changed after selection. Stopping before writes.'
 }
 
 validate_partitions() {
@@ -737,12 +736,8 @@ choose_boot_partition_action() {
 
   fstype="$(partition_fstype "$BOOT_PARTITION")"
   if [[ "$fstype" == "vfat" ]]; then
-    warn "Existing FAT32 EFI partition detected: $BOOT_PARTITION. Reuse preserves its files; formatting erases them."
-    if ask_yes_no "Reuse this EFI partition without formatting?" "yes"; then
-      BOOT_PARTITION_ACTION="reuse"
-    else
-      BOOT_PARTITION_ACTION="format"
-    fi
+    BOOT_PARTITION_ACTION="reuse"
+    info "Existing FAT32 EFI partition $BOOT_PARTITION will be reused without formatting; its Windows files will be preserved."
   elif [[ -z "$fstype" ]]; then
     BOOT_PARTITION_ACTION="format"
     info "Unformatted EFI partition $BOOT_PARTITION will be formatted as FAT32."
@@ -759,11 +754,11 @@ collect_krub_config() {
   done
 
   BOOT_MENU_CHOICE_MADE=0
-  info 'krub always includes Arch Linux, Advanced options, UEFI Firmware Settings and Boot Menu.'
+  info 'krub always includes Arch Linux, Advanced options and UEFI Firmware Settings; Boot Menu is added when the installed GRUB supports it.'
   select_firmware_boot_menu
-  if ask_yes_no 'Also add Windows Boot Manager (EFI BootNext)?' no; then
+  if ask_yes_no 'Also add Windows Boot Manager to krub?' no; then
     INCLUDE_WINDOWS=yes
-    select_windows_bootnext
+    select_windows_efi_loader
   else
     INCLUDE_WINDOWS=no
   fi
@@ -964,7 +959,7 @@ collect_desktop_config() {
   printf '  1) Headless (no KDE)\n  2) KDE desktop (%s)\n' "$KDE_PROFILE" >&2
   while true; do
     printf 'Choose system type [1/2] (required, no default): ' >&2
-    read -r choice || die 'No desktop/headless choice received; installation cancelled before GO.'
+    read -r choice || die 'No desktop/headless choice received; installation cancelled before FORMAT.'
     case "$choice" in
       1) INSTALL_KDE=no; break ;;
       2) INSTALL_KDE=yes; break ;;
@@ -1004,52 +999,6 @@ collect_desktop_config() {
   fi
 }
 
-confirm_disk_edit() {
-  local answer
-  ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; cannot approve disk edits.'
-  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Boot Menu and Windows policy were not collected; cannot approve disk edits.'
-  printf '\n' >&2
-  info 'Installation choices have been collected. Disk edits are still pending.'
-  detail "Disk" "$TARGET_DISK"
-  detail "Disk identity" "$CONFIRMED_DISK_ID / $CONFIRMED_DISK_SIZE bytes"
-  detail "Partitioning" "Open cfdisk after GO; partition paths cannot be known yet"
-  detail "Root fs" "$ROOT_FILESYSTEM"
-  detail "Bootloader" "$KRUB_ID"
-  detail "Boot Menu" "Boot$FIRMWARE_BOOT_MENU_ID"
-  detail "Windows entry" "$INCLUDE_WINDOWS"
-  detail "Graphics" "$GRAPHICS_SUMMARY"
-  detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
-  detail "Microcode" "$MICROCODE_SUMMARY"
-  if [[ "$ENABLE_WIFI_AFTER_BOOT" == yes ]]; then
-    detail "Wi-Fi boot" "$WIFI_ADAPTER -> $WIFI_SSID"
-  else
-    detail "Wi-Fi boot" "not configured"
-  fi
-  detail "Hostname" "$HOSTNAME"
-  detail "Timezone" "$TIMEZONE"
-  detail "Locale" "$LOCALE"
-  detail "Keymap" "${KEYMAP:-unchanged}"
-  detail "Primary user" "$PRIMARY_USER"
-  if ((${#EXTRA_USERS[@]} > 0)); then detail "Other users" "${EXTRA_USERS[*]}"; fi
-  detail "Swap file" "$SWAPFILE_SIZE"
-  if [[ "$INSTALL_KDE" == yes ]]; then
-    detail "Desktop" "KDE $KDE_PROFILE"
-    detail "AUR packages" "$INSTALL_KDE_AUR"
-  else
-    detail "Desktop" "headless"
-    detail "Wi-Fi tools" "Impala + iwd; first-boot backend: $WIFI_BACKEND"
-    detail "AUR helper" "$INSTALL_HEADLESS_AUR"
-  fi
-  if [[ "$INSTALL_KDE" == yes && "$INSTALL_KDE_AUR" == yes || "$INSTALL_KDE" == no && "$INSTALL_HEADLESS_AUR" == yes ]]; then
-    detail "AUR helper" "$AUR_HELPER"
-  fi
-  warn 'If any choice is wrong, press Ctrl+C and restart the installer before GO. There is no in-place editor for this plan.'
-  warn 'cfdisk may write the partition table when you exit it. No partitions have been formatted yet.'
-  read -r -p "Type GO to edit $TARGET_DISK with cfdisk, or EXIT: " answer || die 'Cancelled; disk was not changed.'
-  [[ "$answer" == GO ]] || die 'Cancelled before opening cfdisk.'
-  DISK_EDIT_APPROVED=1
-}
-
 confirm_install_plan() {
   local extra_user_summary=""
   local extra_sudo_summary=""
@@ -1067,9 +1016,13 @@ confirm_install_plan() {
   detail "Root" "$ROOT_PARTITION -> /"
   detail "Root fs" "$ROOT_FILESYSTEM"
   detail "Bootloader" "$KRUB_ID"
-  detail "Boot Menu" "Boot$FIRMWARE_BOOT_MENU_ID"
+  if [[ -n "$FIRMWARE_BOOT_MENU_ID" ]]; then
+    detail "Boot Menu" "Boot$FIRMWARE_BOOT_MENU_ID (if supported by target GRUB)"
+  else
+    detail "Boot Menu" 'unavailable (optional)'
+  fi
   detail "Windows entry" "$INCLUDE_WINDOWS"
-  if [[ "$INCLUDE_WINDOWS" == yes ]]; then detail "Windows BootNext" "Boot$WINDOWS_BOOT_ID"; fi
+  if [[ "$INCLUDE_WINDOWS" == yes ]]; then detail "Windows EFI" "$WINDOWS_BOOT_PARTITION"; fi
   detail "Graphics" "$GRAPHICS_SUMMARY"
   detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
   detail "Microcode" "$MICROCODE_SUMMARY"
@@ -1113,7 +1066,7 @@ confirm_install_plan() {
   fi
 
   printf '\n%b%s%b\n' "${UI_DANGER}${UI_BOLD}" "Destructive action" "$UI_RESET" >&2
-  warn 'If this plan is wrong, press Ctrl+C and restart before FORMAT. Restarting cannot undo partition edits already saved in cfdisk.'
+  warn 'If this plan is wrong, press Ctrl+C and restart before FORMAT. Restarting cannot undo changes saved in cfdisk.'
   log "The root partition will be formatted. Data on $ROOT_PARTITION will be erased."
   if [[ "$BOOT_PARTITION_ACTION" == "format" ]]; then
     log "The boot partition will be formatted as FAT32. Data on $BOOT_PARTITION will be erased."
@@ -1144,8 +1097,9 @@ preflight_partitions() {
     format|reuse) ;;
     *) die "No EFI action selected. Nothing was formatted." ;;
   esac
-  if [[ "$INCLUDE_WINDOWS" == yes && "$BOOT_PARTITION_ACTION" == format ]]; then
-    die 'Windows BootNext was selected. Reuse the EFI partition rather than format it; this installer cannot prove the Windows firmware entry will survive EFI formatting.'
+  if [[ "$INCLUDE_WINDOWS" == yes && "$BOOT_PARTITION_ACTION" == format \
+    && $(readlink -f -- "$BOOT_PARTITION") == "$(readlink -f -- "$WINDOWS_BOOT_PARTITION")" ]]; then
+    die 'The selected boot partition is the Windows EFI partition. It cannot be formatted.'
   fi
 
   for partition in "$ROOT_PARTITION" "$BOOT_PARTITION"; do
@@ -1617,7 +1571,7 @@ IWD_CONFIG
     } > "$wpa_config"
     chmod 600 "$wpa_config"
   else
-    die 'No persistent Wi-Fi backend was approved before GO.'
+    die 'No persistent Wi-Fi backend was approved before FORMAT.'
   fi
 
   if [[ -n "$WIFI_MAC" ]]; then
@@ -1737,6 +1691,7 @@ disable_krub_bootnext_list() {
 configure_krub_menu_policy() {
   local grub_defaults="$MOUNT_POINT/etc/default/grub"
   local firmware_script="$MOUNT_POINT/etc/grub.d/30_uefi-firmware"
+  local bootnext_script="$MOUNT_POINT/etc/grub.d/31_efi_bootnext"
 
   [[ -f "$grub_defaults" && ! -L "$grub_defaults" ]] || die 'Missing or non-regular GRUB defaults; cannot enforce the selected krub menu policy.'
   ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Boot Menu and Windows policy were not collected.'
@@ -1746,24 +1701,35 @@ configure_krub_menu_policy() {
   disable_krub_bootnext_list "$grub_defaults"
   set_krub_default "$grub_defaults" GRUB_DISABLE_RECOVERY true
   set_krub_default "$grub_defaults" GRUB_DISABLE_SUBMENU false
+  if [[ -e "$bootnext_script" || -L "$bootnext_script" ]]; then
+    [[ -f "$bootnext_script" && ! -L "$bootnext_script" ]] \
+      || die 'The installed BootNext generator is not a regular script; refusing to change it.'
+    chmod a-x "$bootnext_script"  # Leave the packaged file intact; prevent the all-firmware list.
+  fi
   [[ -f "$firmware_script" && ! -L "$firmware_script" && -x "$firmware_script" ]] \
     || die 'UEFI Firmware Settings GRUB script is missing or disabled; cannot build the requested menu.'
-  info 'krub will contain Arch Linux, Advanced options, UEFI Firmware Settings and Boot Menu, plus Windows only if selected.'
+  info 'krub will contain Arch Linux, Advanced options and UEFI Firmware Settings, with optional Boot Menu when supported and Windows only if requested.'
 }
 
 write_boot_menu_krub_entry() {
   local entry_file="$MOUNT_POINT/etc/grub.d/40_kmos_boot_menu" line found=no firmware_output
-  [[ "$FIRMWARE_BOOT_MENU_ID" =~ ^[[:xdigit:]]{4}$ ]] || die 'Boot Menu firmware ID was not selected before GO.'
-  [[ -f "$MOUNT_POINT$BOOTNEXT_MODULE" ]] \
-    || die 'The target GRUB package has no efibootnext module. Boot Menu was not installed.'
-  firmware_output=$(efibootmgr) || die 'Could not recheck the Boot Menu firmware entry.'
+  FIRMWARE_BOOT_MENU_ENABLED=no
+  [[ "$FIRMWARE_BOOT_MENU_ID" =~ ^[[:xdigit:]]{4}$ ]] || return 0
+  if [[ ! -f "$MOUNT_POINT$BOOTNEXT_MODULE" ]]; then
+    warn 'Installed GRUB has no efibootnext module. Skipping optional Boot Menu; Arch and UEFI Firmware Settings remain available.'
+    return 0
+  fi
+  firmware_output=$(efibootmgr) || { warn 'Could not recheck the optional Boot Menu; skipping it.'; return 0; }
   while IFS= read -r line; do
     if [[ "$line" =~ ^Boot${FIRMWARE_BOOT_MENU_ID}\*?[[:space:]]+Boot[[:space:]]Menu([[:space:]]|$) ]]; then
       found=yes
       break
     fi
   done <<< "$firmware_output"
-  [[ "$found" == yes ]] || die 'The Boot Menu firmware entry changed after GO. The existing GRUB menu was preserved.'
+  if [[ "$found" != yes ]]; then
+    warn 'The optional Boot Menu firmware entry changed; skipping it without changing NVRAM.'
+    return 0
+  fi
   [[ ! -e "$entry_file" && ! -L "$entry_file" ]] || die 'Existing Boot Menu script preserved; refusing to replace it.'
   install -Dm0755 /dev/stdin "$entry_file" <<BOOT_MENU_SCRIPT
 #!/bin/sh
@@ -1778,33 +1744,29 @@ if [ "\$grub_platform" = "efi" ]; then
 fi
 GRUB_ENTRY
 BOOT_MENU_SCRIPT
+  FIRMWARE_BOOT_MENU_ENABLED=yes
 }
 
 write_windows_krub_entry() {
-  local entry_file="$MOUNT_POINT/etc/grub.d/41_kmos_windows" line found=no
+  local entry_file="$MOUNT_POINT/etc/grub.d/41_kmos_windows" device_id uuid
   [[ "$INCLUDE_WINDOWS" == yes ]] || return 0
-  [[ "$WINDOWS_BOOT_ID" =~ ^[[:xdigit:]]{4}$ ]] || die 'Windows firmware entry selection is invalid.'
-  [[ -f "$MOUNT_POINT$BOOTNEXT_MODULE" ]] \
-    || die 'The target GRUB package has no efibootnext module. The Windows menu entry was not installed.'
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^Boot${WINDOWS_BOOT_ID}\*?[[:space:]]+Windows[[:space:]]Boot[[:space:]]Manager([[:space:]]|$) ]]; then
-      found=yes
-      break
-    fi
-  done < <(efibootmgr)
-  [[ "$found" == yes ]] || die 'The selected Windows firmware entry changed after approval. The Windows menu entry was not installed.'
+  [[ "$WINDOWS_BOOT_UUID" =~ ^[[:xdigit:]-]{4,40}$ && "$WINDOWS_BOOT_PARTITION_ID" =~ ^[0-9]+:[0-9]+$ ]] \
+    || die 'Windows EFI selection is incomplete; the existing GRUB menu was preserved.'
+  device_id=$(lsblk -dnro MAJ:MIN "$WINDOWS_BOOT_PARTITION") || die 'Selected Windows EFI device is missing.'
+  uuid=$(blkid -o value -s UUID "$WINDOWS_BOOT_PARTITION") || die 'Selected Windows EFI filesystem is missing.'
+  [[ "$device_id" == "$WINDOWS_BOOT_PARTITION_ID" && "$uuid" == "$WINDOWS_BOOT_UUID" ]] \
+    || die 'Windows EFI filesystem or device changed; the existing GRUB menu was preserved.'
   [[ ! -e "$entry_file" && ! -L "$entry_file" ]] || die 'Existing Windows menu script preserved; refusing to replace it.'
   install -Dm0755 /dev/stdin "$entry_file" <<WINDOWS_SCRIPT
 #!/bin/sh
 cat <<'GRUB_ENTRY'
-if [ "\$grub_platform" = "efi" ]; then
-  menuentry 'Windows Boot Manager (EFI BootNext)' --class windows --class os \$menuentry_id_option 'efi-bootnext-$WINDOWS_BOOT_ID' {
-    insmod efibootnext
-    if bootnext $WINDOWS_BOOT_ID; then
-      reboot
-    fi
-  }
-fi
+menuentry 'Windows Boot Manager' --class windows --class os \$menuentry_id_option 'kmos-windows' {
+  insmod part_gpt
+  insmod fat
+  insmod chain
+  search --no-floppy --fs-uuid --set=root $WINDOWS_BOOT_UUID
+  chainloader /EFI/Microsoft/Boot/bootmgfw.efi
+}
 GRUB_ENTRY
 WINDOWS_SCRIPT
 }
@@ -1813,7 +1775,7 @@ verify_krub_menu_policy() {
   local config=$1 expected_windows=0
   [[ -s "$config" ]] || die "krub did not generate a boot menu: $config"
   [[ "$INCLUDE_WINDOWS" != yes ]] || expected_windows=1
-  if ! awk -v windows="$expected_windows" -v id="$WINDOWS_BOOT_ID" -v bootid="$FIRMWARE_BOOT_MENU_ID" '
+  if ! awk -v windows="$expected_windows" -v boot="$FIRMWARE_BOOT_MENU_ENABLED" -v bootid="$FIRMWARE_BOOT_MENU_ID" '
     /^### BEGIN \/etc\/grub.d\// { section=$0 }
     /^[[:space:]]*submenu[[:space:]]/ {
       if (section ~ /\/10_linux ###$/ && $0 ~ /^submenu '\''Advanced options for Arch Linux'\''/ && ! submenu_open) {
@@ -1835,19 +1797,18 @@ verify_krub_menu_policy() {
                  index(tolower($0), "efi-bootnext-" tolower(bootid) "'\''")) {
         bootmenu++
       } else if (section ~ /\/41_kmos_windows ###$/ &&
-                 index($0, "menuentry '\''Windows Boot Manager (EFI BootNext)'\''") &&
-                 index(tolower($0), "efi-bootnext-" tolower(id) "'\''")) {
+                 index($0, "menuentry '\''Windows Boot Manager'\''")) {
         found_windows++
       } else bad=1
     }
     END {
-      if (bad || arch != 1 || advanced != 1 || firmware != 1 || bootmenu != 1 || found_windows != windows) {
-        printf "Unexpected krub menu (Arch=%d, Advanced=%d, UEFI=%d, Boot Menu=%d, Windows=%d; requested Windows=%d)\n", arch, advanced, firmware, bootmenu, found_windows, windows > "/dev/stderr"
+      if (bad || arch != 1 || advanced != 1 || firmware != 1 || bootmenu != (boot == "yes") || found_windows != windows) {
+        printf "Unexpected krub menu (Arch=%d, Advanced=%d, UEFI=%d, Boot Menu=%d; supported=%s, Windows=%d; requested=%d)\n", arch, advanced, firmware, bootmenu, boot, found_windows, windows > "/dev/stderr"
         exit 1
       }
     }
   ' "$config"; then
-    die 'krub menu is not exactly Arch Linux, Advanced options, UEFI Firmware Settings, Boot Menu and optional Windows. Existing menu preserved.'
+    die 'krub menu differs from Arch Linux, Advanced options, UEFI Firmware Settings, and the supported optional entries. Existing menu preserved.'
   fi
 }
 
@@ -1872,35 +1833,54 @@ inspect_krub_menu() {
   fi
 }
 
-select_windows_bootnext() {
-  local line firmware_output
-  local -a candidates=()
-  command -v efibootmgr >/dev/null 2>&1 || die 'Windows BootNext requires efibootmgr on the live system. Choose Arch-only or use a live ISO that provides it.'
-  [[ -f "$BOOTNEXT_MODULE" ]] \
-    || die 'The live GRUB has no efibootnext module. Cannot promise a working Windows BootNext entry before GO; choose Arch-only or use an ISO with the module.'
-  firmware_output=$(efibootmgr) || die 'Could not read firmware Windows entries before GO.'
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^Boot([[:xdigit:]]{4})\*?[[:space:]]+Windows[[:space:]]Boot[[:space:]]Manager([[:space:]]|$) ]]; then
-      candidates+=("${BASH_REMATCH[1]^^}")
+scan_windows_efi_loaders() (
+  local name type fstype uuid device_id mount_dir
+  mount_dir=$(mktemp -d "${TMPDIR:-/tmp}/kmos-windows-efi.XXXXXXXX") || return 1
+  trap 'if findmnt -rn --mountpoint "$mount_dir" >/dev/null 2>&1; then umount "$mount_dir"; fi; rmdir "$mount_dir"' EXIT
+  while read -r name type fstype; do
+    [[ "$type" == part && "$fstype" == vfat ]] || continue
+    if mount -o ro,nosuid,nodev,noexec "$name" "$mount_dir" 2>/dev/null; then
+      if [[ -f "$mount_dir/EFI/Microsoft/Boot/bootmgfw.efi" ]]; then
+        uuid=$(blkid -o value -s UUID "$name" 2>/dev/null || true)
+        device_id=$(lsblk -dnro MAJ:MIN "$name" 2>/dev/null || true)
+        if [[ "$uuid" =~ ^[[:xdigit:]-]{4,40}$ && "$device_id" =~ ^[0-9]+:[0-9]+$ ]]; then
+          printf '%s|%s|%s\n' "$name" "$uuid" "$device_id"
+        fi
+      fi
+      umount "$mount_dir" || return 1
     fi
-  done <<< "$firmware_output"
-  ((${#candidates[@]} == 1)) || die 'Windows was requested but exactly one Windows Boot Manager firmware entry is required before GO. No firmware entries were changed.'
-  WINDOWS_BOOT_ID=${candidates[0]}
-  detail 'Windows BootNext' "Boot$WINDOWS_BOOT_ID"
+  done < <(lsblk -rpno NAME,TYPE,FSTYPE)
+)
+
+select_windows_efi_loader() {
+  local candidates_output
+  local -a candidates=()
+  candidates_output=$(scan_windows_efi_loaders) || die 'Could not inspect Windows EFI files before formatting.'
+  [[ -n "$candidates_output" ]] || die 'Windows was requested but no Windows EFI loader was found before formatting.'
+  mapfile -t candidates <<< "$candidates_output"
+  ((${#candidates[@]} == 1)) || die 'Multiple Windows EFI loaders were found. Refusing to guess which one to boot or format.'
+  IFS='|' read -r WINDOWS_BOOT_PARTITION WINDOWS_BOOT_UUID WINDOWS_BOOT_PARTITION_ID <<< "${candidates[0]}"
+  detail 'Windows EFI' "$WINDOWS_BOOT_PARTITION (reused, never formatted)"
 }
 
 select_firmware_boot_menu() {
   local line firmware_output
   local -a candidates=()
-  command -v efibootmgr >/dev/null 2>&1 || die 'Boot Menu requires efibootmgr in the live ISO before GO.'
-  [[ -f "$BOOTNEXT_MODULE" ]] || die 'The live GRUB has no efibootnext module for Boot Menu. Installation cancelled before GO.'
-  firmware_output=$(efibootmgr) || die 'Could not read firmware Boot Menu entries before GO.'
+  FIRMWARE_BOOT_MENU_ID=""
+  if ! command -v efibootmgr >/dev/null 2>&1; then
+    warn 'No efibootmgr in the live ISO; optional Boot Menu will be skipped.'
+    return 0
+  fi
+  firmware_output=$(efibootmgr) || { warn 'Could not read firmware Boot Menu; it will be skipped.'; return 0; }
   while IFS= read -r line; do
     if [[ "$line" =~ ^Boot([[:xdigit:]]{4})\*?[[:space:]]+Boot[[:space:]]Menu([[:space:]]|$) ]]; then
       candidates+=("${BASH_REMATCH[1]^^}")
     fi
   done <<< "$firmware_output"
-  ((${#candidates[@]} == 1)) || die 'Exactly one firmware Boot Menu entry is required before GO; none or multiple were found. No firmware entries were changed.'
+  if ((${#candidates[@]} != 1)); then
+    warn 'No unique firmware Boot Menu entry; optional Boot Menu will be skipped. No firmware entries were changed.'
+    return 0
+  fi
   FIRMWARE_BOOT_MENU_ID=${candidates[0]}
   detail 'Boot Menu' "Boot$FIRMWARE_BOOT_MENU_ID"
 }
@@ -1938,6 +1918,10 @@ install_krub_bootloader() {
   fi
   cat "$generation_log" >&2
   verify_krub_menu_policy "$staged"
+  if [[ "$INCLUDE_WINDOWS" == yes ]] \
+    && ! grep -Fq "search --no-floppy --fs-uuid --set=root $WINDOWS_BOOT_UUID" "$staged"; then
+    die 'Windows EFI filesystem search is missing from the staged menu; the existing menu was preserved.'
+  fi
   arch-chroot "$MOUNT_POINT" grub-script-check "/boot/grub/${staged##*/}" \
     || die "krub menu syntax check failed; the existing menu was preserved. Inspect $staged."
   if [[ -e "$config" || -L "$config" ]]; then
@@ -2043,11 +2027,6 @@ main() {
   advance_step "Collecting all installation choices"
   collect_system_config
   collect_desktop_config
-  if [[ "$PARTITION_MODE" == edit ]]; then
-    confirm_disk_edit
-    verify_target_disk_snapshot
-    choose_partitions edit
-  fi
   preflight_partitions
   verify_target_disk_snapshot
   confirm_install_plan

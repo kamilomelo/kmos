@@ -90,8 +90,17 @@ mounted_partition=""
 
 answer=no
 choose_boot_partition_action
+[[ "$BOOT_PARTITION_ACTION" == reuse ]]  # Never offer to format an existing FAT EFI.
+boot_fstype=""
+choose_boot_partition_action
 [[ "$BOOT_PARTITION_ACTION" == format ]]
 preflight_partitions
+INCLUDE_WINDOWS=yes
+WINDOWS_BOOT_PARTITION="$BOOT_PARTITION"
+expect_rejected preflight_partitions  # Never format the selected Windows EFI.
+WINDOWS_BOOT_PARTITION="$other_partition"
+preflight_partitions  # A distinct new Arch EFI may be formatted.
+INCLUDE_WINDOWS=no
 boot_size=268435456
 expect_rejected preflight_partitions
 boot_size=1073741824

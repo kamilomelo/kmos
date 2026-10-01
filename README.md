@@ -60,8 +60,8 @@ The dispatcher will route to the Arch installer.
 The Arch installer requires a GPT EFI System Partition and a root partition on
 the selected disk. An existing FAT EFI partition can be **reused without
 formatting** if it has at least 512 MiB free; this preserves existing boot
-files but adds Arch and GRUB files to it. Alternatively, choose to format an
-EFI partition of at least 512 MiB (which erases its existing contents).
+files but adds Arch and GRUB files to it. An unformatted EFI partition of at
+least 512 MiB is formatted as FAT32; an existing FAT EFI is never formatted.
 The root partition is always formatted. Both partitions must be unmounted,
 and the final confirmation names the exact devices and EFI action. Back up
 important data before installing; reusing an EFI partition does not make the
@@ -70,16 +70,16 @@ root-formatting step reversible.
 The x86 Bash installer now collects the desktop (**explicitly choose 1 for
 headless or 2 for KDE; Enter alone cannot select KDE**), AUR, account and
 other configuration choices **before** the install plan review.
-The krub menu always includes Arch Linux, Advanced options for Arch Linux,
-UEFI Firmware Settings and the firmware Boot Menu (EFI BootNext). The only
-question is whether to also add Windows Boot Manager (EFI BootNext); No is
-the default. The Boot Menu firmware ID and `efibootnext` module must be
-available before GO. The installer
+The krub menu always includes Arch Linux, Advanced options for Arch Linux and
+UEFI Firmware Settings. If the installed GRUB provides `efibootnext` and a
+unique firmware Boot Menu exists, one Boot Menu (EFI BootNext) entry is added;
+otherwise this optional entry is skipped without stopping installation. The
+only menu question is whether to also add Windows Boot Manager; No is the
+default. Windows uses a verified EFI loader and a normal GRUB chainloader,
+so the live ISO does not need `efibootnext`. The installer
 disables the all-firmware-entry generator through its `GRUB_DISABLE_BOOTNEXT`
 setting without deleting that script or changing firmware entries. It writes
-one persistent Boot Menu entry and, if selected, one Windows entry targeting
-the selected firmware ID. An ISO without `efibootnext` refuses installation
-before disk approval. The installer never uses `os-prober` to
+at most one Boot Menu entry and, if selected, one Windows entry. The installer never uses `os-prober` to
 fill this menu. It checks the generated menu before replacing the previous
 `grub.cfg`; an unexpected entry or evidence of unapproved GRUB generators
 stops installation rather than silently using a different menu. This controls
@@ -87,16 +87,20 @@ GRUB's menu, **not the firmware's own
 BootNext/BootOrder entries**. On an installed system,
 `./kmos-install.sh inspect-krub` reports generated GRUB entries and firmware
 entries read-only; it never removes firmware entries.
-With existing partitions, the typed `FORMAT` confirmation is the GO point;
+With existing partitions, the typed `FORMAT` confirmation is the format point;
 the installer displays the exact disk, partitions and EFI action, then rechecks
 the selected disk identity before formatting. If the plan is wrong, press
 Ctrl+C and restart before typing `FORMAT`: there is no in-place plan editor.
-If you choose to edit partitions, it first asks for `GO` **before opening
-cfdisk**: cfdisk can write the partition table on exit. It then selects and
-validates the resulting partitions and requires a separate `FORMAT` before
+If you choose to edit partitions, cfdisk opens immediately after that early
+yes/no choice: cfdisk can write the partition table on exit. The installer
+then selects and validates the resulting partitions and requires `FORMAT` before
 touching their filesystems. Restarting after cfdisk cannot undo edits it has
 already saved. Wi-Fi connection needed to fetch the checkout may also happen
 separately before running this installer.
+An existing FAT EFI partition is always reused without formatting; only a
+new, unformatted EFI partition may be formatted. The root partition is always
+formatted. Windows EFI files and firmware entries are never removed by the
+installer.
 
 Impala and iwd are listed in the shared `kmos-nodesktop` dependency manifest,
 which the x86 installer loads for both headless and KDE choices and the
