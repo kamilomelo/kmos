@@ -995,9 +995,8 @@ collect_desktop_config() {
     INSTALL_HEADLESS_AUR=no
   fi
   if [[ "$INSTALL_KDE" == no ]]; then
-    # iwd is already a nodesktop dependency; Impala provides its TUI.
+    # Impala and iwd come from the nodesktop package manifest.
     pacman -Si impala >/dev/null 2>&1 || die 'Impala is not in the live ISO package databases; cannot approve a headless install that promises it.'
-    add_package impala
     if [[ "$ENABLE_WIFI_AFTER_BOOT" == yes ]]; then
       if [[ -d "$WIFI_HANDOFF_DIR/iwd" ]] \
         && find "$WIFI_HANDOFF_DIR/iwd" -maxdepth 1 -type f -print -quit | grep -q .; then

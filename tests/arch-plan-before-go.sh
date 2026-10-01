@@ -8,6 +8,7 @@ trap 'rm -rf -- "$fixture"' EXIT
 source "$repo/platforms/archlinux/kmos-archlinux-install.sh"
 
 mock_setup() {
+  load_nodesktop_metapackage >/dev/null 2>&1
   require_root() { :; }
   require_tools() { :; }
   pacman() { [[ "$1" == -Si && "$2" == impala ]]; }

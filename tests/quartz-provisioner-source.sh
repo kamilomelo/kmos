@@ -210,6 +210,7 @@ install_kmos_packages "$repo"
 printf '%s\n' "${SKIPPED_PACKAGES[@]}" | grep -qx opencode
 printf '%s\n' "${SKIPPED_PACKAGES[@]}" | grep -qx syncthing
 printf '%s\n' "${AVAILABLE_PACKAGES[@]}" | grep -qx ripgrep
+printf '%s\n' "${AVAILABLE_PACKAGES[@]}" | grep -qx impala
 if printf '%s\n' "${AVAILABLE_PACKAGES[@]}" | grep -qx opencode; then
   printf 'A skipped package was incorrectly marked available.\n' >&2
   exit 1

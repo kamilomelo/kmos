@@ -96,8 +96,11 @@ touching their filesystems. Restarting after cfdisk cannot undo edits it has
 already saved. Wi-Fi connection needed to fetch the checkout may also happen
 separately before running this installer.
 
-The x86 headless choice installs Impala and iwd so Impala is available to
-change networks later. A working iwd Wi-Fi handoff is used at first boot;
+Impala and iwd are listed in the shared `kmos-nodesktop` dependency manifest,
+which the x86 installer loads for both headless and KDE choices and the
+Quartz64 provisioner also reads. Installing Impala alone does not switch an
+existing Wi-Fi backend. On x86 headless installs, a working iwd Wi-Fi handoff
+is used at first boot;
 wpa_supplicant is installed and enabled only as a last-resort fallback when
 first-boot Wi-Fi was requested but no iwd profile was handed off. With no
 Wi-Fi handoff, iwd is enabled for later Impala use and wired DHCP is enabled;
