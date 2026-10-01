@@ -106,6 +106,13 @@ progress display visible and counts down 10 seconds before rebooting. Press
 any key to stay on the live ISO and reboot manually; without an interactive
 terminal it skips automatic reboot.
 
+**Field report (2026-10-02):** The fresh-clone x86 headless install and the KDE
+install path both completed successfully in user testing. This does not verify
+every firmware menu entry or Wi-Fi reconnection after reboot. Impala 0.9.0
+works over SSH on the tested headless machine but fails on its local
+`/dev/tty1` (`TERM=linux`) with a cursor-position timeout, including with
+`--ascii`; native-console Impala remains an open issue.
+
 Impala and iwd are listed in the shared `kmos-nodesktop` dependency manifest,
 which the x86 installer loads for both headless and KDE choices and the
 Quartz64 provisioner also reads. Installing Impala alone does not switch an
