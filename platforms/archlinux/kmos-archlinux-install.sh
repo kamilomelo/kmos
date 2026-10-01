@@ -45,8 +45,10 @@ KEYMAP=""
 HOSTNAME=""
 SWAPFILE_SIZE="4G"
 KRUB_ID="krub"
-ENABLE_OS_PROBER="no"
+BOOTNEXT_MODULE="/usr/lib/grub/x86_64-efi/efibootnext.mod"
+INCLUDE_WINDOWS="no"
 BOOT_MENU_CHOICE_MADE=0
+WINDOWS_BOOT_ID=""
 INSTALL_KDE_AUR="yes"
 INSTALL_KDE="no"
 INSTALL_HEADLESS_AUR="no"
@@ -748,24 +750,6 @@ choose_boot_partition_action() {
   fi
 }
 
-detect_other_os_candidate() {
-  local name=""
-  local type=""
-  local fstype=""
-  local parttype=""
-
-  while read -r name type fstype parttype; do
-    [[ "$type" == "part" ]] || continue
-    [[ "$name" == "$ROOT_PARTITION" || "$name" == "$BOOT_PARTITION" ]] && continue
-    case "$fstype" in
-      ntfs|vfat) return 0 ;;
-    esac
-    [[ "$parttype" == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" ]] && return 0
-  done < <(lsblk -rpno NAME,TYPE,FSTYPE,PARTTYPE "$TARGET_DISK")
-
-  return 1
-}
-
 collect_krub_config() {
   local package="" choice=""
 
@@ -773,25 +757,20 @@ collect_krub_config() {
     add_package "$package"
   done
 
-  if detect_other_os_candidate; then
-    detail "Other OS" "candidate detected"
-  fi
-
   BOOT_MENU_CHOICE_MADE=0
-  info 'Choose the krub menu policy (independent of EFI firmware boot entries).'
-  printf '  1) KMOS only: no other OS, recovery or firmware-settings entries\n  2) Scan for Windows/other operating systems\n' >&2
+  info 'Choose the krub menu (GRUB entries, not firmware BootOrder).'
+  printf '  1) Arch Linux + Advanced options + UEFI Firmware Settings\n  2) The same three entries plus Windows Boot Manager\n' >&2
   while true; do
     printf 'Choose krub menu [1/2] (required, no default): ' >&2
     read -r choice || die 'No krub menu choice received; installation cancelled before GO.'
     case "$choice" in
-      1) ENABLE_OS_PROBER=no; break ;;
+      1) INCLUDE_WINDOWS=no; break ;;
       2)
-        ENABLE_OS_PROBER=yes
-        add_package os-prober
-        add_package ntfs-3g
+        INCLUDE_WINDOWS=yes
+        select_windows_bootnext
         break
         ;;
-      *) warn 'Choose 1 for KMOS only or 2 to include other operating systems.' ;;
+      *) warn 'Choose 1 for Arch-only or 2 for Arch plus one Windows Boot Manager.' ;;
     esac
   done
   BOOT_MENU_CHOICE_MADE=1
@@ -1025,7 +1004,7 @@ confirm_disk_edit() {
   detail "Partitioning" "Open cfdisk after GO; partition paths cannot be known yet"
   detail "Root fs" "$ROOT_FILESYSTEM"
   detail "Bootloader" "$KRUB_ID"
-  detail "OS detection" "$ENABLE_OS_PROBER"
+  detail "Windows entry" "$INCLUDE_WINDOWS"
   detail "Graphics" "$GRAPHICS_SUMMARY"
   detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
   detail "Microcode" "$MICROCODE_SUMMARY"
@@ -1074,7 +1053,8 @@ confirm_install_plan() {
   detail "Root" "$ROOT_PARTITION -> /"
   detail "Root fs" "$ROOT_FILESYSTEM"
   detail "Bootloader" "$KRUB_ID"
-  detail "OS detection" "$ENABLE_OS_PROBER"
+  detail "Windows entry" "$INCLUDE_WINDOWS"
+  if [[ "$INCLUDE_WINDOWS" == yes ]]; then detail "Windows BootNext" "Boot$WINDOWS_BOOT_ID"; fi
   detail "Graphics" "$GRAPHICS_SUMMARY"
   detail "GPU pkgs" "$GRAPHICS_PACKAGE_SUMMARY"
   detail "Microcode" "$MICROCODE_SUMMARY"
@@ -1149,6 +1129,9 @@ preflight_partitions() {
     format|reuse) ;;
     *) die "No EFI action selected. Nothing was formatted." ;;
   esac
+  if [[ "$INCLUDE_WINDOWS" == yes && "$BOOT_PARTITION_ACTION" == format ]]; then
+    die 'Windows BootNext was selected. Reuse the EFI partition rather than format it; this installer cannot prove the Windows firmware entry will survive EFI formatting.'
+  fi
 
   for partition in "$ROOT_PARTITION" "$BOOT_PARTITION"; do
     mounted="$(lsblk -dnro MOUNTPOINTS "$partition" 2>/dev/null)"
@@ -1720,53 +1703,98 @@ set_krub_default() {
   fi
 }
 
-configure_krub_menu_policy() {
-  local grub_defaults="$MOUNT_POINT/etc/default/grub"
-  local firmware_script="$MOUNT_POINT/etc/grub.d/30_uefi-firmware"
-  local windows_script="$MOUNT_POINT/etc/grub.d/41_windows"
-
-  [[ -f "$grub_defaults" && ! -L "$grub_defaults" ]] || die 'Missing or non-regular GRUB defaults; cannot enforce the selected krub menu policy.'
-  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Krub menu choice was not collected.'
-  if [[ "$ENABLE_OS_PROBER" == yes ]]; then
-    set_krub_default "$grub_defaults" GRUB_DISABLE_OS_PROBER false
-    info 'krub other-OS detection enabled by explicit choice.'
+disable_krub_bootnext_list() {
+  local file=$1
+  # grub-mkconfig does not export this extension's option to grub.d scripts.
+  # Its helper reads the variable from the environment, so export it here.
+  if grep -Eq '^#?[[:space:]]*(export[[:space:]]+)?GRUB_DISABLE_BOOTNEXT=' "$file"; then
+    sed -i -E 's/^#?[[:space:]]*(export[[:space:]]+)?GRUB_DISABLE_BOOTNEXT=.*/export GRUB_DISABLE_BOOTNEXT=true/' "$file"
   else
-    set_krub_default "$grub_defaults" GRUB_DISABLE_OS_PROBER true
-    set_krub_default "$grub_defaults" GRUB_DISABLE_RECOVERY true
-    set_krub_default "$grub_defaults" GRUB_DISABLE_SUBMENU false
-    if [[ -e "$firmware_script" || -L "$firmware_script" ]]; then
-      [[ -f "$firmware_script" && ! -L "$firmware_script" ]] || die 'Unexpected GRUB firmware menu script; review before changing it.'
-      chmod a-x "$firmware_script"
-    fi
-    if [[ -e "$windows_script" || -L "$windows_script" ]]; then
-      if [[ ! -f "$windows_script" || -L "$windows_script" ]] \
-        || ! grep -Fq 'menuentry "Windows Boot Manager"' "$windows_script"; then
-        die 'Unknown Windows menu script preserved; review /etc/grub.d/41_windows before generating a KMOS-only menu.'
-      fi
-      [[ ! -e "$windows_script.kmos-disabled" && ! -L "$windows_script.kmos-disabled" ]] \
-        || die 'A backup of the old Windows menu script already exists; review it before continuing.'
-      mv -- "$windows_script" "$windows_script.kmos-disabled"
-    fi
-    info 'krub configured for KMOS only: other-OS probing and recovery entries disabled.'
+    printf 'export GRUB_DISABLE_BOOTNEXT=true\n' >> "$file"
   fi
 }
 
+configure_krub_menu_policy() {
+  local grub_defaults="$MOUNT_POINT/etc/default/grub"
+  local firmware_script="$MOUNT_POINT/etc/grub.d/30_uefi-firmware"
+
+  [[ -f "$grub_defaults" && ! -L "$grub_defaults" ]] || die 'Missing or non-regular GRUB defaults; cannot enforce the selected krub menu policy.'
+  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Krub menu choice was not collected.'
+  # Never run os-prober: it lists arbitrary disks. The installed BootNext
+  # generator provides its own switch; do not alter the generator or NVRAM.
+  set_krub_default "$grub_defaults" GRUB_DISABLE_OS_PROBER true
+  disable_krub_bootnext_list "$grub_defaults"
+  set_krub_default "$grub_defaults" GRUB_DISABLE_RECOVERY true
+  set_krub_default "$grub_defaults" GRUB_DISABLE_SUBMENU false
+  [[ -f "$firmware_script" && ! -L "$firmware_script" && -x "$firmware_script" ]] \
+    || die 'UEFI Firmware Settings GRUB script is missing or disabled; cannot build the requested menu.'
+  info 'krub will contain Arch Linux, Advanced options and UEFI Firmware Settings, plus the selected Windows entry if requested.'
+}
+
+write_windows_krub_entry() {
+  local entry_file="$MOUNT_POINT/etc/grub.d/41_kmos_windows" line found=no
+  [[ "$INCLUDE_WINDOWS" == yes ]] || return 0
+  [[ "$WINDOWS_BOOT_ID" =~ ^[[:xdigit:]]{4}$ ]] || die 'Windows firmware entry selection is invalid.'
+  [[ -f "$MOUNT_POINT$BOOTNEXT_MODULE" ]] \
+    || die 'The target GRUB package has no efibootnext module. The Windows menu entry was not installed.'
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^Boot${WINDOWS_BOOT_ID}\*?[[:space:]]+Windows[[:space:]]Boot[[:space:]]Manager([[:space:]]|$) ]]; then
+      found=yes
+      break
+    fi
+  done < <(efibootmgr)
+  [[ "$found" == yes ]] || die 'The selected Windows firmware entry changed after approval. The Windows menu entry was not installed.'
+  [[ ! -e "$entry_file" && ! -L "$entry_file" ]] || die 'Existing Windows menu script preserved; refusing to replace it.'
+  install -Dm0755 /dev/stdin "$entry_file" <<WINDOWS_SCRIPT
+#!/bin/sh
+cat <<'GRUB_ENTRY'
+if [ "\$grub_platform" = "efi" ]; then
+  menuentry 'Windows Boot Manager (EFI BootNext)' --class windows --class os \$menuentry_id_option 'efi-bootnext-$WINDOWS_BOOT_ID' {
+    insmod efibootnext
+    if bootnext $WINDOWS_BOOT_ID; then
+      reboot
+    fi
+  }
+fi
+GRUB_ENTRY
+WINDOWS_SCRIPT
+}
+
 verify_krub_menu_policy() {
-  local config=$1
+  local config=$1 expected_windows=0
   [[ -s "$config" ]] || die "krub did not generate a boot menu: $config"
-  grep -q '^[[:space:]]*menuentry ' "$config" || die 'krub config has no bootable menu entries.'
-  [[ "$ENABLE_OS_PROBER" == no ]] || return 0
-  if ! awk '
+  [[ "$INCLUDE_WINDOWS" != yes ]] || expected_windows=1
+  if ! awk -v windows="$expected_windows" -v id="$WINDOWS_BOOT_ID" '
     /^### BEGIN \/etc\/grub.d\// { section=$0 }
+    /^[[:space:]]*submenu[[:space:]]/ {
+      if (section ~ /\/10_linux ###$/ && $0 ~ /^submenu '\''Advanced options for Arch Linux'\''/ && ! submenu_open) {
+        advanced++
+        submenu_open=1
+      }
+      else bad=1
+    }
+    section ~ /\/10_linux ###$/ && /^}/ { submenu_open=0 }
     /^[[:space:]]*menuentry[[:space:]]/ {
-      if (section !~ /\/10_linux ###$/ || $0 ~ /[Rr]ecovery|[Rr]escue/) {
-        print "Unexpected krub entry: " $0 > "/dev/stderr"
-        bad=1
+      if (section ~ /\/10_linux ###$/) {
+        if ($0 ~ /^menuentry '\''Arch Linux'\''/ && ! submenu_open) arch++
+        else if ($0 ~ /^[[:space:]]+menuentry '\''Arch Linux, with Linux / && submenu_open) { }
+        else bad=1
+      } else if (section ~ /\/30_uefi-firmware ###$/ && index($0, "menuentry '\''UEFI Firmware Settings'\''")) {
+        firmware++
+      } else if (section ~ /\/41_kmos_windows ###$/ &&
+                 index($0, "menuentry '\''Windows Boot Manager (EFI BootNext)'\''") &&
+                 index(tolower($0), "efi-bootnext-" tolower(id) "'\''")) {
+        found_windows++
+      } else bad=1
+    }
+    END {
+      if (bad || arch != 1 || advanced != 1 || firmware != 1 || found_windows != windows) {
+        printf "Unexpected krub menu (Arch=%d, Advanced=%d, UEFI=%d, Windows=%d; requested Windows=%d)\n", arch, advanced, firmware, found_windows, windows > "/dev/stderr"
+        exit 1
       }
     }
-    END { exit bad }
   ' "$config"; then
-    die 'KMOS-only krub menu contains additional entries. Review /etc/grub.d and grub.cfg; automatic reboot is blocked.'
+    die 'krub menu is not exactly Arch Linux, Advanced options, UEFI Firmware Settings and the selected Windows entry if requested. Existing menu preserved.'
   fi
 }
 
@@ -1791,74 +1819,35 @@ inspect_krub_menu() {
   fi
 }
 
-find_windows_boot_partition() {
-  local name=""
-  local type=""
-  local fstype=""
-  local tmp_mount="/tmp/kmos-windows-efi"
-
-  if [[ -f "$MOUNT_POINT/boot/EFI/Microsoft/Boot/bootmgfw.efi" ]]; then
-    printf '%s\n' "$BOOT_PARTITION"
-    return 0
-  fi
-
-  mkdir -p "$tmp_mount"
-  if findmnt -rn --mountpoint "$tmp_mount" >/dev/null 2>&1; then
-    umount "$tmp_mount" || die "$tmp_mount is already mounted and could not be unmounted."
-  fi
-
-  while read -r name type fstype; do
-    [[ "$type" == "part" && "$fstype" == "vfat" ]] || continue
-    [[ "$name" == "$BOOT_PARTITION" ]] && continue
-
-    if mount -o ro "$name" "$tmp_mount" 2>/dev/null; then
-      if [[ -f "$tmp_mount/EFI/Microsoft/Boot/bootmgfw.efi" ]]; then
-        umount "$tmp_mount"
-        rmdir "$tmp_mount" 2>/dev/null || true
-        printf '%s\n' "$name"
-        return 0
-      fi
-      umount "$tmp_mount"
+select_windows_bootnext() {
+  local line choice index firmware_output
+  local -a candidates=()
+  command -v efibootmgr >/dev/null 2>&1 || die 'Windows BootNext requires efibootmgr on the live system. Choose Arch-only or use a live ISO that provides it.'
+  [[ -f "$BOOTNEXT_MODULE" ]] \
+    || die 'The live GRUB has no efibootnext module. Cannot promise a working Windows BootNext entry before GO; choose Arch-only or use an ISO with the module.'
+  firmware_output=$(efibootmgr) || die 'Could not read firmware Windows entries before GO.'
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^Boot([[:xdigit:]]{4})\*?[[:space:]]+Windows[[:space:]]Boot[[:space:]]Manager([[:space:]]|$) ]]; then
+      candidates+=("${BASH_REMATCH[1]^^}")
     fi
-  done < <(lsblk -rpno NAME,TYPE,FSTYPE "$TARGET_DISK")
-
-  rmdir "$tmp_mount" 2>/dev/null || true
-  return 1
-}
-
-write_windows_krub_entry() {
-  local windows_partition=""
-  local windows_uuid=""
-  local entry_file="$MOUNT_POINT/etc/grub.d/41_windows"
-
-  [[ "$ENABLE_OS_PROBER" == "yes" ]] || return 0
-
-  windows_partition="$(find_windows_boot_partition || true)"
-  if [[ -z "$windows_partition" ]]; then
-    warn "No Windows Boot Manager was found on the EFI partitions."
-    return 0
+  done <<< "$firmware_output"
+  ((${#candidates[@]} > 0)) || die 'Windows was selected, but no Windows Boot Manager firmware entry was found before GO.'
+  if ((${#candidates[@]} > 1)); then
+    info 'Multiple Windows Boot Manager firmware entries found. Select exactly one:'
+    for index in "${!candidates[@]}"; do
+      printf '  %d) Boot%s\n' "$((index + 1))" "${candidates[$index]}" >&2
+    done
+    while true; do
+      printf 'Windows firmware entry [1-%d] (required): ' "${#candidates[@]}" >&2
+      read -r choice || die 'Windows BootNext selection was cancelled before GO.'
+      [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#candidates[@]})) && break
+      warn 'Choose exactly one numbered Windows firmware entry.'
+    done
+  else
+    choice=1
   fi
-
-  windows_uuid="$(blkid -o value -s UUID "$windows_partition" 2>/dev/null || true)"
-  if [[ -z "$windows_uuid" ]]; then
-    warn "Could not read the EFI filesystem UUID for $windows_partition."
-    return 0
-  fi
-
-  install -Dm0755 /dev/stdin "$entry_file" <<WINDOWS_ENTRY
-#!/bin/sh
-cat <<'GRUB_ENTRY'
-menuentry "Windows Boot Manager" {
-    insmod part_gpt
-    insmod fat
-    insmod chain
-    search --no-floppy --fs-uuid --set=root $windows_uuid
-    chainloader /EFI/Microsoft/Boot/bootmgfw.efi
-}
-GRUB_ENTRY
-WINDOWS_ENTRY
-
-  success "Windows Boot Manager entry prepared for krub."
+  WINDOWS_BOOT_ID=${candidates[$((choice - 1))]}
+  detail 'Windows BootNext' "Boot$WINDOWS_BOOT_ID"
 }
 
 verify_krub_mounts() {
@@ -1886,6 +1875,8 @@ install_krub_bootloader() {
   arch-chroot "$MOUNT_POINT" grub-mkconfig -o "/boot/grub/${staged##*/}" \
     || die "krub generation failed; the existing menu was preserved. Inspect $staged."
   verify_krub_menu_policy "$staged"
+  arch-chroot "$MOUNT_POINT" grub-script-check "/boot/grub/${staged##*/}" \
+    || die "krub menu syntax check failed; the existing menu was preserved. Inspect $staged."
   if [[ -e "$config" || -L "$config" ]]; then
     [[ -f "$config" && ! -L "$config" ]] || die 'Existing krub menu is not a regular file; refusing to overwrite it.'
     backup=$(mktemp "$config.kmos-before.XXXXXXXX") || die 'Could not reserve a krub menu backup.'
@@ -1893,9 +1884,6 @@ install_krub_bootloader() {
     info "Old krub menu backed up at $backup"
   fi
   mv -- "$staged" "$config" || die "Could not activate the verified krub menu; staged copy: $staged"
-  if [[ "$ENABLE_OS_PROBER" == "yes" ]] && ! grep -qi 'windows\|microsoft' "$MOUNT_POINT/boot/grub/grub.cfg"; then
-    warn "krub did not find a Windows entry. BitLocker, Windows fast startup, or the selected EFI partition may still need attention."
-  fi
 
   success "krub bootloader installed."
 }
