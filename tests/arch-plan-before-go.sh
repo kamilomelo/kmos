@@ -24,6 +24,7 @@ mock_setup() {
   collect_system_config() {
     HOSTNAME=example
     PRIMARY_USER='admin'
+    BOOT_MENU_CHOICE_MADE=1
     printf 'choices\n' >> "$fixture/order"
   }
   preflight_partitions() { printf 'preflight\n' >> "$fixture/order"; }

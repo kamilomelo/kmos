@@ -24,12 +24,12 @@ scripts+=(
   platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
   platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh
   platforms/archlinuxarm/boards/quartz64b/try-quartz64b-wpa-wifi.sh
-  platforms/archlinux/desktop/kde/disable-kmos-panel-hooks.sh
   scripts/check-shell.sh
   tests/archarm-dispatch.sh
   tests/arch-partition-safety.sh
   tests/arch-plan-before-go.sh
   tests/arch-kde-panel-safety.sh
+  tests/arch-krub-policy.sh
   tests/quartz-disk-safety.sh
   tests/quartz-bootloader-extraction.sh
   tests/quartz-workdir-safety.sh
@@ -71,6 +71,7 @@ printf 'Bash syntax and ShellCheck passed for %d scoped scripts (%d known diagno
 bash tests/arch-partition-safety.sh
 bash tests/arch-plan-before-go.sh
 bash tests/arch-kde-panel-safety.sh
+bash tests/arch-krub-policy.sh
 bash tests/archarm-dispatch.sh
 bash tests/quartz-disk-safety.sh
 bash tests/quartz-bootloader-extraction.sh

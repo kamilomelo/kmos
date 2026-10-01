@@ -46,6 +46,7 @@ HOSTNAME=""
 SWAPFILE_SIZE="4G"
 KRUB_ID="krub"
 ENABLE_OS_PROBER="no"
+BOOT_MENU_CHOICE_MADE=0
 INSTALL_KDE_AUR="yes"
 INSTALL_KDE="no"
 INSTALL_HEADLESS_AUR="no"
@@ -287,6 +288,18 @@ parse_args() {
       die "Unknown KDE profile: $KDE_PROFILE (allowed: full, noapps)"
       ;;
   esac
+}
+
+usage() {
+  cat <<'EOF'
+Usage: ./kmos-install.sh [--profile full|noapps]
+       ./kmos-install.sh inspect-krub
+       ./kmos-install.sh repair-panel
+
+No argument starts the interactive x86 installation. inspect-krub reports
+GRUB and firmware menu entries without changing them. repair-panel disables
+only recognized old KMOS panel hooks; it preserves the personal panel layout.
+EOF
 }
 
 add_package() {
@@ -754,7 +767,7 @@ detect_other_os_candidate() {
 }
 
 collect_krub_config() {
-  local package=""
+  local package="" choice=""
 
   for package in "${KRUB_PACKAGES[@]}"; do
     add_package "$package"
@@ -764,13 +777,24 @@ collect_krub_config() {
     detail "Other OS" "candidate detected"
   fi
 
-  if ask_yes_no "Add Windows/other OS entries to krub?" "no"; then
-    ENABLE_OS_PROBER="yes"
-    add_package "os-prober"
-    add_package "ntfs-3g"
-  else
-    ENABLE_OS_PROBER="no"
-  fi
+  BOOT_MENU_CHOICE_MADE=0
+  info 'Choose the krub menu policy (independent of EFI firmware boot entries).'
+  printf '  1) KMOS only: no other OS, recovery or firmware-settings entries\n  2) Scan for Windows/other operating systems\n' >&2
+  while true; do
+    printf 'Choose krub menu [1/2] (required, no default): ' >&2
+    read -r choice || die 'No krub menu choice received; installation cancelled before GO.'
+    case "$choice" in
+      1) ENABLE_OS_PROBER=no; break ;;
+      2)
+        ENABLE_OS_PROBER=yes
+        add_package os-prober
+        add_package ntfs-3g
+        break
+        ;;
+      *) warn 'Choose 1 for KMOS only or 2 to include other operating systems.' ;;
+    esac
+  done
+  BOOT_MENU_CHOICE_MADE=1
 }
 
 read_handoff_value() {
@@ -993,6 +1017,7 @@ collect_desktop_config() {
 confirm_disk_edit() {
   local answer
   ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; cannot approve disk edits.'
+  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Krub menu choice was not collected; cannot approve disk edits.'
   printf '\n' >&2
   info 'Installation choices have been collected. Disk edits are still pending.'
   detail "Disk" "$TARGET_DISK"
@@ -1038,6 +1063,7 @@ confirm_install_plan() {
   local idx=0
   local confirmation=""
   ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; cannot approve formatting.'
+  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Krub menu choice was not collected; cannot approve formatting.'
 
   printf '\n' >&2
   info "Install plan:"
@@ -1685,23 +1711,84 @@ swapfile_size_mib() {
   esac
 }
 
-enable_krub_os_detection() {
-  local grub_defaults="$MOUNT_POINT/etc/default/grub"
-
-  [[ "$ENABLE_OS_PROBER" == "yes" ]] || return 0
-
-  if [[ ! -f "$grub_defaults" ]]; then
-    warn "Could not find /etc/default/grub to enable OS detection."
-    return 0
-  fi
-
-  if grep -q '^#\?GRUB_DISABLE_OS_PROBER=' "$grub_defaults"; then
-    sed -i 's/^#\?GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=false/' "$grub_defaults"
+set_krub_default() {
+  local file=$1 key=$2 value=$3
+  if grep -Eq "^#?${key}=" "$file"; then
+    sed -i -E "s/^#?${key}=.*/${key}=${value}/" "$file"
   else
-    printf '\nGRUB_DISABLE_OS_PROBER=false\n' >> "$grub_defaults"
+    printf '%s=%s\n' "$key" "$value" >> "$file"
   fi
+}
 
-  success "krub OS detection enabled."
+configure_krub_menu_policy() {
+  local grub_defaults="$MOUNT_POINT/etc/default/grub"
+  local firmware_script="$MOUNT_POINT/etc/grub.d/30_uefi-firmware"
+  local windows_script="$MOUNT_POINT/etc/grub.d/41_windows"
+
+  [[ -f "$grub_defaults" && ! -L "$grub_defaults" ]] || die 'Missing or non-regular GRUB defaults; cannot enforce the selected krub menu policy.'
+  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Krub menu choice was not collected.'
+  if [[ "$ENABLE_OS_PROBER" == yes ]]; then
+    set_krub_default "$grub_defaults" GRUB_DISABLE_OS_PROBER false
+    info 'krub other-OS detection enabled by explicit choice.'
+  else
+    set_krub_default "$grub_defaults" GRUB_DISABLE_OS_PROBER true
+    set_krub_default "$grub_defaults" GRUB_DISABLE_RECOVERY true
+    set_krub_default "$grub_defaults" GRUB_DISABLE_SUBMENU false
+    if [[ -e "$firmware_script" || -L "$firmware_script" ]]; then
+      [[ -f "$firmware_script" && ! -L "$firmware_script" ]] || die 'Unexpected GRUB firmware menu script; review before changing it.'
+      chmod a-x "$firmware_script"
+    fi
+    if [[ -e "$windows_script" || -L "$windows_script" ]]; then
+      if [[ ! -f "$windows_script" || -L "$windows_script" ]] \
+        || ! grep -Fq 'menuentry "Windows Boot Manager"' "$windows_script"; then
+        die 'Unknown Windows menu script preserved; review /etc/grub.d/41_windows before generating a KMOS-only menu.'
+      fi
+      [[ ! -e "$windows_script.kmos-disabled" && ! -L "$windows_script.kmos-disabled" ]] \
+        || die 'A backup of the old Windows menu script already exists; review it before continuing.'
+      mv -- "$windows_script" "$windows_script.kmos-disabled"
+    fi
+    info 'krub configured for KMOS only: other-OS probing and recovery entries disabled.'
+  fi
+}
+
+verify_krub_menu_policy() {
+  local config=$1
+  [[ -s "$config" ]] || die "krub did not generate a boot menu: $config"
+  grep -q '^[[:space:]]*menuentry ' "$config" || die 'krub config has no bootable menu entries.'
+  [[ "$ENABLE_OS_PROBER" == no ]] || return 0
+  if ! awk '
+    /^### BEGIN \/etc\/grub.d\// { section=$0 }
+    /^[[:space:]]*menuentry[[:space:]]/ {
+      if (section !~ /\/10_linux ###$/ || $0 ~ /[Rr]ecovery|[Rr]escue/) {
+        print "Unexpected krub entry: " $0 > "/dev/stderr"
+        bad=1
+      }
+    }
+    END { exit bad }
+  ' "$config"; then
+    die 'KMOS-only krub menu contains additional entries. Review /etc/grub.d and grub.cfg; automatic reboot is blocked.'
+  fi
+}
+
+inspect_krub_menu() {
+  local root=${1:-} config defaults
+  config="$root/boot/grub/grub.cfg"
+  defaults="$root/etc/default/grub"
+  [[ -r "$config" ]] || die "Cannot read $config; no menu was changed."
+  info 'Generated krub menu entries (the source script is shown for each entry):'
+  awk '
+    /^### BEGIN \/etc\/grub.d\// { source=$0 }
+    /^[[:space:]]*(menuentry|submenu)[[:space:]]/ { print source " :: " $0 }
+  ' "$config" >&2
+  if [[ -r "$defaults" ]]; then
+    info 'OS probing and recovery defaults:'
+    grep -E '^#?GRUB_DISABLE_(OS_PROBER|RECOVERY|SUBMENU)=' "$defaults" >&2 || true
+  fi
+  if [[ -z "$root" ]] && command -v efibootmgr >/dev/null 2>&1; then
+    info 'Firmware BootNext/BootOrder (separate from the krub menu):'
+    efibootmgr 2>/dev/null | grep -E '^(BootNext|BootOrder|Boot[[:xdigit:]]{4}\*?)' >&2 \
+      || warn 'Firmware entries could not be read; no firmware settings were changed.'
+  fi
 }
 
 find_windows_boot_partition() {
@@ -1783,8 +1870,9 @@ verify_krub_mounts() {
 }
 
 install_krub_bootloader() {
+  local config="$MOUNT_POINT/boot/grub/grub.cfg" staged backup
   verify_krub_mounts
-  enable_krub_os_detection
+  configure_krub_menu_policy
   write_windows_krub_entry
 
   arch-chroot "$MOUNT_POINT" mkinitcpio -p linux
@@ -1794,9 +1882,17 @@ install_krub_bootloader() {
     --bootloader-id="$KRUB_ID" \
     --boot-directory=/boot \
     --recheck
-  arch-chroot "$MOUNT_POINT" grub-mkconfig -o /boot/grub/grub.cfg
-  [[ -s "$MOUNT_POINT/boot/grub/grub.cfg" ]] || die "krub did not generate /boot/grub/grub.cfg."
-  grep -q '^[[:space:]]*menuentry ' "$MOUNT_POINT/boot/grub/grub.cfg" || die "krub config has no bootable menu entries."
+  staged=$(mktemp "$config.kmos.XXXXXXXX") || die 'Could not stage a new krub menu.'
+  arch-chroot "$MOUNT_POINT" grub-mkconfig -o "/boot/grub/${staged##*/}" \
+    || die "krub generation failed; the existing menu was preserved. Inspect $staged."
+  verify_krub_menu_policy "$staged"
+  if [[ -e "$config" || -L "$config" ]]; then
+    [[ -f "$config" && ! -L "$config" ]] || die 'Existing krub menu is not a regular file; refusing to overwrite it.'
+    backup=$(mktemp "$config.kmos-before.XXXXXXXX") || die 'Could not reserve a krub menu backup.'
+    cp -p -- "$config" "$backup" || die "Could not back up the old krub menu to $backup."
+    info "Old krub menu backed up at $backup"
+  fi
+  mv -- "$staged" "$config" || die "Could not activate the verified krub menu; staged copy: $staged"
   if [[ "$ENABLE_OS_PROBER" == "yes" ]] && ! grep -qi 'windows\|microsoft' "$MOUNT_POINT/boot/grub/grub.cfg"; then
     warn "krub did not find a Windows entry. BitLocker, Windows fast startup, or the selected EFI partition may still need attention."
   fi
@@ -1863,6 +1959,22 @@ final_reboot() {
 
 main() {
   init_ui
+  if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then
+    (($# == 1)) || die 'Help does not accept additional arguments.'
+    usage
+    return
+  fi
+  if [[ "${1:-}" == inspect-krub ]]; then
+    (($# == 1)) || die 'inspect-krub does not accept additional arguments.'
+    inspect_krub_menu
+    return
+  fi
+  if [[ "${1:-}" == repair-panel ]]; then
+    (($# == 1)) || die 'repair-panel does not accept additional arguments.'
+    require_root "$@"
+    bash "$SCRIPT_DIR/desktop/kde/kmos-kde-post.sh" --target / --disable-panel-hooks
+    return
+  fi
   parse_args "$@"
   print_banner
   require_root "$@"

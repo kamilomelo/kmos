@@ -8,6 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
+PANEL_HOOKS_ONLY=no
 KDE_PROFILE="${kmos_kde_profile:-full}"
 INSTALL_AUR="${kmos_INSTALL_AUR:-yes}"
 AUR_HELPER="${kmos_AUR_HELPER:-paru}"
@@ -85,6 +86,9 @@ parse_args() {
         shift
         [[ $# -gt 0 ]] || die "--profile requires a value."
         KDE_PROFILE="$1"
+        ;;
+      --disable-panel-hooks)
+        PANEL_HOOKS_ONLY=yes
         ;;
       *)
         die "Unknown argument: $1"
@@ -850,7 +854,7 @@ EOF
 }
 
 disable_legacy_panel_updates() {
-  local updates="$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates"
+  local updates="${MOUNT_POINT%/}/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates"
   local name marker path
   local -a names=(zz-kmos-kickerdash.js zz-kmos-panel-widgets.js zz-kmos-unpin-taskmanager.js)
   local -a markers=('panel.addWidget("org.kde.plasma.kickerdash")' 'function configureDigitalClock(widget' 'widget.writeConfig("launchers", "")')
@@ -903,6 +907,11 @@ main() {
   parse_args "$@"
   require_root "$@"
   verify_target
+  if [[ "$PANEL_HOOKS_ONLY" == yes ]]; then
+    disable_legacy_panel_updates
+    success 'Old KMOS panel hooks disabled; personal Plasma layout was not changed.'
+    return 0
+  fi
   apply_post_tweaks
   final_success "KDE post-install stage complete."
 }

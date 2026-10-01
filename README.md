@@ -70,6 +70,15 @@ root-formatting step reversible.
 The x86 Bash installer now collects the desktop (**explicitly choose 1 for
 headless or 2 for KDE; Enter alone cannot select KDE**), AUR, account and
 other configuration choices **before** the install plan review.
+The early krub choice also requires an explicit selection: **1** generates a
+KMOS-only menu (no other-OS probing, recovery entries or firmware-settings
+entry), while **2** permits other-OS detection. Enter alone does not choose
+either option. The generated menu is checked before the installer reboots;
+unknown entries in KMOS-only mode stop the installation for review instead of
+being silently accepted. This controls GRUB's menu, **not the firmware's own
+BootNext/BootOrder entries**. On an installed system,
+`./kmos-install.sh inspect-krub` reports generated GRUB entries and firmware
+entries read-only; it never removes firmware entries.
 With existing partitions, the typed `FORMAT ...` confirmation is the GO point;
 the installer rechecks the selected disk identity before formatting and runs
 the selected installation without a later desktop-choice prompt. If you choose
@@ -83,7 +92,7 @@ checkout may also happen separately before running this installer.
 The KDE post-install stage no longer installs scripts that add, remove, unpin
 or reorder Plasma panel widgets, or modify the default panel template. An
 existing install can disable only the old KMOS-generated panel update scripts
-with `./platforms/archlinux/desktop/kde/disable-kmos-panel-hooks.sh`; it saves
+with `./kmos-install.sh repair-panel`; it saves
 each as a `.kmos-disabled` file and leaves other files alone. **This prevents
 future changes but cannot infer or reconstruct an already-modified personal
 panel layout.** Your panel configuration is in
