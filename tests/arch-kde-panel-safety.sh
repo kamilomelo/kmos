@@ -23,6 +23,27 @@ done
 cmp "$layout" "$fixture/original-layout"
 [[ $(cat "$updates/user-update.js") == 'user customization' ]]
 
+# Fresh default only: copy KDE's panel into a KMOS-owned template, replacing
+# just the launcher. No personal appletsrc or packaged KDE template is edited.
+mkdir -p "$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.breeze.desktop/contents/layouts" \
+  "$MOUNT_POINT/usr/share/plasma/plasmoids/org.kde.plasma.kickerdash" \
+  "$MOUNT_POINT/home/user/.config"
+stock_desktop="$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.breeze.desktop/contents/layouts/org.kde.plasma.desktop-layout.js"
+printf 'loadTemplate("org.kde.plasma.desktop.defaultPanel")\n' > "$stock_desktop"
+applet="$MOUNT_POINT/home/user/.config/plasma-org.kde.plasma.desktop-appletsrc"
+printf 'personal panel layout\n' > "$applet"
+install_fresh_panel_defaults
+cmp "$layout" "$fixture/original-layout"
+[[ $(cat "$applet") == 'personal panel layout' ]]
+new_layout="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.kmos.defaultPanel/contents/layout.js"
+[[ $(grep -Fc 'panel.addWidget("org.kde.plasma.kickerdash")' "$new_layout") == 1 ]]
+grep -Fq 'loadTemplate("org.kde.kmos.defaultPanel")' \
+  "$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.kmos.desktop/contents/layouts/org.kde.plasma.desktop-layout.js"
+if (install_fresh_panel_defaults) > "$fixture/no-overwrite" 2>&1; then
+  printf 'Existing KMOS panel template was unexpectedly overwritten.\n' >&2; exit 1
+fi
+[[ $(cat "$applet") == 'personal panel layout' ]]
+
 # Reruns leave backups and user files intact. An altered KMOS-named hook is
 # never replaced or deleted merely because its filename looks familiar.
 disable_legacy_panel_updates

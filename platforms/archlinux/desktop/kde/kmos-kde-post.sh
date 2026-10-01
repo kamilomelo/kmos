@@ -128,9 +128,9 @@ write_kdeglobals_defaults() {
 ColorScheme=kmos
 AccentColor=117,117,117
 LastUsedCustomAccentColor=117,117,117
-LookAndFeelPackage=org.kde.kmos.desktop
 
 [KDE]
+LookAndFeelPackage=org.kde.kmos.desktop
 contrast=4
 frameContrast=0.2
 EOF
@@ -151,17 +151,19 @@ if [ -f "$marker" ]; then
   exit 0
 fi
 
-if command -v kwriteconfig6 >/dev/null 2>&1; then
-  kwriteconfig6 --file "$cfg" --group General --key ColorScheme kmos >/dev/null 2>&1 || true
-  kwriteconfig6 --file "$cfg" --group General --key AccentColor "117,117,117" >/dev/null 2>&1 || true
-  kwriteconfig6 --file "$cfg" --group General --key LastUsedCustomAccentColor "117,117,117" >/dev/null 2>&1 || true
-  kwriteconfig6 --file "$cfg" --group General --key LookAndFeelPackage org.kde.kmos.desktop >/dev/null 2>&1 || true
+# An existing user's different choice is not a first-login default to repair.
+if ! grep -Eiq '^ColorScheme=kmos$' "$cfg" 2>/dev/null; then
+  exit 0
 fi
 
 if command -v plasma-apply-colorscheme >/dev/null 2>&1; then
   if plasma-apply-colorscheme kmos >/dev/null 2>&1 || plasma-apply-colorscheme KMOS >/dev/null 2>&1; then
     touch "$marker"
+  else
+    exit 1
   fi
+else
+  exit 1
 fi
 EOF
 
@@ -169,9 +171,8 @@ EOF
 [Desktop Entry]
 Type=Application
 Name=kmos color scheme
-Exec=$target_script
+Exec=/usr/share/kmos/bin/kmos-apply-colorscheme.sh
 OnlyShowIn=KDE;
-X-GNOME-Autostart-enabled=false
 NoDisplay=true
 EOF
 }
@@ -200,12 +201,47 @@ EOF
 ColorScheme=kmos
 AccentColor=117,117,117
 LastUsedCustomAccentColor=117,117,117
-LookAndFeelPackage=org.kde.kmos.desktop
 
 [KDE]
+LookAndFeelPackage=org.kde.kmos.desktop
 contrast=4
 frameContrast=0.2
 EOF
+}
+
+install_fresh_panel_defaults() {
+  local stock_panel="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
+  local stock_desktop="$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.breeze.desktop/contents/layouts/org.kde.plasma.desktop-layout.js"
+  local template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.kmos.defaultPanel"
+  local lookandfeel_layout="$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.kmos.desktop/contents/layouts/org.kde.plasma.desktop-layout.js"
+
+  [[ -r "$stock_panel" && -r "$stock_desktop" ]] || die 'KDE default layout is missing; no panel defaults were changed.'
+  [[ $(grep -Fxc 'panel.addWidget("org.kde.plasma.kickoff")' "$stock_panel") == 1 ]] \
+    || die 'KDE default launcher differs from the expected layout; no panel defaults were changed.'
+  [[ $(grep -Fxc 'loadTemplate("org.kde.plasma.desktop.defaultPanel")' "$stock_desktop") == 1 ]] \
+    || die 'KDE look-and-feel layout differs from the expected template; no panel defaults were changed.'
+  [[ -d "$MOUNT_POINT/usr/share/plasma/plasmoids/org.kde.plasma.kickerdash" ]] \
+    || die 'Application Dashboard widget is unavailable; no panel defaults were changed.'
+  [[ ! -e "$template" && ! -L "$template" && ! -e "$lookandfeel_layout" && ! -L "$lookandfeel_layout" ]] \
+    || die 'KMOS first-login panel layout already exists; preserving it rather than overwriting it.'
+
+  install -Dm0644 /dev/stdin "$template/metadata.json" <<'EOF'
+{
+    "KPackageStructure": "Plasma/LayoutTemplate",
+    "KPlugin": {
+        "Id": "org.kde.kmos.defaultPanel",
+        "Name": "KMOS default panel",
+        "Description": "KDE default panel with Application Dashboard",
+        "License": "MIT",
+        "Version": "1.0"
+    }
+}
+EOF
+  sed 's/panel.addWidget("org.kde.plasma.kickoff")/panel.addWidget("org.kde.plasma.kickerdash")/' "$stock_panel" \
+    | install -Dm0644 /dev/stdin "$template/contents/layout.js"
+  sed 's/loadTemplate("org.kde.plasma.desktop.defaultPanel")/loadTemplate("org.kde.kmos.defaultPanel")/' "$stock_desktop" \
+    | install -Dm0644 /dev/stdin "$lookandfeel_layout"
+  success 'Application Dashboard staged only for new Plasma layouts; existing panel configurations remain untouched.'
 }
 
 write_konsole_profile() {
@@ -214,6 +250,7 @@ write_konsole_profile() {
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
 ColorScheme=kmos
+Font=Kappa Mono,11,-1,5,50,0,0,0,0,0
 UseTransparency=true
 
 [General]
@@ -228,6 +265,7 @@ write_konsole_default_profile() {
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
 ColorScheme=kmos
+Font=Kappa Mono,11,-1,5,50,0,0,0,0,0
 UseTransparency=true
 
 [General]
@@ -242,6 +280,7 @@ write_konsole_dolphin_profile() {
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
 ColorScheme=kmos
+Font=Kappa Mono,11,-1,5,50,0,0,0,0,0
 UseTransparency=false
 
 [General]
@@ -446,7 +485,9 @@ apply_color_scheme_defaults() {
       username="$(basename "$home_dir")"
       install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/KMOS.colors"
       install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/kmos.colors"
-      write_kdeglobals_defaults "$home_dir/.config/kdeglobals"
+      if [[ ! -e "$home_dir/.config/kdeglobals" && ! -L "$home_dir/.config/kdeglobals" ]]; then
+        write_kdeglobals_defaults "$home_dir/.config/kdeglobals"
+      fi
       arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.config" "/home/$username/.local" 2>/dev/null || true
     done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
   fi
@@ -480,11 +521,21 @@ apply_konsole_defaults() {
   if [[ -d "$MOUNT_POINT/home" ]]; then
     while IFS= read -r -d '' home_dir; do
       username="$(basename "$home_dir")"
-      install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$home_dir/.local/share/konsole/kmos.colorscheme"
-      install -Dm0644 "$ASSET_KONSOLE_PROFILE" "$home_dir/.local/share/konsole/kmos.profile"
-      install -Dm0644 "$ASSET_KONSOLE_DOLPHIN_PROFILE" "$home_dir/.local/share/konsole/kmos-dolphin.profile"
-      write_konsole_default_profile "$home_dir/.local/share/konsole/Default.profile"
-      write_konsole_rc "$home_dir/.config/konsolerc"
+      if [[ ! -e "$home_dir/.local/share/konsole/kmos.colorscheme" && ! -L "$home_dir/.local/share/konsole/kmos.colorscheme" ]]; then
+        install -Dm0644 "$ASSET_KONSOLE_COLOR_SCHEME" "$home_dir/.local/share/konsole/kmos.colorscheme"
+      fi
+      if [[ ! -e "$home_dir/.local/share/konsole/kmos.profile" && ! -L "$home_dir/.local/share/konsole/kmos.profile" ]]; then
+        install -Dm0644 "$ASSET_KONSOLE_PROFILE" "$home_dir/.local/share/konsole/kmos.profile"
+      fi
+      if [[ ! -e "$home_dir/.local/share/konsole/kmos-dolphin.profile" && ! -L "$home_dir/.local/share/konsole/kmos-dolphin.profile" ]]; then
+        install -Dm0644 "$ASSET_KONSOLE_DOLPHIN_PROFILE" "$home_dir/.local/share/konsole/kmos-dolphin.profile"
+      fi
+      if [[ ! -e "$home_dir/.local/share/konsole/Default.profile" && ! -L "$home_dir/.local/share/konsole/Default.profile" ]]; then
+        write_konsole_default_profile "$home_dir/.local/share/konsole/Default.profile"
+      fi
+      if [[ ! -e "$home_dir/.config/konsolerc" && ! -L "$home_dir/.config/konsolerc" ]]; then
+        write_konsole_rc "$home_dir/.config/konsolerc"
+      fi
       arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.local" "/home/$username/.config/konsolerc" 2>/dev/null || true
     done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
   fi
@@ -707,6 +758,7 @@ install_extra_fonts() {
   done
 
   (( downloaded == 1 )) || die "No Kappa fonts were downloaded."
+  [[ -s "$fonts_dir/KappaMono-Regular.ttf" ]] || die 'Kappa Mono Regular was not downloaded; refusing to set a missing terminal font.'
 
   for legacy_font in \
     ABeeZee-Regular.ttf \
@@ -723,7 +775,9 @@ install_extra_fonts() {
   done
 
   find "$fonts_dir" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -exec chmod 0644 {} +
-  arch-chroot "$MOUNT_POINT" fc-cache -r >/dev/null 2>&1 || warn "Could not refresh font cache after installing extra fonts."
+  arch-chroot "$MOUNT_POINT" fc-cache -r >/dev/null 2>&1 || die 'Could not refresh the target font cache.'
+  arch-chroot "$MOUNT_POINT" fc-match -f '%{family}\n' 'Kappa Mono' | head -n 1 | grep -Fqi 'Kappa Mono' \
+    || die 'Kappa Mono is not visible to fontconfig in the target system.'
   success "Kappa font families installed."
 }
 
@@ -889,6 +943,7 @@ apply_post_tweaks() {
   apply_lockscreen_defaults
   apply_desktop_wallpaper_defaults
   apply_color_scheme_defaults
+  install_fresh_panel_defaults
   apply_konsole_defaults
   apply_yakuake_defaults
   apply_dolphin_defaults
