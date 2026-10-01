@@ -85,15 +85,24 @@ using a different menu. This controls GRUB's menu, **not the firmware's own
 BootNext/BootOrder entries**. On an installed system,
 `./kmos-install.sh inspect-krub` reports generated GRUB entries and firmware
 entries read-only; it never removes firmware entries.
-With existing partitions, the typed `FORMAT ...` confirmation is the GO point;
-the installer rechecks the selected disk identity before formatting and runs
-the selected installation without a later desktop-choice prompt. If you choose
-to edit partitions, it first asks for `GO <disk>` **before opening cfdisk**:
-cfdisk can write the partition table on exit. It then selects and validates
-the resulting partitions and requires a separate `FORMAT ...` confirmation
-before touching their filesystems. No partition edits can be rolled back by
-the installer once cfdisk writes them. Wi-Fi connection needed to fetch the
-checkout may also happen separately before running this installer.
+With existing partitions, the typed `FORMAT` confirmation is the GO point;
+the installer displays the exact disk, partitions and EFI action, then rechecks
+the selected disk identity before formatting. If the plan is wrong, press
+Ctrl+C and restart before typing `FORMAT`: there is no in-place plan editor.
+If you choose to edit partitions, it first asks for `GO` **before opening
+cfdisk**: cfdisk can write the partition table on exit. It then selects and
+validates the resulting partitions and requires a separate `FORMAT` before
+touching their filesystems. Restarting after cfdisk cannot undo edits it has
+already saved. Wi-Fi connection needed to fetch the checkout may also happen
+separately before running this installer.
+
+The x86 headless choice installs Impala and iwd so Impala is available to
+change networks later. A working iwd Wi-Fi handoff is used at first boot;
+wpa_supplicant is installed and enabled only as a last-resort fallback when
+first-boot Wi-Fi was requested but no iwd profile was handed off. With no
+Wi-Fi handoff, iwd is enabled for later Impala use and wired DHCP is enabled;
+no Wi-Fi credentials are invented. KDE keeps its NetworkManager Wi-Fi
+migration path.
 
 The KDE post-install stage no longer installs scripts that add, remove, unpin
 or reorder Plasma panel widgets, or modify the default panel template. An

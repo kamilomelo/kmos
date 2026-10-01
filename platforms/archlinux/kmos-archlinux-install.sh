@@ -56,6 +56,7 @@ DESKTOP_CHOICE_MADE=0
 AUR_HELPER="${kmos_AUR_HELPER:-paru}"
 KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
 ENABLE_WIFI_AFTER_BOOT="no"
+WIFI_BACKEND="unconfigured"
 WIFI_ADAPTER=""
 WIFI_MAC=""
 WIFI_SSID=""
@@ -81,7 +82,6 @@ BASE_PACKAGES=(
   dhcpcd
   openssh
   sudo
-  wpa_supplicant
   nano
 )
 
@@ -644,7 +644,7 @@ choose_partitions() {
     lsblk -fp "$TARGET_DISK" >&2
 
     if [[ "$mode" == edit ]]; then
-      ((DISK_EDIT_APPROVED == 1)) || die 'cfdisk requires the disk-specific GO confirmation.'
+      ((DISK_EDIT_APPROVED == 1)) || die 'cfdisk requires the explicit GO confirmation.'
       verify_target_disk_snapshot
       if lsblk -nrpo MOUNTPOINTS "$TARGET_DISK" | grep -q .; then
         die 'A partition on the selected disk is mounted. Unmount it before opening cfdisk.'
@@ -979,6 +979,9 @@ collect_desktop_config() {
   done
   DESKTOP_CHOICE_MADE=1
   if [[ "$INSTALL_KDE" == yes ]]; then
+    # KDE migrates the live Wi-Fi handoff to NetworkManager from its WPA file.
+    add_package wpa_supplicant
+    WIFI_BACKEND=networkmanager
     if [[ "$KDE_PROFILE" == full ]] && ask_yes_no "Install an AUR helper and AUR desktop packages?" yes; then
       INSTALL_KDE_AUR=yes
       AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
@@ -990,6 +993,21 @@ collect_desktop_config() {
     AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
   else
     INSTALL_HEADLESS_AUR=no
+  fi
+  if [[ "$INSTALL_KDE" == no ]]; then
+    # iwd is already a nodesktop dependency; Impala provides its TUI.
+    pacman -Si impala >/dev/null 2>&1 || die 'Impala is not in the live ISO package databases; cannot approve a headless install that promises it.'
+    add_package impala
+    if [[ "$ENABLE_WIFI_AFTER_BOOT" == yes ]]; then
+      if [[ -d "$WIFI_HANDOFF_DIR/iwd" ]] \
+        && find "$WIFI_HANDOFF_DIR/iwd" -maxdepth 1 -type f -print -quit | grep -q .; then
+        WIFI_BACKEND=iwd
+      else
+        WIFI_BACKEND=wpa
+        add_package wpa_supplicant
+        warn 'No working iwd profile was handed off. wpa_supplicant is required for first-boot Wi-Fi as a last-resort fallback; Impala/iwd will still be installed, but not enabled alongside WPA.'
+      fi
+    fi
   fi
 }
 
@@ -1025,14 +1043,16 @@ confirm_disk_edit() {
     detail "AUR packages" "$INSTALL_KDE_AUR"
   else
     detail "Desktop" "headless"
+    detail "Wi-Fi tools" "Impala + iwd; first-boot backend: $WIFI_BACKEND"
     detail "AUR helper" "$INSTALL_HEADLESS_AUR"
   fi
   if [[ "$INSTALL_KDE" == yes && "$INSTALL_KDE_AUR" == yes || "$INSTALL_KDE" == no && "$INSTALL_HEADLESS_AUR" == yes ]]; then
     detail "AUR helper" "$AUR_HELPER"
   fi
+  warn 'If any choice is wrong, press Ctrl+C and restart the installer before GO. There is no in-place editor for this plan.'
   warn 'cfdisk may write the partition table when you exit it. No partitions have been formatted yet.'
-  read -r -p "Type 'GO $TARGET_DISK' to allow cfdisk, or EXIT: " answer || die 'Cancelled; disk was not changed.'
-  [[ "$answer" == "GO $TARGET_DISK" ]] || die 'Cancelled before opening cfdisk.'
+  read -r -p "Type GO to edit $TARGET_DISK with cfdisk, or EXIT: " answer || die 'Cancelled; disk was not changed.'
+  [[ "$answer" == GO ]] || die 'Cancelled before opening cfdisk.'
   DISK_EDIT_APPROVED=1
 }
 
@@ -1040,7 +1060,7 @@ confirm_install_plan() {
   local extra_user_summary=""
   local extra_sudo_summary=""
   local idx=0
-  local confirmation=""
+  local confirm=""
   ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; cannot approve formatting.'
   ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Krub menu choice was not collected; cannot approve formatting.'
 
@@ -1090,6 +1110,7 @@ confirm_install_plan() {
     detail "AUR packages" "$INSTALL_KDE_AUR"
   else
     detail "Desktop" "headless"
+    detail "Wi-Fi tools" "Impala + iwd; first-boot backend: $WIFI_BACKEND"
     detail "AUR helper" "$INSTALL_HEADLESS_AUR"
   fi
   if [[ "$INSTALL_KDE_AUR" == yes && "$INSTALL_KDE" == yes || "$INSTALL_HEADLESS_AUR" == yes && "$INSTALL_KDE" == no ]]; then
@@ -1097,23 +1118,22 @@ confirm_install_plan() {
   fi
 
   printf '\n%b%s%b\n' "${UI_DANGER}${UI_BOLD}" "Destructive action" "$UI_RESET" >&2
+  warn 'If this plan is wrong, press Ctrl+C and restart before FORMAT. Restarting cannot undo partition edits already saved in cfdisk.'
   log "The root partition will be formatted. Data on $ROOT_PARTITION will be erased."
   if [[ "$BOOT_PARTITION_ACTION" == "format" ]]; then
     log "The boot partition will be formatted as FAT32. Data on $BOOT_PARTITION will be erased."
-    confirmation="FORMAT $ROOT_PARTITION $BOOT_PARTITION"
   else
     log "The existing EFI filesystem on $BOOT_PARTITION will NOT be formatted; Arch and GRUB will add files to it."
-    confirmation="FORMAT $ROOT_PARTITION KEEP $BOOT_PARTITION"
   fi
   while true; do
-    read -r -p "Type '$confirmation' to continue or EXIT to cancel: " confirm || die 'Input closed before final confirmation; no filesystem was formatted.'
+    read -r -p 'Type FORMAT to continue or EXIT to cancel: ' confirm || die 'Input closed before final confirmation; no filesystem was formatted.'
     case "$confirm" in
       EXIT)
         die "Install cancelled."
         ;;
     esac
-    [[ "$confirm" == "$confirmation" ]] && break
-    warn "Confirmation did not match the target partitions and action."
+    [[ "$confirm" == FORMAT ]] && break
+    warn 'Type FORMAT exactly to approve the displayed partitions and EFI action.'
   done
   FORMAT_APPROVED=1
 }
@@ -1164,7 +1184,7 @@ check_reused_efi_space() (
 format_and_mount() {
   local detected_root_fstype=""
 
-  ((FORMAT_APPROVED == 1)) || die 'Formatting requires the exact partition/action confirmation.'
+  ((FORMAT_APPROVED == 1)) || die 'Formatting requires the explicit FORMAT confirmation.'
   verify_target_disk_snapshot
   preflight_partitions
 
@@ -1571,25 +1591,12 @@ configure_wifi_after_boot() {
 
   [[ "$ENABLE_WIFI_AFTER_BOOT" == "yes" ]] || return 0
 
-  install -d -m 0755 "$MOUNT_POINT/etc/wpa_supplicant" "$MOUNT_POINT/etc/systemd/network"
-
-  {
-    printf 'ctrl_interface=DIR=/run/wpa_supplicant GROUP=wheel\n'
-    printf 'update_config=0\n'
-    printf '\n'
-    printf 'network={\n'
-    printf '    ssid=%s\n' "$(wpa_quote "$WIFI_SSID")"
-    if [[ "$WIFI_HIDDEN" == "1" ]]; then
-      printf '    scan_ssid=1\n'
+  install -d -m 0755 "$MOUNT_POINT/etc/systemd/network"
+  if [[ "$INSTALL_KDE" == no && "$WIFI_BACKEND" == iwd ]]; then
+    if [[ ! -d "$iwd_handoff" ]] \
+      || ! find "$iwd_handoff" -maxdepth 1 -type f -print -quit | grep -q .; then
+      die 'The working iwd profile disappeared after the plan was approved; refusing to switch silently to WPA.'
     fi
-    printf '    psk=%s\n' "$(wpa_quote "$WIFI_PASSWORD")"
-    printf '    key_mgmt=WPA-PSK\n'
-    printf '}\n'
-  } > "$wpa_config"
-
-  chmod 600 "$wpa_config"
-
-  if [[ -d "$iwd_handoff" ]] && find "$iwd_handoff" -maxdepth 1 -type f -print -quit | grep -q .; then
     install -d -m 0700 "$iwd_target" "$MOUNT_POINT/etc/iwd"
     cp -a "$iwd_handoff/." "$iwd_target/"
     chown -R root:root "$iwd_target"
@@ -1602,6 +1609,20 @@ EnableNetworkConfiguration=true
 NameResolvingService=systemd
 IWD_CONFIG
     use_iwd=1
+  elif [[ "$INSTALL_KDE" == yes || "$WIFI_BACKEND" == wpa ]]; then
+    install -d -m 0755 "$MOUNT_POINT/etc/wpa_supplicant"
+    {
+      printf 'ctrl_interface=DIR=/run/wpa_supplicant GROUP=wheel\n'
+      printf 'update_config=0\n\nnetwork={\n'
+      printf '    ssid=%s\n' "$(wpa_quote "$WIFI_SSID")"
+      if [[ "$WIFI_HIDDEN" == "1" ]]; then
+        printf '    scan_ssid=1\n'
+      fi
+      printf '    psk=%s\n    key_mgmt=WPA-PSK\n}\n' "$(wpa_quote "$WIFI_PASSWORD")"
+    } > "$wpa_config"
+    chmod 600 "$wpa_config"
+  else
+    die 'No persistent Wi-Fi backend was approved before GO.'
   fi
 
   if [[ -n "$WIFI_MAC" ]]; then
@@ -1617,9 +1638,9 @@ WIFI_LINK
   if ((use_iwd == 1)); then
     arch-chroot "$MOUNT_POINT" systemctl disable "wpa_supplicant@$WIFI_ADAPTER.service" "dhcpcd@$WIFI_ADAPTER.service" >/dev/null 2>&1 || true
     if ! arch-chroot "$MOUNT_POINT" systemctl enable iwd.service systemd-resolved.service; then
-      warn "Could not enable persistent iwd networking. Falling back to wpa_supplicant."
+      warn 'Could not enable persistent iwd networking. No WPA fallback was approved or installed.'
       arch-chroot "$MOUNT_POINT" systemctl disable iwd.service systemd-resolved.service >/dev/null 2>&1 || true
-      use_iwd=0
+      die 'iwd could not be enabled; do not reboot expecting Wi-Fi.'
     else
       arch-chroot "$MOUNT_POINT" ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
     fi
@@ -1648,6 +1669,10 @@ WIFI_LINK
 configure_wired_network_after_boot() {
   [[ "$ENABLE_WIFI_AFTER_BOOT" == "yes" ]] && return 0
 
+  if [[ "$INSTALL_KDE" == no ]]; then
+    arch-chroot "$MOUNT_POINT" systemctl enable iwd.service \
+      || die 'Could not enable iwd for future Impala connections on this headless install.'
+  fi
   arch-chroot "$MOUNT_POINT" systemctl enable dhcpcd.service
   success "Wired DHCP enabled for first boot."
 }

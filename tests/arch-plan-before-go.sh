@@ -10,6 +10,7 @@ source "$repo/platforms/archlinux/kmos-archlinux-install.sh"
 mock_setup() {
   require_root() { :; }
   require_tools() { :; }
+  pacman() { [[ "$1" == -Si && "$2" == impala ]]; }
   verify_boot_mode() { :; }
   select_disk() { TARGET_DISK=/dev/testdisk; }
   lsblk() {
@@ -49,16 +50,40 @@ mock_setup() {
   udevadm() { :; }
 }
 
-# With existing partitions, collect desktop decisions before GO and do not
-# write or format anything until the exact partitions/action are confirmed.
+# With existing partitions, collect desktop decisions before FORMAT and do not
+# format anything until the displayed partitions and EFI action are approved.
 (
   mock_setup
   EDIT_PARTITIONS=existing
-  main <<< $'2\nFORMAT /dev/testdisk2 KEEP /dev/testdisk1'
+  main <<< $'2\nFORMAT'
 ) > "$fixture/existing-output" 2>&1
 [[ $(cat "$fixture/order") == $'partitions\nchoices\npreflight\nformat' ]]
 grep -q 'KDE full' "$fixture/existing-output"
 grep -q 'Choose system type \[1/2\] (required, no default)' "$fixture/existing-output"
+grep -q 'press Ctrl+C and restart before FORMAT' "$fixture/existing-output"
+(
+  mock_setup
+  EDIT_PARTITIONS=existing
+  main <<< $'1\nFORMAT'
+) > "$fixture/headless-output" 2>&1
+grep -q 'Wi-Fi tools.*Impala + iwd' "$fixture/headless-output"
+if (
+  mock_setup
+  pacman() { return 1; }
+  EDIT_PARTITIONS=existing
+  main <<< '1'
+) > "$fixture/no-impala" 2>&1; then
+  printf 'Headless install proceeded without Impala available before GO.\n' >&2; exit 1
+fi
+grep -q 'cannot approve a headless install' "$fixture/no-impala"
+if (
+  mock_setup
+  EDIT_PARTITIONS=existing
+  main <<< $'1\nFORMAT /dev/testdisk2\nEXIT'
+) > "$fixture/old-format" 2>&1; then
+  printf 'Old disk-specific format token unexpectedly continued.\n' >&2; exit 1
+fi
+grep -q 'Type FORMAT exactly' "$fixture/old-format"
 (
   mock_setup
   KDE_PROFILE=noapps
@@ -114,7 +139,7 @@ if (
 fi
 [[ $(cat "$fixture/order") == $'partitions\nchoices\npreflight' ]]
 
-# cfdisk is not reachable before the first disk-specific GO. After it runs,
+# cfdisk is not reachable before the explicit GO. After it runs,
 # the concrete partitions need a separate FORMAT confirmation.
 : > "$fixture/order"
 if (
@@ -129,15 +154,24 @@ fi
 (
   mock_setup
   EDIT_PARTITIONS=yes
-  main <<< $'1\nGO /dev/testdisk\nFORMAT /dev/testdisk2 KEEP /dev/testdisk1'
+  main <<< $'1\nGO\nFORMAT'
 ) > "$fixture/edit-output" 2>&1
 [[ $(cat "$fixture/order") == $'choices\ncfdisk\npartitions\npreflight\nformat' ]]
 grep -q 'cfdisk may write the partition table' "$fixture/edit-output"
+grep -q 'press Ctrl+C and restart the installer before GO' "$fixture/edit-output"
+if (
+  mock_setup
+  EDIT_PARTITIONS=yes
+  main <<< $'1\nGO /dev/testdisk'
+) > "$fixture/old-go" 2>&1; then
+  printf 'Old disk-specific GO token unexpectedly opened cfdisk.\n' >&2; exit 1
+fi
+grep -q 'Cancelled before opening cfdisk' "$fixture/old-go"
 : > "$fixture/order"
 if (
   mock_setup
   EDIT_PARTITIONS=yes
-  main <<< $'1\nGO /dev/testdisk\nEXIT'
+  main <<< $'1\nGO\nEXIT'
 ) > "$fixture/edit-no-format" 2>&1; then
   printf 'A declined post-cfdisk format was accepted.\n' >&2; exit 1
 fi
@@ -147,7 +181,7 @@ if (
   mock_setup
   EDIT_PARTITIONS=yes
   MOUNTED_DISK=yes
-  main <<< $'1\nGO /dev/testdisk\nFORMAT /dev/testdisk2 KEEP /dev/testdisk1'
+  main <<< $'1\nGO\nFORMAT'
 ) > "$fixture/mounted-disk" 2>&1; then
   printf 'cfdisk accepted a mounted disk.\n' >&2; exit 1
 fi
@@ -171,13 +205,74 @@ if (
 ) > "$fixture/no-format-token" 2>&1; then
   printf 'Formatting without the approval token was allowed.\n' >&2; exit 1
 fi
-grep -q 'Formatting requires the exact' "$fixture/no-format-token"
+grep -q 'Formatting requires the explicit FORMAT' "$fixture/no-format-token"
 if (
   TARGET_DISK=/dev/testdisk
   lsblk() { :; }
   choose_partitions edit
 ) > "$fixture/no-edit-token" 2>&1; then
-  printf 'cfdisk was reachable without disk-specific GO.\n' >&2; exit 1
+  printf 'cfdisk was reachable without explicit GO.\n' >&2; exit 1
 fi
-grep -q 'cfdisk requires the disk-specific GO' "$fixture/no-edit-token"
+grep -q 'cfdisk requires the explicit GO' "$fixture/no-edit-token"
+
+# Headless first boot prefers the handed-off iwd profile. WPA is neither
+# installed nor configured unless that profile is unavailable.
+(
+  mock_setup
+  WIFI_HANDOFF_DIR="$fixture/iwd-handoff"
+  MOUNT_POINT="$fixture/iwd-target"
+  ENABLE_WIFI_AFTER_BOOT=yes
+  WIFI_ADAPTER=wlan0 WIFI_SSID=example WIFI_PASSWORD=fixture-secret
+  mkdir -p "$WIFI_HANDOFF_DIR/iwd" "$MOUNT_POINT"
+  printf '[Security]\nPassphrase=fixture-secret\n' > "$WIFI_HANDOFF_DIR/iwd/example.psk"
+  collect_desktop_config <<< '1'
+  [[ "$WIFI_BACKEND" == iwd && " ${BASE_PACKAGES[*]} " == *' impala '* ]]
+  [[ " ${BASE_PACKAGES[*]} " != *' wpa_supplicant '* ]]
+  arch-chroot() { printf '%s\n' "$*" >> "$fixture/iwd-services"; }
+  chown() { :; }
+  configure_wifi_after_boot
+  [[ ! -e "$MOUNT_POINT/etc/wpa_supplicant/wpa_supplicant-wlan0.conf" ]]
+  grep -q 'systemctl enable iwd.service systemd-resolved.service' "$fixture/iwd-services"
+  if grep -q 'systemctl enable wpa_supplicant' "$fixture/iwd-services"; then
+    printf 'WPA was enabled alongside iwd.\n' >&2; exit 1
+  fi
+) > "$fixture/iwd-output" 2>&1
+(
+  mock_setup
+  WIFI_HANDOFF_DIR="$fixture/wpa-handoff"
+  MOUNT_POINT="$fixture/wpa-target"
+  ENABLE_WIFI_AFTER_BOOT=yes
+  WIFI_ADAPTER=wlan0 WIFI_SSID=example WIFI_PASSWORD=fixture-secret
+  mkdir -p "$WIFI_HANDOFF_DIR" "$MOUNT_POINT"
+  collect_desktop_config <<< '1'
+  [[ "$WIFI_BACKEND" == wpa && " ${BASE_PACKAGES[*]} " == *' wpa_supplicant '* ]]
+  arch-chroot() { printf '%s\n' "$*" >> "$fixture/wpa-services"; }
+  configure_wifi_after_boot
+  [[ -f "$MOUNT_POINT/etc/wpa_supplicant/wpa_supplicant-wlan0.conf" ]]
+  grep -q 'systemctl enable wpa_supplicant@wlan0.service' "$fixture/wpa-services"
+  if grep -q 'systemctl enable iwd.service' "$fixture/wpa-services"; then
+    printf 'iwd was enabled alongside the WPA fallback.\n' >&2; exit 1
+  fi
+) > "$fixture/wpa-output" 2>&1
+(
+  mock_setup
+  WIFI_HANDOFF_DIR="$fixture/kde-handoff"
+  MOUNT_POINT="$fixture/kde-target"
+  ENABLE_WIFI_AFTER_BOOT=yes
+  WIFI_ADAPTER=wlan0 WIFI_SSID=example WIFI_PASSWORD=fixture-secret
+  mkdir -p "$WIFI_HANDOFF_DIR" "$MOUNT_POINT"
+  collect_desktop_config <<< '2'
+  [[ "$WIFI_BACKEND" == networkmanager && " ${BASE_PACKAGES[*]} " == *' wpa_supplicant '* ]]
+  arch-chroot() { :; }
+  configure_wifi_after_boot
+  [[ -f "$MOUNT_POINT/etc/wpa_supplicant/wpa_supplicant-wlan0.conf" ]]
+) > "$fixture/kde-wifi-output" 2>&1
+(
+  INSTALL_KDE=no
+  ENABLE_WIFI_AFTER_BOOT=no
+  arch-chroot() { printf '%s\n' "$*" >> "$fixture/wired-services"; }
+  configure_wired_network_after_boot
+  grep -q 'systemctl enable iwd.service' "$fixture/wired-services"
+  grep -q 'systemctl enable dhcpcd.service' "$fixture/wired-services"
+) > "$fixture/wired-output" 2>&1
 printf 'Arch decisions precede GO; cfdisk and format remain gated (mocked).\n'
