@@ -17,7 +17,7 @@ chmod +x "$MOUNT_POINT/etc/grub.d/30_uefi-firmware"
 cat > "$fixture/bin/efibootmgr" <<'EOF'
 #!/bin/sh
 if [ "$#" -gt 0 ]; then exit 99; fi
-printf '%s\n' 'Boot0000* Windows Boot Manager  HD(1,GPT,fixture)' 'Boot0001* krub' 'Boot0013  Lenovo Diagnostics'
+printf '%s\n' 'Boot0000* Windows Boot Manager  HD(1,GPT,fixture)' 'Boot0001* krub' 'Boot0011  Boot Menu' 'Boot0013  Lenovo Diagnostics'
 EOF
 chmod +x "$fixture/bin/efibootmgr"
 PATH="$fixture/bin:$PATH"
@@ -44,6 +44,17 @@ if [ "$grub_platform" = "efi" ]; then
 fi
 ### END /etc/grub.d/30_uefi-firmware ###
 EOF
+cp "$fixture/generated" "$fixture/no-bootmenu"
+FIRMWARE_BOOT_MENU_ID=0011
+write_boot_menu_krub_entry
+boot_entry="$MOUNT_POINT/etc/grub.d/40_kmos_boot_menu"
+[[ -x "$boot_entry" ]]
+grep -q 'if bootnext 0011; then' "$boot_entry"
+{
+  printf '%s\n' '### BEGIN /etc/grub.d/40_kmos_boot_menu ###'
+  "$boot_entry"
+  printf '%s\n' '### END /etc/grub.d/40_kmos_boot_menu ###'
+} >> "$fixture/generated"
 cat > "$fixture/bootnext-flood" <<'EOF'
 ### BEGIN /etc/grub.d/31_efi_bootnext ###
 menuentry 'Windows Boot Manager (EFI BootNext)' $menuentry_id_option 'efi-bootnext-0000' { bootnext 0000; reboot; }
@@ -53,7 +64,7 @@ menuentry 'Lenovo Diagnostics (EFI BootNext)' $menuentry_id_option 'efi-bootnext
 EOF
 
 collect_krub_config <<< '1'
-[[ "$INCLUDE_WINDOWS" == no && "$BOOT_MENU_CHOICE_MADE" == 1 ]]
+[[ "$INCLUDE_WINDOWS" == no && "$BOOT_MENU_CHOICE_MADE" == 1 && "$FIRMWARE_BOOT_MENU_ID" == 0011 ]]
 configure_krub_menu_policy
 grep -qx 'GRUB_DISABLE_OS_PROBER=true' "$MOUNT_POINT/etc/default/grub"
 grep -qx 'export GRUB_DISABLE_BOOTNEXT=true' "$MOUNT_POINT/etc/default/grub"
@@ -61,6 +72,9 @@ grep -qx 'GRUB_DISABLE_RECOVERY=true' "$MOUNT_POINT/etc/default/grub"
 [[ -x "$MOUNT_POINT/etc/grub.d/30_uefi-firmware" ]]
 [[ $(bash -c '. "$1"; printenv GRUB_DISABLE_BOOTNEXT' _ "$MOUNT_POINT/etc/default/grub") == true ]]
 verify_krub_menu_policy "$fixture/generated"
+if (verify_krub_menu_policy "$fixture/no-bootmenu") > "$fixture/missing-boot-menu" 2>&1; then
+  printf 'A GRUB menu without Boot Menu was accepted.\n' >&2; exit 1
+fi
 cat "$fixture/generated" "$fixture/bootnext-flood" > "$fixture/extra"
 if (verify_krub_menu_policy "$fixture/extra") > "$fixture/rejected" 2>&1; then
   printf 'Extra BootNext entries were accepted.\n' >&2; exit 1
@@ -69,6 +83,30 @@ if (collect_krub_config <<< '') > "$fixture/blank" 2>&1; then
   printf 'Blank krub choice was accepted.\n' >&2; exit 1
 fi
 grep -q 'No krub menu choice received' "$fixture/blank"
+cat > "$fixture/bin/efibootmgr" <<'EOF'
+#!/bin/sh
+printf '%s\n' 'Boot0000* Windows Boot Manager' 'Boot0013  Lenovo Diagnostics'
+EOF
+chmod +x "$fixture/bin/efibootmgr"
+if (collect_krub_config <<< '1') > "$fixture/missing-firmware-menu" 2>&1; then
+  printf 'Missing firmware Boot Menu passed the pre-GO check.\n' >&2; exit 1
+fi
+grep -q 'Exactly one firmware Boot Menu entry is required before GO' "$fixture/missing-firmware-menu"
+cat > "$fixture/bin/efibootmgr" <<'EOF'
+#!/bin/sh
+printf '%s\n' 'Boot0000* Windows Boot Manager' 'Boot0011  Boot Menu' 'Boot0012  Boot Menu'
+EOF
+chmod +x "$fixture/bin/efibootmgr"
+if (collect_krub_config <<< '1') > "$fixture/duplicate-firmware-menu" 2>&1; then
+  printf 'Ambiguous firmware Boot Menu entries passed the pre-GO check.\n' >&2; exit 1
+fi
+grep -q 'Exactly one firmware Boot Menu entry is required before GO' "$fixture/duplicate-firmware-menu"
+cat > "$fixture/bin/efibootmgr" <<'EOF'
+#!/bin/sh
+if [ "$#" -gt 0 ]; then exit 99; fi
+printf '%s\n' 'Boot0000* Windows Boot Manager' 'Boot0011  Boot Menu' 'Boot0013  Lenovo Diagnostics'
+EOF
+chmod +x "$fixture/bin/efibootmgr"
 cat "$fixture/generated" > "$fixture/extra-arch"
 cat >> "$fixture/extra-arch" <<'EOF'
 ### BEGIN /etc/grub.d/10_linux ###
@@ -105,7 +143,8 @@ verify_krub_menu_policy "$fixture/with-windows"
 if command -v grub-script-check >/dev/null 2>&1; then
   grub-script-check "$fixture/with-windows"
 fi
-[[ $(grep -c '^[[:space:]]*menuentry .*EFI BootNext' "$fixture/with-windows") == 1 ]]
+[[ $(grep -c '^[[:space:]]*menuentry .*EFI BootNext' "$fixture/with-windows") == 2 ]]
+[[ $(grep -c '^[[:space:]]*menuentry '\''Windows Boot Manager (EFI BootNext)'\''' "$fixture/with-windows") == 1 ]]
 WINDOWS_BOOT_ID=9999
 if (verify_krub_menu_policy "$fixture/with-windows") > "$fixture/wrong-id" 2>&1; then
   printf 'Wrong Windows firmware ID was accepted.\n' >&2; exit 1
@@ -122,6 +161,7 @@ BOOTNEXT_MODULE="$fixture/live/efibootnext.mod"
 
 # A failing GRUB generation must preserve the existing bootable menu.
 INCLUDE_WINDOWS=no
+rm "$boot_entry"
 printf 'previous bootable menu\n' > "$MOUNT_POINT/boot/grub/grub.cfg"
 verify_krub_mounts() { :; }
 arch-chroot() {
@@ -134,6 +174,22 @@ if (install_krub_bootloader) > "$fixture/not-activated" 2>&1; then
 fi
 [[ $(cat "$MOUNT_POINT/boot/grub/grub.cfg") == 'previous bootable menu' ]]
 grep -q 'Existing menu preserved' "$fixture/not-activated"
+rm "$boot_entry"
+
+# Even if the config happens to contain only allowed entries, claiming to
+# run the all-firmware generator must not be reported as a clean install.
+arch-chroot() {
+  if [[ "$2" == grub-mkconfig ]]; then
+    cat "$fixture/generated" > "$MOUNT_POINT${!#}"
+    printf '%s\n' 'Adding boot menu entry for EFI BootNext: Lenovo Diagnostics' >&2
+  fi
+}
+if (install_krub_bootloader) > "$fixture/unapproved-generator" 2>&1; then
+  printf 'All-firmware generator was silently accepted.\n' >&2; exit 1
+fi
+grep -q 'An unapproved GRUB generator ran' "$fixture/unapproved-generator"
+[[ $(cat "$MOUNT_POINT/boot/grub/grub.cfg") == 'previous bootable menu' ]]
+rm "$boot_entry"
 
 # With the generator disabled, a normal generation can be installed and
 # the old config is saved without altering any firmware boot entries.
@@ -145,4 +201,4 @@ arch-chroot() {
 install_krub_bootloader > "$fixture/install" 2>&1
 verify_krub_menu_policy "$MOUNT_POINT/boot/grub/grub.cfg"
 grep -q 'previous bootable menu' "$MOUNT_POINT"/boot/grub/grub.cfg.kmos-before.*
-printf 'krub Arch, Advanced, UEFI and optional single Windows entry: OK (mocked).\n'
+printf 'krub Arch, Advanced, UEFI, Boot Menu and optional Windows: OK (mocked).\n'

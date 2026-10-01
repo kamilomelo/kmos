@@ -71,17 +71,19 @@ The x86 Bash installer now collects the desktop (**explicitly choose 1 for
 headless or 2 for KDE; Enter alone cannot select KDE**), AUR, account and
 other configuration choices **before** the install plan review.
 The early krub choice also requires an explicit selection: **1** keeps only
-Arch Linux, Advanced options for Arch Linux and UEFI Firmware Settings;
-**2** adds one selected Windows Boot Manager (EFI BootNext) entry. Enter alone
-does not choose either option. The installer disables the all-firmware-entry
-generator through its `GRUB_DISABLE_BOOTNEXT` setting without deleting that
-script or changing firmware entries. If Windows is selected, it writes one
-small persistent GRUB entry targeting the selected Windows firmware ID and
-requires GRUB's `efibootnext` module; an ISO without that module refuses the
-Windows choice before disk approval. The installer never uses `os-prober` to
+Arch Linux, Advanced options for Arch Linux, UEFI Firmware Settings and the
+firmware Boot Menu (EFI BootNext); **2** adds one selected Windows Boot Manager
+(EFI BootNext) entry. Enter alone does not choose either option. The Boot Menu
+firmware ID and `efibootnext` module must be available before GO. The installer
+disables the all-firmware-entry generator through its `GRUB_DISABLE_BOOTNEXT`
+setting without deleting that script or changing firmware entries. It writes
+one persistent Boot Menu entry and, if selected, one Windows entry targeting
+the selected firmware ID. An ISO without `efibootnext` refuses installation
+before disk approval. The installer never uses `os-prober` to
 fill this menu. It checks the generated menu before replacing the previous
-`grub.cfg`; an unexpected entry stops installation rather than silently
-using a different menu. This controls GRUB's menu, **not the firmware's own
+`grub.cfg`; an unexpected entry or evidence of unapproved GRUB generators
+stops installation rather than silently using a different menu. This controls
+GRUB's menu, **not the firmware's own
 BootNext/BootOrder entries**. On an installed system,
 `./kmos-install.sh inspect-krub` reports generated GRUB entries and firmware
 entries read-only; it never removes firmware entries.
