@@ -24,7 +24,11 @@ root_fstype=ext4
 boot_size=1073741824
 mounted_partition=""
 answer=yes
-space_ok=yes
+selected_efi_contents=arch
+windows_separate=yes
+firmware_windows_uuid=11111111-1111-1111-1111-111111111111
+selected_uuid=22222222-2222-2222-2222-222222222222
+firmware_readable=yes
 
 block_device() { [[ -e "$1" ]]; }
 lsblk() {
@@ -40,6 +44,8 @@ lsblk() {
         PARTTYPE) [[ "$device" == "$BOOT_PARTITION" ]] && echo "$boot_type" || echo "$root_type" ;;
         FSTYPE) [[ "$device" == "$BOOT_PARTITION" ]] && echo "$boot_fstype" || echo "$root_fstype" ;;
         MOUNTPOINTS) [[ "$device" == "$mounted_partition" ]] && echo /already-mounted || true ;;
+        MAJ:MIN) [[ "$device" == "$BOOT_PARTITION" ]] && echo 8:1 || echo 8:2 ;;
+        PARTUUID) echo "$selected_uuid" ;;
         *) return 1 ;;
       esac
       ;;
@@ -48,7 +54,12 @@ lsblk() {
   esac
 }
 ask_yes_no() { [[ "$answer" == yes ]]; }
-check_reused_efi_space() { [[ "$space_ok" == yes ]]; }
+selected_efi_identity() { printf '%s\n' "$selected_efi_contents"; }
+scan_windows_efi_loaders() { [[ "$windows_separate" == yes ]] && printf '%s|ABCD-1234|8:2\n' "$other_partition"; }
+efibootmgr() {
+  [[ "$firmware_readable" == yes ]] || return 1
+  printf 'Boot0009* Windows Boot Manager HD(1,GPT,%s,0x800,0x10000)/File(\\EFI\\Microsoft\\Boot\\bootmgfw.efi)\n' "$firmware_windows_uuid"
+}
 
 expect_rejected() {
   if ("$@") >/dev/null 2>&1; then
@@ -79,28 +90,36 @@ expect_rejected validate_partitions  # Do not accept an existing Windows filesys
 root_fstype=ext4
 
 choose_boot_partition_action
-[[ "$BOOT_PARTITION_ACTION" == reuse ]]
+[[ "$BOOT_PARTITION_ACTION" == format ]]
 preflight_partitions
-space_ok=no
+selected_efi_contents=windows
 expect_rejected preflight_partitions
-space_ok=yes
+selected_efi_contents=unknown
+expect_rejected preflight_partitions  # Never erase an unrelated ESP.
+selected_efi_contents=arch
+firmware_readable=no
+expect_rejected preflight_partitions
+firmware_readable=yes
+windows_separate=no
+expect_rejected preflight_partitions
+windows_separate=yes
+firmware_windows_uuid="$selected_uuid"
+expect_rejected preflight_partitions  # NVRAM Windows record points here.
+firmware_windows_uuid=11111111-1111-1111-1111-111111111111
+selected_efi_contents=empty
+preflight_partitions  # A verified empty ESP is also safe to format.
+selected_efi_contents=arch
 mounted_partition="$ROOT_PARTITION"
 expect_rejected preflight_partitions
 mounted_partition=""
 
 answer=no
 choose_boot_partition_action
-[[ "$BOOT_PARTITION_ACTION" == reuse ]]  # Never offer to format an existing FAT EFI.
+[[ "$BOOT_PARTITION_ACTION" == format ]]  # Existing separate Arch EFI is reformatted.
 boot_fstype=""
 choose_boot_partition_action
 [[ "$BOOT_PARTITION_ACTION" == format ]]
 preflight_partitions
-INCLUDE_WINDOWS=yes
-WINDOWS_BOOT_PARTITION="$BOOT_PARTITION"
-expect_rejected preflight_partitions  # Never format the selected Windows EFI.
-WINDOWS_BOOT_PARTITION="$other_partition"
-preflight_partitions  # A distinct new Arch EFI may be formatted.
-INCLUDE_WINDOWS=no
 boot_size=268435456
 expect_rejected preflight_partitions
 boot_size=1073741824

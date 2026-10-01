@@ -736,8 +736,8 @@ choose_boot_partition_action() {
 
   fstype="$(partition_fstype "$BOOT_PARTITION")"
   if [[ "$fstype" == "vfat" ]]; then
-    BOOT_PARTITION_ACTION="reuse"
-    info "Existing FAT32 EFI partition $BOOT_PARTITION will be reused without formatting; its Windows files will be preserved."
+    BOOT_PARTITION_ACTION="format"
+    info "Existing FAT EFI partition $BOOT_PARTITION is selected for formatting. Arch identity and Windows EFI separation will be verified before FORMAT."
   elif [[ -z "$fstype" ]]; then
     BOOT_PARTITION_ACTION="format"
     info "Unformatted EFI partition $BOOT_PARTITION will be formatted as FAT32."
@@ -1116,7 +1116,67 @@ preflight_partitions() {
     size="$(lsblk -bdnro SIZE "$BOOT_PARTITION")"
     [[ "$size" =~ ^[0-9]+$ ]] || die "Could not read EFI partition size. Nothing was formatted."
     ((size >= 536870912)) || die "EFI partition must be at least 512 MiB. Nothing was formatted."
+    if [[ "$fstype" == vfat ]]; then
+      verify_existing_efi_is_not_windows \
+        || die 'Could not prove the selected existing EFI partition is separate from Windows. No filesystems were formatted.'
+    fi
   fi
+}
+
+selected_efi_identity() (
+  local mount_dir
+  mount_dir=$(mktemp -d "${TMPDIR:-/tmp}/kmos-selected-efi.XXXXXXXX") || return 2
+  trap 'if findmnt -rn --mountpoint "$mount_dir" >/dev/null 2>&1; then umount "$mount_dir"; fi; rmdir "$mount_dir"' EXIT
+  mount -o ro,nosuid,nodev,noexec "$BOOT_PARTITION" "$mount_dir" || return 2
+  if [[ -f "$mount_dir/EFI/Microsoft/Boot/bootmgfw.efi" ]]; then
+    printf 'windows\n'
+  elif [[ -f "$mount_dir/EFI/$KRUB_ID/grubx64.efi" ]]; then
+    printf 'arch\n'
+  elif find "$mount_dir" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+    printf 'unknown\n'
+  else
+    printf 'empty\n'
+  fi
+)
+
+verify_existing_efi_is_not_windows() {
+  local selected_id windows_id windows_partition windows_uuid scan_output firmware selected_partuuid line identity
+  local -a windows_loaders=()
+
+  identity=$(selected_efi_identity) || { warn "Could not inspect $BOOT_PARTITION read-only; refusing to format it."; return 1; }
+  case "$identity" in
+    arch|empty) ;;
+    windows) warn "Windows Boot Manager exists on $BOOT_PARTITION. It will not be formatted."; return 1 ;;
+    *) warn "The selected EFI partition is not recognizable as Arch or empty: $BOOT_PARTITION. Refusing to format it."; return 1 ;;
+  esac
+  scan_output=$(scan_windows_efi_loaders) || { warn 'Could not inspect Windows EFI partitions read-only.'; return 1; }
+  [[ -n "$scan_output" ]] || { warn 'A separate Windows EFI partition was not found.'; return 1; }
+  mapfile -t windows_loaders <<< "$scan_output"
+  ((${#windows_loaders[@]} == 1)) || { warn 'Multiple Windows EFI partitions found; refusing to guess.'; return 1; }
+  IFS='|' read -r windows_partition windows_uuid windows_id <<< "${windows_loaders[0]}"
+  [[ "$windows_uuid" =~ ^[[:xdigit:]-]{4,40}$ && "$windows_id" =~ ^[0-9]+:[0-9]+$ ]] \
+    || { warn 'The Windows EFI identity is incomplete.'; return 1; }
+  selected_id=$(lsblk -dnro MAJ:MIN "$BOOT_PARTITION") || return 1
+  [[ "$selected_id" =~ ^[0-9]+:[0-9]+$ && "$selected_id" != "$windows_id" ]] \
+    || { warn 'The selected EFI partition appears to be the Windows EFI partition.'; return 1; }
+
+  # Cross-check the firmware record as well as the EFI files; never erase an
+  # ESP that firmware still identifies as Windows, even if its loader is gone.
+  selected_partuuid=$(lsblk -dnro PARTUUID "$BOOT_PARTITION" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  [[ "$selected_partuuid" =~ ^[[:xdigit:]-]{36}$ ]] \
+    || { warn 'Could not verify the selected EFI partition GUID.'; return 1; }
+  firmware=$(efibootmgr -v 2>/dev/null) \
+    || { warn 'Could not verify the firmware Windows Boot Manager location.'; return 1; }
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^Boot[[:xdigit:]]{4}\*?[[:space:]]+Windows[[:space:]]Boot[[:space:]]Manager([[:space:]]|$) \
+      && "$line" =~ HD\([0-9]+,GPT,([[:xdigit:]-]{36}), ]]; then
+      if [[ "${BASH_REMATCH[1],,}" == "$selected_partuuid" ]]; then
+        warn "Firmware's Windows Boot Manager points to $BOOT_PARTITION; refusing to format it."
+        return 1
+      fi
+    fi
+  done <<< "$firmware"
+  info "Verified separate Windows EFI at $windows_partition; only $BOOT_PARTITION will be formatted."
 }
 
 check_reused_efi_space() (
