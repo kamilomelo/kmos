@@ -17,7 +17,7 @@ chmod +x "$MOUNT_POINT/etc/grub.d/30_uefi-firmware"
 cat > "$fixture/bin/efibootmgr" <<'EOF'
 #!/bin/sh
 if [ "$#" -gt 0 ]; then exit 99; fi
-printf '%s\n' 'Boot0000* Windows Boot Manager  HD(1,GPT,fixture)' 'Boot0001* krub' 'Boot0011  Boot Menu' 'Boot0013  Lenovo Diagnostics'
+printf '%s\n' 'Boot0009* Windows Boot Manager  HD(1,GPT,fixture)' 'Boot0001* krub' 'Boot0011  Boot Menu' 'Boot0013  Lenovo Diagnostics'
 EOF
 chmod +x "$fixture/bin/efibootmgr"
 PATH="$fixture/bin:$PATH"
@@ -57,14 +57,17 @@ grep -q 'if bootnext 0011; then' "$boot_entry"
 } >> "$fixture/generated"
 cat > "$fixture/bootnext-flood" <<'EOF'
 ### BEGIN /etc/grub.d/31_efi_bootnext ###
-menuentry 'Windows Boot Manager (EFI BootNext)' $menuentry_id_option 'efi-bootnext-0000' { bootnext 0000; reboot; }
+menuentry 'Windows Boot Manager (EFI BootNext)' $menuentry_id_option 'efi-bootnext-0009' { bootnext 0009; reboot; }
 menuentry 'krub (EFI BootNext)' $menuentry_id_option 'efi-bootnext-0001' { bootnext 0001; reboot; }
 menuentry 'Lenovo Diagnostics (EFI BootNext)' $menuentry_id_option 'efi-bootnext-0013' { bootnext 0013; reboot; }
 ### END /etc/grub.d/31_efi_bootnext ###
 EOF
 
-collect_krub_config <<< '1'
+collect_krub_config <<< '' > "$fixture/windows-declined" 2>&1
 [[ "$INCLUDE_WINDOWS" == no && "$BOOT_MENU_CHOICE_MADE" == 1 && "$FIRMWARE_BOOT_MENU_ID" == 0011 ]]
+if grep -q 'Choose krub menu \[1/2\]' "$fixture/windows-declined"; then
+  printf 'Old numbered krub menu question was shown.\n' >&2; exit 1
+fi
 configure_krub_menu_policy
 grep -qx 'GRUB_DISABLE_OS_PROBER=true' "$MOUNT_POINT/etc/default/grub"
 grep -qx 'export GRUB_DISABLE_BOOTNEXT=true' "$MOUNT_POINT/etc/default/grub"
@@ -79,32 +82,41 @@ cat "$fixture/generated" "$fixture/bootnext-flood" > "$fixture/extra"
 if (verify_krub_menu_policy "$fixture/extra") > "$fixture/rejected" 2>&1; then
   printf 'Extra BootNext entries were accepted.\n' >&2; exit 1
 fi
-if (collect_krub_config <<< '') > "$fixture/blank" 2>&1; then
-  printf 'Blank krub choice was accepted.\n' >&2; exit 1
+if (collect_krub_config <<< '1') > "$fixture/invalid" 2>&1; then
+  printf 'Non-yes/no Windows choice was accepted.\n' >&2; exit 1
 fi
-grep -q 'No krub menu choice received' "$fixture/blank"
+grep -q 'Please answer yes or no' "$fixture/invalid"
 cat > "$fixture/bin/efibootmgr" <<'EOF'
 #!/bin/sh
-printf '%s\n' 'Boot0000* Windows Boot Manager' 'Boot0013  Lenovo Diagnostics'
+printf '%s\n' 'Boot0009* Windows Boot Manager' 'Boot0013  Lenovo Diagnostics'
 EOF
 chmod +x "$fixture/bin/efibootmgr"
-if (collect_krub_config <<< '1') > "$fixture/missing-firmware-menu" 2>&1; then
+if (collect_krub_config <<< '') > "$fixture/missing-firmware-menu" 2>&1; then
   printf 'Missing firmware Boot Menu passed the pre-GO check.\n' >&2; exit 1
 fi
 grep -q 'Exactly one firmware Boot Menu entry is required before GO' "$fixture/missing-firmware-menu"
 cat > "$fixture/bin/efibootmgr" <<'EOF'
 #!/bin/sh
-printf '%s\n' 'Boot0000* Windows Boot Manager' 'Boot0011  Boot Menu' 'Boot0012  Boot Menu'
+printf '%s\n' 'Boot0009* Windows Boot Manager' 'Boot0011  Boot Menu' 'Boot0012  Boot Menu'
 EOF
 chmod +x "$fixture/bin/efibootmgr"
-if (collect_krub_config <<< '1') > "$fixture/duplicate-firmware-menu" 2>&1; then
+if (collect_krub_config <<< '') > "$fixture/duplicate-firmware-menu" 2>&1; then
   printf 'Ambiguous firmware Boot Menu entries passed the pre-GO check.\n' >&2; exit 1
 fi
 grep -q 'Exactly one firmware Boot Menu entry is required before GO' "$fixture/duplicate-firmware-menu"
 cat > "$fixture/bin/efibootmgr" <<'EOF'
 #!/bin/sh
+printf '%s\n' 'Boot0009* Windows Boot Manager' 'Boot0000* Windows Boot Manager' 'Boot0011  Boot Menu'
+EOF
+chmod +x "$fixture/bin/efibootmgr"
+if (collect_krub_config <<< 'y') > "$fixture/duplicate-windows" 2>&1; then
+  printf 'Ambiguous Windows entries were accepted.\n' >&2; exit 1
+fi
+grep -q 'exactly one Windows Boot Manager firmware entry' "$fixture/duplicate-windows"
+cat > "$fixture/bin/efibootmgr" <<'EOF'
+#!/bin/sh
 if [ "$#" -gt 0 ]; then exit 99; fi
-printf '%s\n' 'Boot0000* Windows Boot Manager' 'Boot0011  Boot Menu' 'Boot0013  Lenovo Diagnostics'
+printf '%s\n' 'Boot0009* Windows Boot Manager' 'Boot0011  Boot Menu' 'Boot0013  Lenovo Diagnostics'
 EOF
 chmod +x "$fixture/bin/efibootmgr"
 cat "$fixture/generated" > "$fixture/extra-arch"
@@ -117,14 +129,14 @@ if (verify_krub_menu_policy "$fixture/extra-arch") > "$fixture/extra-arch-log" 2
   printf 'Additional Arch entry was accepted.\n' >&2; exit 1
 fi
 
-collect_krub_config <<< '2'
-[[ "$INCLUDE_WINDOWS" == yes && "$WINDOWS_BOOT_ID" == 0000 ]]
+collect_krub_config <<< 'y'
+[[ "$INCLUDE_WINDOWS" == yes && "$WINDOWS_BOOT_ID" == 0009 ]]
 configure_krub_menu_policy
 grep -qx 'export GRUB_DISABLE_BOOTNEXT=true' "$MOUNT_POINT/etc/default/grub"
 write_windows_krub_entry
 entry="$MOUNT_POINT/etc/grub.d/41_kmos_windows"
 [[ -x "$entry" ]]
-grep -q 'if bootnext 0000; then' "$entry"
+grep -q 'if bootnext 0009; then' "$entry"
 grep -q 'insmod efibootnext' "$entry"
 rm "$MOUNT_POINT$BOOTNEXT_MODULE"
 if (write_windows_krub_entry) > "$fixture/target-missing-module" 2>&1; then
@@ -149,11 +161,11 @@ WINDOWS_BOOT_ID=9999
 if (verify_krub_menu_policy "$fixture/with-windows") > "$fixture/wrong-id" 2>&1; then
   printf 'Wrong Windows firmware ID was accepted.\n' >&2; exit 1
 fi
-WINDOWS_BOOT_ID=0000
+WINDOWS_BOOT_ID=0009
 
 # A missing module is rejected before GO when Windows is selected.
 BOOTNEXT_MODULE="$fixture/missing/efibootnext.mod"
-if (collect_krub_config <<< '2') > "$fixture/missing-module" 2>&1; then
+if (collect_krub_config <<< 'y') > "$fixture/missing-module" 2>&1; then
   printf 'Windows accepted without a live efibootnext module.\n' >&2; exit 1
 fi
 grep -q 'before GO' "$fixture/missing-module"

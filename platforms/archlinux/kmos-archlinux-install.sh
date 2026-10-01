@@ -752,29 +752,21 @@ choose_boot_partition_action() {
 }
 
 collect_krub_config() {
-  local package="" choice=""
+  local package=""
 
   for package in "${KRUB_PACKAGES[@]}"; do
     add_package "$package"
   done
 
   BOOT_MENU_CHOICE_MADE=0
-  info 'Choose the krub menu (GRUB entries, not firmware BootOrder).'
-  printf '  1) Arch Linux + Advanced options + UEFI Firmware Settings + Boot Menu\n  2) The same four entries plus Windows Boot Manager\n' >&2
+  info 'krub always includes Arch Linux, Advanced options, UEFI Firmware Settings and Boot Menu.'
   select_firmware_boot_menu
-  while true; do
-    printf 'Choose krub menu [1/2] (required, no default): ' >&2
-    read -r choice || die 'No krub menu choice received; installation cancelled before GO.'
-    case "$choice" in
-      1) INCLUDE_WINDOWS=no; break ;;
-      2)
-        INCLUDE_WINDOWS=yes
-        select_windows_bootnext
-        break
-        ;;
-      *) warn 'Choose 1 for the default four entries or 2 to add one Windows Boot Manager.' ;;
-    esac
-  done
+  if ask_yes_no 'Also add Windows Boot Manager (EFI BootNext)?' no; then
+    INCLUDE_WINDOWS=yes
+    select_windows_bootnext
+  else
+    INCLUDE_WINDOWS=no
+  fi
   BOOT_MENU_CHOICE_MADE=1
 }
 
@@ -1015,7 +1007,7 @@ collect_desktop_config() {
 confirm_disk_edit() {
   local answer
   ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; cannot approve disk edits.'
-  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Krub menu choice was not collected; cannot approve disk edits.'
+  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Boot Menu and Windows policy were not collected; cannot approve disk edits.'
   printf '\n' >&2
   info 'Installation choices have been collected. Disk edits are still pending.'
   detail "Disk" "$TARGET_DISK"
@@ -1064,7 +1056,7 @@ confirm_install_plan() {
   local idx=0
   local confirm=""
   ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; cannot approve formatting.'
-  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Krub menu choice was not collected; cannot approve formatting.'
+  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Boot Menu and Windows policy were not collected; cannot approve formatting.'
 
   printf '\n' >&2
   info "Install plan:"
@@ -1747,7 +1739,7 @@ configure_krub_menu_policy() {
   local firmware_script="$MOUNT_POINT/etc/grub.d/30_uefi-firmware"
 
   [[ -f "$grub_defaults" && ! -L "$grub_defaults" ]] || die 'Missing or non-regular GRUB defaults; cannot enforce the selected krub menu policy.'
-  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Krub menu choice was not collected.'
+  ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Boot Menu and Windows policy were not collected.'
   # Never run os-prober: it lists arbitrary disks. The installed BootNext
   # generator provides its own switch; do not alter the generator or NVRAM.
   set_krub_default "$grub_defaults" GRUB_DISABLE_OS_PROBER true
@@ -1881,7 +1873,7 @@ inspect_krub_menu() {
 }
 
 select_windows_bootnext() {
-  local line choice index firmware_output
+  local line firmware_output
   local -a candidates=()
   command -v efibootmgr >/dev/null 2>&1 || die 'Windows BootNext requires efibootmgr on the live system. Choose Arch-only or use a live ISO that provides it.'
   [[ -f "$BOOTNEXT_MODULE" ]] \
@@ -1892,22 +1884,8 @@ select_windows_bootnext() {
       candidates+=("${BASH_REMATCH[1]^^}")
     fi
   done <<< "$firmware_output"
-  ((${#candidates[@]} > 0)) || die 'Windows was selected, but no Windows Boot Manager firmware entry was found before GO.'
-  if ((${#candidates[@]} > 1)); then
-    info 'Multiple Windows Boot Manager firmware entries found. Select exactly one:'
-    for index in "${!candidates[@]}"; do
-      printf '  %d) Boot%s\n' "$((index + 1))" "${candidates[$index]}" >&2
-    done
-    while true; do
-      printf 'Windows firmware entry [1-%d] (required): ' "${#candidates[@]}" >&2
-      read -r choice || die 'Windows BootNext selection was cancelled before GO.'
-      [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#candidates[@]})) && break
-      warn 'Choose exactly one numbered Windows firmware entry.'
-    done
-  else
-    choice=1
-  fi
-  WINDOWS_BOOT_ID=${candidates[$((choice - 1))]}
+  ((${#candidates[@]} == 1)) || die 'Windows was requested but exactly one Windows Boot Manager firmware entry is required before GO. No firmware entries were changed.'
+  WINDOWS_BOOT_ID=${candidates[0]}
   detail 'Windows BootNext' "Boot$WINDOWS_BOOT_ID"
 }
 
