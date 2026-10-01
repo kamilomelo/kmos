@@ -101,6 +101,10 @@ separately before running this installer.
 The selected, verified Arch EFI and root partitions are formatted. The
 installer refuses to format a detected Windows EFI partition, and never
 deletes firmware/NVRAM entries.
+At completion, the x86 installer keeps its `############################ 100%`
+progress display visible and counts down 10 seconds before rebooting. Press
+any key to stay on the live ISO and reboot manually; without an interactive
+terminal it skips automatic reboot.
 
 Impala and iwd are listed in the shared `kmos-nodesktop` dependency manifest,
 which the x86 installer loads for both headless and KDE choices and the

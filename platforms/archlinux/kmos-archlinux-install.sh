@@ -2037,11 +2037,7 @@ unmount_target() {
   fi
 }
 
-final_reboot() {
-  final_success "Install complete. Rebooting."
-  unmount_target
-  sync
-
+reboot_installer() {
   if ! systemctl reboot -i >/dev/null 2>&1; then
     reboot -f >/dev/null 2>&1 || shutdown -r now >/dev/null 2>&1 || {
       if [[ -w /proc/sysrq-trigger ]]; then
@@ -2050,6 +2046,40 @@ final_reboot() {
       die "Unable to reboot automatically."
     }
   fi
+}
+
+countdown_or_reboot() {
+  local fd=$1 remaining status
+  for ((remaining=10; remaining>0; remaining--)); do
+    printf '\rRebooting in %2d seconds. Press any key to stay... ' "$remaining" >&2
+    if IFS= read -r -s -n 1 -t 1 -u "$fd"; then
+      printf '\nStaying on the live ISO. Reboot manually when ready.\n' >&2
+      return 0
+    else
+      status=$?
+      if ((status < 128)); then
+        printf '\n' >&2
+        warn 'Terminal input closed; automatic reboot skipped. Reboot manually when ready.'
+        return 0
+      fi
+    fi
+  done
+  printf '\nRebooting now.\n' >&2
+  reboot_installer
+}
+
+final_reboot() {
+  local fd
+  unmount_target
+  sync
+  final_success "Install complete."
+  printf '  %s\n\n' "$(progress_bar "$STEP_TOTAL" "$STEP_TOTAL")" >&2
+  if ! { exec {fd}</dev/tty; } 2>/dev/null; then
+    warn 'No interactive terminal; automatic reboot skipped. Reboot manually when ready.'
+    return 0
+  fi
+  countdown_or_reboot "$fd"
+  exec {fd}<&-
   exit 0
 }
 

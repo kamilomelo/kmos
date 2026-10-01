@@ -28,6 +28,7 @@ scripts+=(
   tests/archarm-dispatch.sh
   tests/arch-partition-safety.sh
   tests/arch-plan-before-go.sh
+  tests/arch-finish-countdown.sh
   tests/arch-kde-panel-safety.sh
   tests/arch-krub-policy.sh
   tests/quartz-disk-safety.sh
@@ -70,6 +71,7 @@ printf 'Bash syntax and ShellCheck passed for %d scoped scripts (%d known diagno
 
 bash tests/arch-partition-safety.sh
 bash tests/arch-plan-before-go.sh
+bash tests/arch-finish-countdown.sh
 bash tests/arch-kde-panel-safety.sh
 bash tests/arch-krub-policy.sh
 bash tests/archarm-dispatch.sh
