@@ -30,7 +30,6 @@ scripts+=(
   tests/arch-plan-before-go.sh
   tests/arch-finish-countdown.sh
   tests/arch-kde-panel-safety.sh
-  tests/arch-kde-first-login.sh
   tests/arch-krub-policy.sh
   tests/quartz-disk-safety.sh
   tests/quartz-bootloader-extraction.sh
@@ -74,7 +73,6 @@ bash tests/arch-partition-safety.sh
 bash tests/arch-plan-before-go.sh
 bash tests/arch-finish-countdown.sh
 bash tests/arch-kde-panel-safety.sh
-bash tests/arch-kde-first-login.sh
 bash tests/arch-krub-policy.sh
 bash tests/archarm-dispatch.sh
 bash tests/quartz-disk-safety.sh

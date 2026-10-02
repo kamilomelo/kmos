@@ -134,13 +134,6 @@ panel layout.** Your panel configuration is in
 `~/.config/plasma-org.kde.plasma.desktop-appletsrc`; back it up before
 rearranging widgets in Plasma or restoring a known-good copy.
 
-For **new KDE user layouts only**, KMOS supplies its own Plasma panel template
-with Application Dashboard in the stock launcher position; it does not modify
-Plasma's packaged template or existing user panels. New Konsole profiles use
-Kappa Mono, and the KMOS color scheme is applied once on the first KDE login.
-Existing users' chosen color scheme and personal panel configuration are not
-reset. The older install's cosmetic defaults are not retroactively changed.
-
 #### 4) If Ethernet Is NOT Available
 
 Use the repository from external media, then run Wi-Fi setup first:
