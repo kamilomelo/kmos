@@ -154,6 +154,13 @@ complete. It skips users who chose a different scheme and does not reapply
 after later changes. **This revised color fix still needs a real KDE login
 test.**
 
+Fresh KMOS Konsole and Dolphin-terminal profiles explicitly select Kappa Mono;
+the KDE post-install step verifies that fontconfig resolves the downloaded font.
+The `kmos-fonts` package list includes `wqy-microhei` for CJK coverage. Arch's
+`plasma-integration` package requires `ttf-hack`, so Hack may still be installed
+as a KDE dependency, but KMOS does not select it as a terminal font. The
+installer downloads only the Kappa families into its managed font directory.
+
 #### 4) If Ethernet Is NOT Available
 
 Use the repository from external media, then run Wi-Fi setup first:

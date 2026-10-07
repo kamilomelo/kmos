@@ -33,6 +33,7 @@ scripts+=(
   tests/arch-kde-panel-safety.sh
   tests/arch-kde-fresh-panel.sh
   tests/arch-kde-first-login-colors.sh
+  tests/arch-kde-kappa-fonts.sh
   tests/arch-krub-policy.sh
   tests/quartz-disk-safety.sh
   tests/quartz-bootloader-extraction.sh
@@ -79,6 +80,7 @@ bash tests/arch-finish-countdown.sh
 bash tests/arch-kde-panel-safety.sh
 bash tests/arch-kde-fresh-panel.sh
 bash tests/arch-kde-first-login-colors.sh
+bash tests/arch-kde-kappa-fonts.sh
 bash tests/arch-krub-policy.sh
 bash tests/archarm-dispatch.sh
 bash tests/quartz-disk-safety.sh

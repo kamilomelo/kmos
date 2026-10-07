@@ -295,6 +295,7 @@ write_konsole_profile() {
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
 ColorScheme=kmos
+Font=Kappa Mono,11,-1,5,50,0,0,0,0,0
 UseTransparency=true
 
 [General]
@@ -309,6 +310,7 @@ write_konsole_default_profile() {
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
 ColorScheme=kmos
+Font=Kappa Mono,11,-1,5,50,0,0,0,0,0
 UseTransparency=true
 
 [General]
@@ -323,6 +325,7 @@ write_konsole_dolphin_profile() {
   install -Dm0644 /dev/stdin "$target" <<'EOF'
 [Appearance]
 ColorScheme=kmos
+Font=Kappa Mono,11,-1,5,50,0,0,0,0,0
 UseTransparency=false
 
 [General]
@@ -794,6 +797,7 @@ install_extra_fonts() {
   done
 
   (( downloaded == 1 )) || die "No Kappa fonts were downloaded."
+  [[ -s "$fonts_dir/KappaMono-Regular.ttf" ]] || die 'Kappa Mono Regular was not downloaded; no valid terminal font is available.'
 
   for legacy_font in \
     ABeeZee-Regular.ttf \
@@ -810,7 +814,9 @@ install_extra_fonts() {
   done
 
   find "$fonts_dir" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' \) -exec chmod 0644 {} +
-  arch-chroot "$MOUNT_POINT" fc-cache -r >/dev/null 2>&1 || warn "Could not refresh font cache after installing extra fonts."
+  arch-chroot "$MOUNT_POINT" fc-cache -r >/dev/null 2>&1 || die 'Could not refresh font cache after installing Kappa fonts.'
+  arch-chroot "$MOUNT_POINT" fc-match -f '%{family}\n' 'Kappa Mono' | head -n 1 | grep -Fqi 'Kappa Mono' \
+    || die 'Kappa Mono is not visible to fontconfig in the installed system.'
   success "Kappa font families installed."
 }
 

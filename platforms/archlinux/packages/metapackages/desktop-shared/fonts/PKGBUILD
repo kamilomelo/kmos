@@ -1,12 +1,14 @@
 # Maintainer: Kamilo Melo
 pkgname=kmos-fonts
-pkgver=2026.05.08
+pkgver=2026.10.07
 pkgrel=1
 pkgdesc="kmos font package set"
 arch=('any')
 url="https://github.com/kamilomelo/kmos"
 license=('MIT')
-depends=()
+depends=(
+  'wqy-microhei'
+)
 
 package() {
   :
