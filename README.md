@@ -139,8 +139,11 @@ based on the May 2026 layout: Dashboard at the left, KDE's task manager and
 system tray, KMOS CPU/GPU, memory, disk and network monitors, three world
 clocks, and Show Desktop. It does not run panel-update hooks against existing
 users or change KDE's packaged default panel. This layout is fixture-tested
-but **not yet verified at a real fresh KDE login**. The separate first-login
-color-scheme issue is not addressed by this panel change.
+but **not yet verified at a real fresh KDE login**. KMOS also enables a
+one-time first-login color application using the installed path (not `/mnt`);
+it skips users who have selected a different color scheme and does not
+reapply after their later changes. This color fix is also pending a real KDE
+first-login test.
 
 #### 4) If Ethernet Is NOT Available
 

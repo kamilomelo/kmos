@@ -151,27 +151,26 @@ if [ -f "$marker" ]; then
   exit 0
 fi
 
-if command -v kwriteconfig6 >/dev/null 2>&1; then
-  kwriteconfig6 --file "$cfg" --group General --key ColorScheme kmos >/dev/null 2>&1 || true
-  kwriteconfig6 --file "$cfg" --group General --key AccentColor "117,117,117" >/dev/null 2>&1 || true
-  kwriteconfig6 --file "$cfg" --group General --key LastUsedCustomAccentColor "117,117,117" >/dev/null 2>&1 || true
-  kwriteconfig6 --file "$cfg" --group General --key LookAndFeelPackage org.kde.kmos.desktop >/dev/null 2>&1 || true
+# Only finish setting up an untouched KMOS default. Never switch a user's
+# chosen scheme, including on subsequent logins after they change it.
+if ! [ -f "$cfg" ] || ! command -v kreadconfig6 >/dev/null 2>&1 || \
+    [ "$(kreadconfig6 --file "$cfg" --group General --key ColorScheme 2>/dev/null || true)" != kmos ]; then
+  [ -d "${marker%/*}" ] || exit 0
+  touch "$marker"
+  exit 0
 fi
 
-if command -v plasma-apply-colorscheme >/dev/null 2>&1; then
-  if plasma-apply-colorscheme kmos >/dev/null 2>&1 || plasma-apply-colorscheme KMOS >/dev/null 2>&1; then
-    touch "$marker"
-  fi
-fi
+command -v plasma-apply-colorscheme >/dev/null 2>&1 || exit 1
+plasma-apply-colorscheme kmos >/dev/null 2>&1 || plasma-apply-colorscheme KMOS >/dev/null 2>&1 || exit 1
+touch "$marker"
 EOF
 
   install -Dm0644 /dev/stdin "$target_desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=kmos color scheme
-Exec=$target_script
+Exec=/usr/share/kmos/bin/kmos-apply-colorscheme.sh
 OnlyShowIn=KDE;
-X-GNOME-Autostart-enabled=false
 NoDisplay=true
 EOF
 }
@@ -511,9 +510,15 @@ apply_color_scheme_defaults() {
   if [[ -d "$MOUNT_POINT/home" ]]; then
     while IFS= read -r -d '' home_dir; do
       username="$(basename "$home_dir")"
-      install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/KMOS.colors"
-      install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/kmos.colors"
-      write_kdeglobals_defaults "$home_dir/.config/kdeglobals"
+      if [[ ! -e "$home_dir/.local/share/color-schemes/KMOS.colors" && ! -L "$home_dir/.local/share/color-schemes/KMOS.colors" ]]; then
+        install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/KMOS.colors"
+      fi
+      if [[ ! -e "$home_dir/.local/share/color-schemes/kmos.colors" && ! -L "$home_dir/.local/share/color-schemes/kmos.colors" ]]; then
+        install -Dm0644 "$ASSET_COLOR_SCHEME" "$home_dir/.local/share/color-schemes/kmos.colors"
+      fi
+      if [[ ! -e "$home_dir/.config/kdeglobals" && ! -L "$home_dir/.config/kdeglobals" ]]; then
+        write_kdeglobals_defaults "$home_dir/.config/kdeglobals"
+      fi
       arch-chroot "$MOUNT_POINT" chown -R "$username:$username" "/home/$username/.config" "/home/$username/.local" 2>/dev/null || true
     done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
   fi
