@@ -1808,9 +1808,63 @@ configure_wired_network_after_boot() {
   if [[ "$INSTALL_KDE" == no ]]; then
     arch-chroot "$MOUNT_POINT" systemctl enable iwd.service \
       || die 'Could not enable iwd for future Impala connections on this headless install.'
+    install_headless_wifi_helper
   fi
   arch-chroot "$MOUNT_POINT" systemctl enable dhcpcd.service
   success "Wired DHCP enabled for first boot."
+}
+
+install_headless_wifi_helper() {
+  local helper="$MOUNT_POINT/opt/kmos/bin/kmos-headless-wifi.sh"
+  [[ ! -e "$helper" && ! -L "$helper" ]] || {
+    warn "Existing Wi-Fi helper preserved: $helper"
+    return 0
+  }
+  install -Dm0755 /dev/stdin "$helper" <<'WIFI_HELPER'
+#!/usr/bin/env bash
+# Optional Wi-Fi setup for headless Ethernet installs; iwd stores the profile.
+set -euo pipefail
+
+if [[ "${1:-}" == --help ]]; then
+  printf 'Usage: ./kmos-headless-wifi.sh\nSet up persistent Wi-Fi via Impala, with an iwctl fallback.\n'
+  exit 0
+fi
+if (($#)); then
+  printf 'Unknown argument. Use --help.\n' >&2
+  exit 2
+fi
+if [[ ! -t 0 || ! -t 1 ]]; then
+  printf 'Run this helper from an interactive terminal.\n' >&2
+  exit 1
+fi
+if ! systemctl is-active --quiet iwd.service; then
+  printf 'iwd is not running. Start iwd.service, then retry; no profiles were changed.\n' >&2
+  exit 1
+fi
+
+printf 'Ethernet can stay connected. iwd saves Wi-Fi networks for future boots.\n' >&2
+if command -v impala >/dev/null 2>&1; then
+  printf 'Opening Impala. Select and connect to your Wi-Fi network, then quit Impala.\n' >&2
+  if ! impala; then
+    printf 'Impala could not complete; falling back to iwctl.\n' >&2
+  else
+    read -r -p 'Did Impala connect successfully? [y/N] ' answer || answer=n
+    case "$answer" in
+      [Yy]|[Yy][Ee][Ss]) printf 'iwd keeps connected Wi-Fi networks for future boots.\n'; exit 0 ;;
+    esac
+  fi
+else
+  printf 'Impala is unavailable; using iwctl instead.\n' >&2
+fi
+if ! command -v iwctl >/dev/null 2>&1; then
+  printf 'iwctl is unavailable; install iwd before retrying.\n' >&2
+  exit 1
+fi
+printf 'In iwctl: device list; station DEVICE scan; station DEVICE get-networks; station DEVICE connect SSID; exit\n' >&2
+iwctl
+printf 'When connected, iwd keeps the Wi-Fi profile for future boots.\n'
+WIFI_HELPER
+  success 'Optional headless Wi-Fi setup: /opt/kmos/bin/kmos-headless-wifi.sh (Impala, then iwctl fallback).'
 }
 
 create_swapfile() {

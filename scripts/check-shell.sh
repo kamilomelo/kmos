@@ -28,6 +28,7 @@ scripts+=(
   tests/archarm-dispatch.sh
   tests/arch-partition-safety.sh
   tests/arch-headless-aur.sh
+  tests/arch-headless-wifi-helper.sh
   tests/arch-mirror-ranking.sh
   tests/arch-plan-before-go.sh
   tests/arch-finish-countdown.sh
@@ -76,6 +77,7 @@ printf 'Bash syntax and ShellCheck passed for %d scoped scripts (%d known diagno
 
 bash tests/arch-partition-safety.sh
 bash tests/arch-headless-aur.sh
+bash tests/arch-headless-wifi-helper.sh
 bash tests/arch-mirror-ranking.sh
 bash tests/arch-plan-before-go.sh
 bash tests/arch-finish-countdown.sh

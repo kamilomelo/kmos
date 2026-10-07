@@ -135,6 +135,13 @@ When the x86 headless AUR option is accepted, KMOS installs the selected AUR
 helper (`paru` or `yay`) and then `tododo-bin` as the normal user. Declining
 the headless AUR option installs neither. The KDE AUR package list is separate.
 
+For an x86 headless install started on Ethernet (without a Wi-Fi handoff), wired
+DHCP and iwd are enabled on the installed system. After first boot, run
+`cd /opt/kmos/bin && ./kmos-headless-wifi.sh` in an interactive terminal to connect
+and save a persistent iwd Wi-Fi profile: the helper opens Impala first and
+offers `iwctl` if Impala cannot be used. Ethernet can remain connected. The
+helper does not replace existing profiles; KDE continues to use NetworkManager.
+
 The KDE post-install stage no longer installs scripts that add, remove, unpin
 or reorder Plasma panel widgets, or modify the default panel template. An
 existing install can disable only the old KMOS-generated panel update scripts
