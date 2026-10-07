@@ -131,6 +131,10 @@ Wi-Fi handoff, iwd is enabled for later Impala use and wired DHCP is enabled;
 no Wi-Fi credentials are invented. KDE keeps its NetworkManager Wi-Fi
 migration path.
 
+When the x86 headless AUR option is accepted, KMOS installs the selected AUR
+helper (`paru` or `yay`) and then `tododo-bin` as the normal user. Declining
+the headless AUR option installs neither. The KDE AUR package list is separate.
+
 The KDE post-install stage no longer installs scripts that add, remove, unpin
 or reorder Plasma panel widgets, or modify the default panel template. An
 existing install can disable only the old KMOS-generated panel update scripts

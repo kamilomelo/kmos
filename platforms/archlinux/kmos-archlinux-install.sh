@@ -977,7 +977,7 @@ collect_desktop_config() {
     else
       INSTALL_KDE_AUR=no
     fi
-  elif ask_yes_no "Install an AUR helper for this headless system?" yes; then
+  elif ask_yes_no "Install an AUR helper and tododo-bin for this headless system?" yes; then
     INSTALL_HEADLESS_AUR=yes
     AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
   else
@@ -1059,7 +1059,11 @@ confirm_install_plan() {
   else
     detail "Desktop" "headless"
     detail "Wi-Fi tools" "Impala + iwd; first-boot backend: $WIFI_BACKEND"
-    detail "AUR helper" "$INSTALL_HEADLESS_AUR"
+    if [[ "$INSTALL_HEADLESS_AUR" == yes ]]; then
+      detail "AUR packages" "tododo-bin"
+    else
+      detail "AUR packages" "none"
+    fi
   fi
   if [[ "$INSTALL_KDE_AUR" == yes && "$INSTALL_KDE" == yes || "$INSTALL_HEADLESS_AUR" == yes && "$INSTALL_KDE" == no ]]; then
     detail "AUR helper" "$AUR_HELPER"
@@ -1610,6 +1614,41 @@ bootstrap_aur_helper() {
   esac
 }
 
+install_headless_aur_package() (
+  local sudoers_file="$MOUNT_POINT/etc/sudoers.d/10-kmos-headless-aur"
+
+  if arch-chroot "$MOUNT_POINT" pacman -Q tododo-bin >/dev/null 2>&1; then
+    success 'tododo-bin is already installed.'
+    return 0
+  fi
+  [[ ! -e "$sudoers_file" && ! -L "$sudoers_file" ]] \
+    || die "Headless AUR sudoers file already exists; preserving it: $sudoers_file"
+  trap 'rm -f -- "$sudoers_file"' EXIT
+  if ! install -Dm0440 /dev/stdin "$sudoers_file" <<EOF
+$PRIMARY_USER ALL=(ALL:ALL) NOPASSWD: /usr/bin/pacman
+EOF
+  then
+    die 'Could not install temporary headless AUR sudoers rule.'
+  fi
+
+  case "$AUR_HELPER" in
+    paru)
+      arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- paru --noprovides -S --needed --noconfirm --skipreview tododo-bin \
+        || return 1
+      ;;
+    yay)
+      arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- yay -S --needed --noconfirm --answerclean None --answerdiff None tododo-bin \
+        || return 1
+      ;;
+    *) die "Unknown AUR helper: $AUR_HELPER" ;;
+  esac
+  arch-chroot "$MOUNT_POINT" pacman -Q tododo-bin >/dev/null 2>&1 || {
+    warn 'AUR helper returned success, but tododo-bin is not installed.'
+    return 1
+  }
+  success 'tododo-bin installed for headless Arch.'
+)
+
 install_kmos_assets() {
   local preset=""
 
@@ -2115,6 +2154,7 @@ offer_kde_desktop() {
     run_kde_installer
   elif [[ "$INSTALL_HEADLESS_AUR" == yes ]]; then
     bootstrap_aur_helper
+    install_headless_aur_package || warn 'Could not install tododo-bin from AUR; headless installation continues without it.'
   fi
 }
 

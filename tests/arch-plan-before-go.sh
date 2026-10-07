@@ -34,7 +34,7 @@ mock_setup() {
   ask_yes_no() {
     case "$1" in
       'Open cfdisk now, before selecting partitions?') [[ "${EDIT_PARTITIONS:-no}" == yes ]] ;;
-      'Install an AUR helper for this headless system?') return 1 ;;
+      'Install an AUR helper and tododo-bin for this headless system?') return 1 ;;
       'Install an AUR helper and AUR desktop packages?') return 1 ;;
       *) printf 'Unplanned installer question: %s\n' "$1" >&2; exit 1 ;;
     esac
@@ -109,10 +109,11 @@ grep -q 'Enter alone does not select KDE' "$fixture/noapps-output"
   # shellcheck disable=SC2329 # Must never be called after collecting the choice.
   ask_yes_no() { printf 'Late AUR question after FORMAT.\n' >&2; exit 1; }
   # shellcheck disable=SC2329 # Called by the sourced installer's desktop stage.
-  bootstrap_aur_helper() { printf 'aur\n' > "$fixture/desktop-execution"; }
+  bootstrap_aur_helper() { printf 'aur\n' >> "$fixture/desktop-execution"; }
+  install_headless_aur_package() { printf 'tododo-bin\n' >> "$fixture/desktop-execution"; }
   offer_kde_desktop
 )
-[[ $(cat "$fixture/desktop-execution") == aur ]]
+[[ $(cat "$fixture/desktop-execution") == $'aur\ntododo-bin' ]]
 : > "$fixture/order"
 if (
   mock_setup
