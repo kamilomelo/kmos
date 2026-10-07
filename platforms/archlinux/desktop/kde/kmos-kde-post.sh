@@ -128,9 +128,9 @@ write_kdeglobals_defaults() {
 ColorScheme=kmos
 AccentColor=117,117,117
 LastUsedCustomAccentColor=117,117,117
-LookAndFeelPackage=org.kde.kmos.desktop
 
 [KDE]
+LookAndFeelPackage=org.kde.kmos.desktop
 contrast=4
 frameContrast=0.2
 EOF
@@ -200,12 +200,79 @@ EOF
 ColorScheme=kmos
 AccentColor=117,117,117
 LastUsedCustomAccentColor=117,117,117
-LookAndFeelPackage=org.kde.kmos.desktop
 
 [KDE]
+LookAndFeelPackage=org.kde.kmos.desktop
 contrast=4
 frameContrast=0.2
 EOF
+}
+
+install_fresh_kmos_panel() {
+  local stock="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
+  local template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.kmos.defaultPanel"
+  local layout="$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.kmos.desktop/contents/layouts/org.kde.plasma.desktop-layout.js"
+  local setup="$REPO_ROOT/assets/plasma/kmos-panel-setup.js"
+  local plugin=""
+
+  [[ -f "$stock" && ! -L "$stock" && -r "$setup" ]] || die 'Missing stock panel or KMOS setup; no panel defaults staged.'
+  [[ $(grep -Fxc 'panel.addWidget("org.kde.plasma.kickoff")' "$stock") == 1 \
+    && $(grep -Fxc 'panel.addWidget("org.kde.plasma.systemtray")' "$stock") == 1 \
+    && $(grep -Fxc 'panel.addWidget("org.kde.plasma.digitalclock")' "$stock") == 1 \
+    && $(grep -Fxc 'panel.addWidget("org.kde.plasma.showdesktop")' "$stock") == 1 ]] \
+    || die 'Stock panel changed; refusing to guess at widget placement.'
+  for plugin in org.kde.plasma.kickerdash org.kde.plasma.systemmonitor.kmos-cpu-gpu \
+    org.kde.plasma.systemmonitor.kmos-mem org.kde.plasma.systemmonitor.kmos-disk \
+    org.kde.plasma.systemmonitor.net; do
+    [[ -r "$MOUNT_POINT/usr/share/plasma/plasmoids/$plugin/metadata.json" ]] \
+      || die "Required KMOS panel widget is missing: $plugin"
+  done
+  [[ ! -e "$template" && ! -L "$template" && ! -e "$layout" && ! -L "$layout" ]] \
+    || die 'KMOS panel defaults already exist; refusing to overwrite them.'
+
+  install -Dm0644 /dev/stdin "$template/metadata.json" <<'EOF'
+{
+    "KPackageStructure": "Plasma/LayoutTemplate",
+    "KPlugin": {
+        "Id": "org.kde.kmos.defaultPanel",
+        "Name": "KMOS default panel",
+        "Description": "Fresh KMOS panel based on the KDE default panel",
+        "License": "MIT",
+        "Version": "1.0"
+    },
+    "X-Plasma-ContainmentCategories": ["panel"]
+}
+EOF
+  # Preserve KDE's panel geometry, task manager, tray and conditional input
+  # method. Substitute only the May 2026 KMOS launcher and widget sequence.
+  awk '
+    $0 == "panel.addWidget(\"org.kde.plasma.kickoff\")" {
+      print "panel.addWidget(\"org.kde.plasma.kickerdash\")"; next
+    }
+    $0 == "panel.addWidget(\"org.kde.plasma.digitalclock\")" {
+      print "panel.addWidget(\"org.kde.plasma.systemmonitor.kmos-cpu-gpu\")"
+      print "panel.addWidget(\"org.kde.plasma.systemmonitor.kmos-mem\")"
+      print "panel.addWidget(\"org.kde.plasma.systemmonitor.kmos-disk\")"
+      print "panel.addWidget(\"org.kde.plasma.systemmonitor.net\")"
+      print "panel.addWidget(\"org.kde.plasma.digitalclock\")"
+      print "panel.addWidget(\"org.kde.plasma.digitalclock\")"
+      print "panel.addWidget(\"org.kde.plasma.digitalclock\")"; next
+    }
+    {print}
+  ' "$stock" | install -Dm0644 /dev/stdin "$template/contents/layout.js"
+  cat "$setup" >> "$template/contents/layout.js"
+
+  # Plasma reads the active global theme from [KDE] LookAndFeelPackage and
+  # executes this layout only if the account has no existing Plasma layout.
+  install -Dm0644 /dev/stdin "$layout" <<'EOF'
+loadTemplate("org.kde.kmos.defaultPanel")
+
+var desktopsArray = desktopsForActivity(currentActivity());
+for (var j = 0; j < desktopsArray.length; j++) {
+    desktopsArray[j].wallpaperPlugin = "org.kde.image";
+}
+EOF
+  success 'KMOS panel staged for new Plasma layouts only; existing panels were not changed.'
 }
 
 write_konsole_profile() {
@@ -884,6 +951,7 @@ apply_post_tweaks() {
   # Never add, remove, reorder or unpin widgets. Plasma owns the panel.
   disable_legacy_panel_updates
   stage_repo_assets
+  install_fresh_kmos_panel
   apply_splash_defaults
   apply_sddm_defaults
   apply_lockscreen_defaults

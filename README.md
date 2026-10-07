@@ -134,6 +134,14 @@ panel layout.** Your panel configuration is in
 `~/.config/plasma-org.kde.plasma.desktop-appletsrc`; back it up before
 rearranging widgets in Plasma or restoring a known-good copy.
 
+The installer now stages a separate **first-run-only** KMOS panel template
+based on the May 2026 layout: Dashboard at the left, KDE's task manager and
+system tray, KMOS CPU/GPU, memory, disk and network monitors, three world
+clocks, and Show Desktop. It does not run panel-update hooks against existing
+users or change KDE's packaged default panel. This layout is fixture-tested
+but **not yet verified at a real fresh KDE login**. The separate first-login
+color-scheme issue is not addressed by this panel change.
+
 #### 4) If Ethernet Is NOT Available
 
 Use the repository from external media, then run Wi-Fi setup first:
