@@ -1260,16 +1260,78 @@ setup_time() {
   fi
 }
 
-install_base_system() {
-  local live_pacman_conf="/etc/pacman.conf"
-  local pacman_conf="/tmp/kmos-pacman.conf"
+rank_arch_mirrors() {
+  local source="$1"
+  local ranked="$2"
+  local server=""
+  local probe=""
+  local elapsed=""
+  local measurement=""
+  local -a measurements=()
+  local -a candidates=()
+
+  command -v curl >/dev/null 2>&1 || { warn 'curl unavailable; keeping the Arch ISO mirror list.'; return 1; }
+  [[ -r "$source" && ! -L "$source" ]] || return 1
+  mapfile -t candidates < <(awk 'index($0, "Server = https://") == 1 {
+    print substr($0, 10)
+    if (++count == 8) exit
+  }' "$source")
+  for server in "${candidates[@]}"; do
+    [[ "$server" == *'$repo/os/$arch'* ]] || continue
+    probe="${server//\$repo/core}"
+    probe="${probe//\$arch/x86_64}/core.db"
+    # A small ranged download measures reachability and response time. Each
+    # HTTPS probe is bounded; a failed or slow mirror is simply not selected.
+    elapsed=$(curl --proto '=https' --proto-redir '=https' --connect-timeout 2 --max-time 4 \
+      --range 0-16383 -fsSL -o /dev/null -w '%{time_total}' -- "$probe" 2>/dev/null) || continue
+    [[ "$elapsed" =~ ^[0-9]+\.[0-9]+$ ]] || continue
+    measurements+=("$elapsed $server")
+  done
+  ((${#measurements[@]} >= 2)) || { warn 'Too few responsive mirrors; keeping the Arch ISO mirror list.'; return 1; }
+
+  {
+    printf '## KMOS: responsive HTTPS mirrors ranked before pacstrap\n'
+    while IFS= read -r measurement; do
+      printf 'Server = %s\n' "${measurement#* }"
+    done < <(printf '%s\n' "${measurements[@]}" | LC_ALL=C sort -n)
+    printf '\n## Original Arch ISO mirror list, kept as fallback\n'
+    cat "$source"
+  } > "$ranked"
+  info "Ranked ${#measurements[@]} responsive Arch mirrors; original list remains as fallback."
+}
+
+install_base_system() (
+  local live_pacman_conf="${1:-/etc/pacman.conf}"
+  local live_mirrorlist="${2:-/etc/pacman.d/mirrorlist}"
+  local pacman_conf=""
+  local ranked=""
+  local backup=""
+  local target_mirrorlist="$MOUNT_POINT/etc/pacman.d/mirrorlist"
+
+  [[ ! -L "$target_mirrorlist" && ! -L "$target_mirrorlist.kmos-original" \
+    && ! -L "$target_mirrorlist.kmos-preinstall" ]] \
+    || die 'Target mirror list or its backup is a symlink; review it before installation.'
+
+  restore_install_mirrors() {
+    if [[ -n "$backup" && -r "$backup" ]]; then
+      if cp -p -- "$backup" "$live_mirrorlist"; then
+        rm -f -- "$backup"
+      else
+        warn "Could not restore the Arch ISO mirror list; original remains at $backup"
+      fi
+    fi
+    [[ -z "$ranked" ]] || rm -f -- "$ranked"
+    [[ -z "$pacman_conf" ]] || rm -f -- "$pacman_conf"
+  }
+  trap restore_install_mirrors EXIT
 
   cleanup_boot_artifacts
   info "Installing minimal base packages"
+  pacman_conf=$(mktemp /tmp/kmos-pacman.conf.XXXXXXXX) || die 'Could not stage a temporary pacman configuration.'
   cp "$live_pacman_conf" "$pacman_conf"
-  if ! grep -q '^DisableDownloadTimeout$' "$pacman_conf"; then
-    printf '\nDisableDownloadTimeout\n' >> "$pacman_conf"
-  fi
+  # Keep pacman's built-in low-speed timeout; a bad mirror must not stall the
+  # installer indefinitely, even if the ISO has disabled download timeouts.
+  sed -i '/^[[:space:]]*DisableDownloadTimeout[[:space:]]*$/d' "$pacman_conf"
   if grep -q '^ParallelDownloads = ' "$pacman_conf"; then
     sed -i 's/^ParallelDownloads = .*/ParallelDownloads = 6/' "$pacman_conf"
   elif grep -q '^#ParallelDownloads = ' "$pacman_conf"; then
@@ -1278,10 +1340,35 @@ install_base_system() {
     printf 'ParallelDownloads = 6\n' >> "$pacman_conf"
   fi
 
+  if [[ -r "$live_mirrorlist" && ! -L "$live_mirrorlist" ]]; then
+    ranked=$(mktemp /tmp/kmos-ranked-mirrors.XXXXXXXX) || die 'Could not stage ranked mirrors.'
+    if rank_arch_mirrors "$live_mirrorlist" "$ranked"; then
+      backup=$(mktemp /tmp/kmos-original-mirrors.XXXXXXXX) || die 'Could not back up Arch ISO mirrors.'
+      if ! cp -p -- "$live_mirrorlist" "$backup"; then
+        rm -f -- "$backup"
+        backup=""
+        die 'Could not back up Arch ISO mirrors.'
+      fi
+      if [[ -e "$target_mirrorlist" && ! -e "$target_mirrorlist.kmos-preinstall" ]]; then
+        install -Dm0644 "$target_mirrorlist" "$target_mirrorlist.kmos-preinstall"
+      fi
+      install -m0644 "$ranked" "$live_mirrorlist" || die 'Could not enable ranked mirrors; original will be restored.'
+    fi
+  else
+    warn 'Arch ISO mirror list missing or a symlink; keeping pacman defaults.'
+  fi
+
   run_with_retry "$PACMAN_RETRIES" pacstrap -C "$pacman_conf" -K "$MOUNT_POINT" "${BASE_PACKAGES[@]}" || die "pacstrap failed after ${PACMAN_RETRIES} attempts."
+  if [[ -n "$backup" ]]; then
+    if [[ -e "$target_mirrorlist" && ! -e "$target_mirrorlist.kmos-original" ]]; then
+      install -Dm0644 "$backup" "$target_mirrorlist.kmos-original"
+    fi
+    install -Dm0644 "$ranked" "$target_mirrorlist"
+    success 'Ranked mirrors saved in the installed system; original list backed up.'
+  fi
   genfstab -U "$MOUNT_POINT" >> "$MOUNT_POINT/etc/fstab"
   success "Base system installed and fstab generated."
-}
+)
 
 cleanup_boot_artifacts() {
   local removed=0
@@ -1315,6 +1402,7 @@ configure_pacman() {
   fi
 
   sed -i 's/^#Color$/Color/' "$pacman_conf"
+  sed -i '/^[[:space:]]*DisableDownloadTimeout[[:space:]]*$/d' "$pacman_conf"
 
   if grep -q '^#ParallelDownloads = ' "$pacman_conf"; then
     sed -i 's/^#ParallelDownloads = .*/ParallelDownloads = 6/' "$pacman_conf"

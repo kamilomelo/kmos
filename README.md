@@ -101,6 +101,13 @@ separately before running this installer.
 The selected, verified Arch EFI and root partitions are formatted. The
 installer refuses to format a detected Windows EFI partition, and never
 deletes firmware/NVRAM entries.
+Before `pacstrap`, the x86 installer probes at most eight HTTPS mirrors from
+the Arch ISO's mirror list (four seconds per probe) and places responsive
+mirrors first. The original list remains as fallback, is backed up, and is
+restored on the live ISO when the stage ends; the ranked list is saved in the
+installed system. If probing fails, the existing list is left alone. Pacman's
+normal download timeout is retained instead of disabling it. This ranks a
+small sample by response time, not guaranteed package download throughput.
 At completion, the x86 installer keeps its `############################ 100%`
 progress display visible and counts down 10 seconds before rebooting. Press
 any key to stay on the live ISO and reboot manually; without an interactive
@@ -138,12 +145,14 @@ The installer now stages a separate **first-run-only** KMOS panel template
 based on the May 2026 layout: Dashboard at the left, KDE's task manager and
 system tray, KMOS CPU/GPU, memory, disk and network monitors, three world
 clocks, and Show Desktop. It does not run panel-update hooks against existing
-users or change KDE's packaged default panel. This layout is fixture-tested
-but **not yet verified at a real fresh KDE login**. KMOS also enables a
-one-time first-login color application using the installed path (not `/mnt`);
-it skips users who have selected a different color scheme and does not
-reapply after their later changes. This color fix is also pending a real KDE
-first-login test.
+users or change KDE's packaged default panel. The panel and its widgets were
+verified on a fresh KDE login (2026-10-07). The KMOS colors did not apply in
+that test: Plasma's color tool treats an already-selected `kmos` scheme as a
+successful no-op. The revised one-time first-login action applies the palette
+using the existing gray accent and checks the scheme hash before marking it
+complete. It skips users who chose a different scheme and does not reapply
+after later changes. **This revised color fix still needs a real KDE login
+test.**
 
 #### 4) If Ethernet Is NOT Available
 

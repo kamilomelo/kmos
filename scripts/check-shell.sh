@@ -27,6 +27,7 @@ scripts+=(
   scripts/check-shell.sh
   tests/archarm-dispatch.sh
   tests/arch-partition-safety.sh
+  tests/arch-mirror-ranking.sh
   tests/arch-plan-before-go.sh
   tests/arch-finish-countdown.sh
   tests/arch-kde-panel-safety.sh
@@ -72,6 +73,7 @@ printf 'Bash syntax and ShellCheck passed for %d scoped scripts (%d known diagno
   "${#scripts[@]}" "$(wc -l < "$normalized")"
 
 bash tests/arch-partition-safety.sh
+bash tests/arch-mirror-ranking.sh
 bash tests/arch-plan-before-go.sh
 bash tests/arch-finish-countdown.sh
 bash tests/arch-kde-panel-safety.sh

@@ -161,7 +161,22 @@ if ! [ -f "$cfg" ] || ! command -v kreadconfig6 >/dev/null 2>&1 || \
 fi
 
 command -v plasma-apply-colorscheme >/dev/null 2>&1 || exit 1
-plasma-apply-colorscheme kmos >/dev/null 2>&1 || plasma-apply-colorscheme KMOS >/dev/null 2>&1 || exit 1
+# Plasma 6 exits successfully without applying any colors when ColorScheme is
+# already kmos. Applying the existing accent explicitly runs applyScheme even
+# in that case. Check its resulting palette hash before writing our marker.
+scheme="${XDG_DATA_HOME:-$HOME/.local/share}/color-schemes/kmos.colors"
+[ -r "$scheme" ] || scheme=/usr/share/color-schemes/kmos.colors
+[ -r "$scheme" ] || exit 1
+expected_hash=$(sha1sum "$scheme")
+expected_hash=${expected_hash%% *}
+if ! plasma-apply-colorscheme --accent-color '#757575' >/dev/null 2>&1; then
+  printf 'KMOS color application failed; will retry on the next KDE login.\n' >&2
+  exit 1
+fi
+if [ "$(kreadconfig6 --file "$cfg" --group General --key ColorSchemeHash 2>/dev/null || true)" != "$expected_hash" ]; then
+  printf 'KMOS color palette was not written; will retry on the next KDE login.\n' >&2
+  exit 1
+fi
 touch "$marker"
 EOF
 
