@@ -693,4 +693,6 @@ main() {
   final_success "KDE desktop layer installed. Reboot when ready."
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

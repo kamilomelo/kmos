@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Characterize the v0.9 ISO -> base -> KDE boundary; never touch a real target.
 # Mocked functions and state are consumed by the sourced installers.
-# shellcheck disable=SC2034,SC2329
+# shellcheck disable=SC2034,SC2329,SC1090
 set -euo pipefail
 repo=$(git rev-parse --show-toplevel)
 fixture=$(mktemp -d)
@@ -49,14 +49,12 @@ trap 'rm -rf -- "$fixture"' EXIT
   offer_kde_desktop
 )
 
-# KDE currently runs against a mounted target, not a live / system. Copy the
-# script to remove only its final main call so its functions can be mocked.
+# The ISO KDE stage still runs against a mounted target; the live-system
+# upgrade sources only its package resolver, never its installation main.
 kde_script="$repo/platforms/archlinux/desktop/kde/kmos-kde-install.sh"
-[[ $(tail -n 1 "$kde_script") == 'main "$@"' ]]
-sed '$d' "$kde_script" > "$fixture/kde-source.sh"
 (
-  # shellcheck disable=SC1091
-  source "$fixture/kde-source.sh"
+  # shellcheck disable=SC1091 # This installer guards its main when sourced.
+  source "$kde_script"
   record() { printf '%s\n' "$1" >> "$fixture/kde-order"; }
   init_ui() { :; }
   parse_args() { :; }

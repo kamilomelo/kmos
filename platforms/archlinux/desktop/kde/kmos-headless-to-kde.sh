@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# Read-only preflight for adding KDE to an installed KMOS headless system.
-# Installation is deliberately unavailable until the live-system path is safe.
+# Live-system KDE layer for an installed KMOS headless system; never formats.
+# KDE_PACKAGES, METAPACKAGE_ROOT_DIR and post-install assets come from the
+# sourced KDE scripts; those scripts consume the profile and AUR assignments.
+# shellcheck disable=SC2034,SC2154
 set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'EOF'
 Usage: ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
+       ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --install [--profile full|noapps]
 
-Read-only: reports KMOS base, KDE, network and SSH state. Does not require
-root, install packages, change services, partition disks or modify files.
-No KDE upgrade operation is available yet.
+--preflight is read-only and needs no root. --install adds KDE packages and
+ fresh-user defaults; it never partitions disks, requests package removal, or
+ switches network services. AUR is not installed. Pacman may offer replacements
+ and upgrade existing packages; review its prompts before approving.
+Use a backup and arrange local console or Ethernet access for the first test.
 EOF
 }
 
@@ -41,6 +47,29 @@ headless_marker_present() {
 
 kde_profile_present() {
   [[ -e /usr/share/kmos/kde-profile ]]
+}
+
+panel_template_available() {
+  local template=/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
+  [[ ! -L "$template" ]] || return 1
+  [[ ! -e "$template" ]] && return 0
+  # Allow retry after an interrupted KMOS staging pass, but never replace
+  # someone else's fresh-user layout.
+  [[ -f "$template" ]] && grep -Fxq 'plugin=org.kde.plasma.kickerdash' "$template" &&
+    grep -Fxq 'plugin=org.kde.plasma.systemmonitor.kmos-cpu-gpu' "$template"
+}
+
+upgrade_in_progress() {
+  [[ -f /var/lib/kmos/headless-to-kde.in-progress && ! -L /var/lib/kmos/headless-to-kde.in-progress ]]
+}
+
+mark_upgrade() {
+  [[ ! -L /var/lib/kmos && ! -L /var/lib/kmos/headless-to-kde.in-progress ]] || return 1
+  install -Dm0644 /dev/stdin /var/lib/kmos/headless-to-kde.in-progress <<< "$1"
+}
+
+clear_upgrade() {
+  rm -f -- /var/lib/kmos/headless-to-kde.in-progress
 }
 
 preflight() {
@@ -87,13 +116,146 @@ preflight() {
   else
     printf 'This shell is over SSH: no / not detected\n'
   fi
-  printf 'Preflight complete: nothing was changed. KDE upgrade is not enabled yet.\n'
+  printf 'Preflight complete: nothing was changed.\n'
+}
+
+resolve_kde_packages() (
+  local profile="$1"
+  # The ISO KDE stage already defines the package sets. Source it without
+  # running its mounted-target installer, prune list or network migration.
+  # shellcheck disable=SC1090,SC1091
+  source "$SCRIPT_DIR/kmos-kde-install.sh"
+  KDE_PROFILE="$profile" INSTALL_AUR=no
+  # Do not fall back to the published main branch's manifests while running
+  # an experimental x86/next upgrade.
+  # shellcheck disable=SC2329 # Called by the sourced KDE resolver.
+  get_metapackage_pkgbuild() {
+    local relative_path="${2:-}"
+    [[ -n "$relative_path" ]] || relative_path=$(metapackage_relative_path_for_name "$1") || die "Unknown metapackage: $1"
+    [[ -r "$METAPACKAGE_ROOT_DIR/$relative_path" ]] || die "Local metapackage missing: $relative_path"
+    printf '%s\n' "$METAPACKAGE_ROOT_DIR/$relative_path"
+  }
+  select_kde_metapackages
+  load_kde_metapackages
+  printf '%s\n' "${KDE_PACKAGES[@]}"
+)
+
+stage_live_defaults() (
+  local home_dir username cfg
+  # Source only the fresh-user staging functions. Do not call apply_post_tweaks:
+  # it removes fonts, changes existing user configs and runs the AUR installer.
+  # shellcheck disable=SC1090,SC1091
+  source "$SCRIPT_DIR/kmos-kde-post.sh"
+  MOUNT_POINT=/
+  KDE_PROFILE="$1"
+  stage_repo_assets
+  [[ -e /etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc ]] || install_fresh_kmos_panel
+  apply_desktop_wallpaper_defaults
+  [[ -r "$ASSET_COLOR_SCHEME" ]] || die 'KMOS color scheme missing.'
+  install -Dm0644 "$ASSET_COLOR_SCHEME" /usr/share/color-schemes/kmos.colors
+  install_lookandfeel_defaults
+  write_color_scheme_autostart /usr/share/kmos/bin/kmos-apply-colorscheme.sh \
+    /etc/xdg/autostart/kmos-apply-colorscheme.desktop
+  cfg=/etc/skel/.config/kdeglobals
+  [[ -e "$cfg" || -L "$cfg" ]] || write_kdeglobals_defaults "$cfg"
+  if [[ -d /home ]]; then
+    while IFS= read -r -d '' home_dir; do
+      cfg="$home_dir/.config/kdeglobals"
+      [[ ! -L "$home_dir" && ! -L "$home_dir/.config" ]] || continue
+      [[ ! -e "$cfg" && ! -L "$cfg" ]] || continue
+      username="${home_dir##*/}"
+      [[ $(id -u "$username" 2>/dev/null || true) =~ ^[0-9]+$ ]] || continue
+      write_kdeglobals_defaults "$cfg"
+      chown "$username:$username" "$home_dir/.config" "$cfg"
+    done < <(find /home -mindepth 1 -maxdepth 1 -type d -print0)
+  fi
+)
+
+confirm_install() {
+  local answer
+  printf 'KDE packages will be installed; pacman may upgrade existing packages.\n' >&2
+  printf 'Wi-Fi (iwd/dhcpcd) and sshd will not be switched or disabled by KMOS.\n' >&2
+  printf 'Type INSTALL KDE to continue: ' >&2
+  read -r answer </dev/tty || return 1
+  [[ "$answer" == 'INSTALL KDE' ]]
+}
+
+require_root() {
+  (( EUID == 0 )) && return 0
+  command -v sudo >/dev/null 2>&1 || { printf 'sudo is required for --install.\n' >&2; return 1; }
+  exec sudo -- "$SCRIPT_DIR/kmos-headless-to-kde.sh" "$@"
+}
+
+install_layer() {
+  local profile="$1" pkg list before_iwd before_dhcpcd before_nm before_nm_enabled
+  local -a packages=()
+  preflight
+  if kde_profile_present; then
+    printf 'KMOS KDE layer is already recorded; no changes made.\n'
+    return 0
+  fi
+  if upgrade_in_progress && [[ $(cat /var/lib/kmos/headless-to-kde.in-progress) != "$profile" ]]; then
+    printf 'An interrupted upgrade used a different profile; review before retrying.\n' >&2
+    return 1
+  fi
+  if ! upgrade_in_progress && { package_installed plasma-desktop || package_installed sddm; }; then
+    printf 'An existing KDE/SDDM install needs manual review; refusing to alter it.\n' >&2
+    return 1
+  fi
+  panel_template_available || {
+    printf 'A fresh-user panel template already exists; refusing to replace it.\n' >&2; return 1;
+  }
+  [[ -r "$SCRIPT_DIR/kmos-kde-install.sh" && -r "$SCRIPT_DIR/kmos-kde-post.sh" ]] || {
+    printf 'Full local KDE installer sources are required.\n' >&2; return 1;
+  }
+  # Reject missing local manifests instead of silently pulling main's files.
+  [[ -r "$SCRIPT_DIR/../../packages/metapackages/kde/base/PKGBUILD" ]] || {
+    printf 'KDE package manifests are missing.\n' >&2; return 1;
+  }
+  list=$(resolve_kde_packages "$profile") || return 1
+  mapfile -t packages <<< "$list"
+  ((${#packages[@]} > 0)) || { printf 'No KDE packages resolved.\n' >&2; return 1; }
+  for pkg in "${packages[@]}"; do
+    [[ "$pkg" =~ ^[a-zA-Z0-9@._+-]+$ ]] || { printf 'Invalid package: %s\n' "$pkg" >&2; return 1; }
+  done
+  printf 'KDE profile: %s; packages: %s; AUR: no\n' "$profile" "${#packages[@]}"
+  printf 'NetworkManager may be installed as a KDE dependency but will NOT be enabled.\n'
+  require_root --install --profile "$profile"
+  confirm_install || { printf 'Cancelled without changes.\n' >&2; return 1; }
+  mark_upgrade "$profile" || { printf 'Cannot record an upgrade attempt; no packages installed.\n' >&2; return 1; }
+  before_iwd=$(service_state iwd.service)
+  before_dhcpcd=$(service_state dhcpcd.service)
+  before_nm=$(service_state NetworkManager.service)
+  before_nm_enabled=$(service_enabled NetworkManager.service)
+  # Never call pacman -R, touch disk layout, restart network, or stop sshd.
+  pacman -Syu --needed -- "${packages[@]}" || return 1
+  if [[ "$before_iwd" == active && $(service_state iwd.service) != active ]] ||
+      [[ "$before_dhcpcd" == active && $(service_state dhcpcd.service) != active ]] ||
+      [[ "$before_nm" != active && $(service_state NetworkManager.service) == active ]] ||
+      [[ "$before_nm_enabled" != enabled && $(service_enabled NetworkManager.service) == enabled ]]; then
+    printf 'Network service changed during package update; check connectivity before continuing.\n' >&2
+    return 1
+  fi
+  stage_live_defaults "$profile" || return 1
+  systemctl enable sddm.service || return 1
+  systemctl set-default graphical.target || return 1
+  install -Dm0644 /dev/stdin /usr/share/kmos/kde-profile <<< "$profile" || return 1
+  clear_upgrade || return 1
+  printf 'KDE staged. Network services were not switched. Reboot when you are ready.\n'
 }
 
 main() {
   case "${1:---help}" in
-    --help|-h) [[ $# == 1 || $# == 0 ]] || { usage >&2; return 2; }; usage ;;
-    --preflight) [[ $# == 1 ]] || { usage >&2; return 2; }; preflight ;;
+    --help|-h) (( $# <= 1 )) || { usage >&2; return 2; }; usage ;;
+    --preflight) (( $# == 1 )) || { usage >&2; return 2; }; preflight ;;
+    --install)
+      local profile=full
+      if (( $# == 3 )) && [[ "$2" == --profile ]]; then profile="$3"
+      elif (( $# != 1 )); then usage >&2; return 2
+      fi
+      [[ "$profile" == full || "$profile" == noapps ]] || { usage >&2; return 2; }
+      install_layer "$profile"
+      ;;
     *) usage >&2; return 2 ;;
   esac
 }

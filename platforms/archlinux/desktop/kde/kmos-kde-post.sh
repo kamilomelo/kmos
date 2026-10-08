@@ -325,10 +325,18 @@ PANEL_CONFIG
       [[ ! -e "$target" && ! -L "$target" ]] || continue
       username="$(basename "$home_dir")"
       install -Dm0644 "$template" "$target"
-      arch-chroot "$MOUNT_POINT" chown "$username:$username" "/home/$username/.config" "/home/$username/.config/plasma-org.kde.plasma.desktop-appletsrc"
+      target_chown "$username:$username" "/home/$username/.config" "/home/$username/.config/plasma-org.kde.plasma.desktop-appletsrc"
     done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
   fi
   success 'KMOS panel preset staged for new Plasma users only; existing panels were preserved.'
+}
+
+target_chown() {
+  if [[ "$MOUNT_POINT" == / ]]; then
+    chown "$@"
+  else
+    arch-chroot "$MOUNT_POINT" chown "$@"
+  fi
 }
 
 write_konsole_profile() {
@@ -587,7 +595,7 @@ WALLPAPER_DESKTOP
       [[ ! -e "$target" && ! -L "$target" ]] || continue
       username="$(basename "$home_dir")"
       install -Dm0644 "$desktop" "$target"
-      arch-chroot "$MOUNT_POINT" chown "$username:$username" "/home/$username/.config/autostart" "/home/$username/.config/autostart/kmos-first-login-wallpaper.desktop"
+      target_chown "$username:$username" "/home/$username/.config/autostart" "/home/$username/.config/autostart/kmos-first-login-wallpaper.desktop"
     done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
   fi
   success 'Desktop wallpaper staged for fresh KDE users via a shell first-login action.'
