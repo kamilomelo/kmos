@@ -8,6 +8,26 @@ script="$repo/platforms/archlinux/tools/kmos-network-migration.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 
+if (
+  # shellcheck disable=SC1091
+  source "$script"
+  NM_CONF="$fixture/wrong-nm.conf" STAGED_MARKER="$fixture/wrong-staged"
+  MIGRATION_DONE="$fixture/wrong-done"
+  os_id() { printf 'arch\n'; }
+  uname() { printf 'x86_64\n'; }
+  kde_ready() { :; }
+  nmcli() { :; }
+  curl() { :; }
+  iwctl() { :; }
+  state() { printf 'active\n'; }
+  require_root() { printf 'Unexpected escalation.\n' >&2; return 1; }
+  stage_reboot
+) > "$fixture/wrong-system" 2>&1; then
+  printf 'NetworkManager-active system was accepted for staging.\n' >&2; exit 1
+fi
+grep -Fq 'Service state differs' "$fixture/wrong-system"
+[[ ! -e "$fixture/wrong-staged" && ! -e "$fixture/wrong-nm.conf" ]]
+
 (
   # shellcheck disable=SC1091
   source "$script"

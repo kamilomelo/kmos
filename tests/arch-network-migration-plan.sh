@@ -49,6 +49,25 @@ grep -Fq 'wlan0: Wi-Fi, carrier=1, IPv4=yes' "$fixture/plan"
 grep -Fq 'Current SSH route interface: wlan0' "$fixture/plan"
 grep -Fq 'iwd built-in IP configuration: enabled' "$fixture/plan"
 grep -Fq 'Plan complete: nothing changed' "$fixture/plan"
+(
+  # shellcheck disable=SC1091
+  source "$script"
+  SYS_NET_ROOT="$fixture/net"
+  IWD_CONF="$fixture/iwd.conf"
+  STAGED_MARKER="$fixture/no-stage" MIGRATION_DONE="$fixture/no-done"
+  os_id() { printf 'arch\n'; }
+  uname() { printf 'x86_64\n'; }
+  kde_ready() { :; }
+  nmcli() { :; }
+  state() { printf 'inactive\n'; }
+  ip() { return 1; }
+  unset SSH_CONNECTION SSH_CLIENT SSH_TTY
+  plan
+) > "$fixture/no-ssh-plan"
+grep -Fq 'Plan complete: nothing changed' "$fixture/no-ssh-plan"
+if grep -Fq 'Current SSH route interface' "$fixture/no-ssh-plan"; then
+  printf 'Invented an SSH route when there was no SSH session.\n' >&2; exit 1
+fi
 if grep -Eq '192\.0\.2\.|password=|SSID: ' "$fixture/plan"; then
   printf 'Inventory leaked connection details.\n' >&2; exit 1
 fi

@@ -67,8 +67,9 @@ ethernet_default_route() {
 }
 
 ssh_interface() {
-  local peer="${SSH_CONNECTION%% *}" route
+  local peer route
   [[ -n "${SSH_CONNECTION:-}" ]] || return 1
+  peer="${SSH_CONNECTION%% *}"
   route=$(ip route get "$peer" 2>/dev/null) || return 1
   printf '%s\n' "$route" | awk '{for (i=1; i<NF; i++) if ($i == "dev") {print $(i+1); exit}}'
 }
