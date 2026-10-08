@@ -50,28 +50,62 @@ cmp "$desktop" "$MOUNT_POINT/home/bob/.config/autostart/kmos-first-login-wallpap
 [[ ! -e "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-wallpaper.js" ]]
 mkdir -p "$fixture/bin" "$fixture/new-user-config"
 printf 'fixture wallpaper\n' > "$fixture/kmos.png"
-cat > "$fixture/bin/plasma-apply-wallpaperimage" <<'WALLPAPER_MOCK'
+cat > "$fixture/bin/gdbus" <<'WALLPAPER_MOCK'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "$WALLPAPER_CALLS"
-[[ "${WALLPAPER_FAIL:-no}" == no ]]
+case "$*" in
+  *org.kde.PlasmaShell.wallpaper*)
+    screen="${*: -1}"
+    if [[ "${NO_SCREENS:-no}" == yes || "$screen" -gt 1 ]]; then
+      printf '(@a{sv} {},)\n'
+    elif [[ -e "$WALLPAPER_CALLS/$screen" ]]; then
+      if [[ "${BAD_COLOR:-no}" == yes ]]; then
+        printf "({'wallpaperPlugin': <'org.kde.image'>, 'Image': <'file://%s'>, 'FillMode': <1>, 'Color': <(uint32 4294967295,)>},)\n" "$KMOS_WALLPAPER_IMAGE"
+      else
+        printf "({'wallpaperPlugin': <'org.kde.image'>, 'Image': <'file://%s'>, 'FillMode': <1>, 'Color': <(uint32 4278190080,)>},)\n" "$KMOS_WALLPAPER_IMAGE"
+      fi
+    else
+      printf "({'wallpaperPlugin': <'org.kde.image'>, 'FillMode': <2>, 'Color': <(uint32 4294967295,)>},)\n"
+    fi
+    ;;
+  *org.kde.PlasmaShell.setWallpaper*)
+    [[ "${WALLPAPER_FAIL:-no}" == no ]] || exit 1
+    printf '%s\n' "$*" >> "$WALLPAPER_CALLS/set-calls"
+    touch "$WALLPAPER_CALLS/${*: -1}"
+    ;;
+  *) exit 1 ;;
+esac
 WALLPAPER_MOCK
-chmod +x "$fixture/bin/plasma-apply-wallpaperimage"
+chmod +x "$fixture/bin/gdbus"
 export WALLPAPER_CALLS="$fixture/wallpaper-calls"
+mkdir -p "$WALLPAPER_CALLS"
 PATH="$fixture/bin:$PATH" KMOS_WALLPAPER_IMAGE="$fixture/kmos.png" \
   XDG_CONFIG_HOME="$fixture/new-user-config" "$script"
-[[ $(cat "$WALLPAPER_CALLS") == "--fill-mode preserveAspectCrop $fixture/kmos.png" ]]
+[[ $(wc -l < "$WALLPAPER_CALLS/set-calls") == 2 ]]
+grep -Fq "'Image': <'file://$fixture/kmos.png'>" "$WALLPAPER_CALLS/set-calls"
+grep -Fq "'FillMode': <int32 1>" "$WALLPAPER_CALLS/set-calls"
+grep -Fq "'Color': <(uint32 4278190080,)>" "$WALLPAPER_CALLS/set-calls"
 [[ -f "$fixture/new-user-config/.kmos-wallpaper-applied" ]]
 PATH="$fixture/bin:$PATH" KMOS_WALLPAPER_IMAGE="$fixture/kmos.png" \
   XDG_CONFIG_HOME="$fixture/new-user-config" "$script"
-[[ $(wc -l < "$WALLPAPER_CALLS") == 1 ]]
+[[ $(wc -l < "$WALLPAPER_CALLS/set-calls") == 2 ]]
 if PATH="$fixture/bin:$PATH" KMOS_WALLPAPER_IMAGE="$fixture/kmos.png" WALLPAPER_FAIL=yes \
     XDG_CONFIG_HOME="$fixture/failed-user-config" "$script" > "$fixture/wallpaper-failure" 2>&1; then
   echo 'Wallpaper failure was marked complete.' >&2; exit 1
 fi
 [[ ! -e "$fixture/failed-user-config/.kmos-wallpaper-applied" ]]
+if PATH="$fixture/bin:$PATH" KMOS_WALLPAPER_IMAGE="$fixture/kmos.png" BAD_COLOR=yes \
+    XDG_CONFIG_HOME="$fixture/bad-color-config" "$script" > "$fixture/bad-color" 2>&1; then
+  echo 'A white wallpaper background was marked complete.' >&2; exit 1
+fi
+[[ ! -e "$fixture/bad-color-config/.kmos-wallpaper-applied" ]]
+if PATH="$fixture/bin:$PATH" KMOS_WALLPAPER_IMAGE="$fixture/kmos.png" NO_SCREENS=yes \
+    XDG_CONFIG_HOME="$fixture/no-screens-config" "$script" > "$fixture/no-screens" 2>&1; then
+  echo 'No Plasma screens were accepted.' >&2; exit 1
+fi
+[[ ! -e "$fixture/no-screens-config/.kmos-wallpaper-applied" ]]
 
 write_kdeglobals_defaults "$fixture/kdeglobals"
 install_lookandfeel_defaults
 grep -A1 '^\[KDE\]$' "$fixture/kdeglobals" | grep -Fxq 'LookAndFeelPackage=org.kde.kmos.desktop'
 [[ $(cat "$MOUNT_POINT/home/alice/.config/plasma-org.kde.plasma.desktop-appletsrc") == 'personal panel configuration' ]]
-echo 'KMOS shell-only fresh KDE panel and wallpaper presets: OK (fixtures; graphical login untested).'
+echo 'KMOS shell-only panel and wallpaper presets: OK (fixtures; revised wallpaper untested graphically).'

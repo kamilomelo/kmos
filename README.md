@@ -7,11 +7,13 @@ new installation experiments will live on `x86/next` rather than changing this
 baseline. Arch Linux ARM (Quartz64 Model B) and Rocky Linux have separate,
 less mature workflows; this x86 milestone does not release those platforms.
 
-**On `x86/next` only:** KMOS's fresh KDE panel and wallpaper are being moved to
-shell-generated KConfig and a shell first-login action. This removes KMOS-authored
-Plasma JavaScript from the proposed installer, but **the replacement has not
-passed a fresh graphical KDE login yet**. Use the milestone tag for the last
-field-tested panel behavior; that older snapshot does contain JavaScript.
+**On `x86/next` only:** KMOS's fresh KDE panel uses shell-generated KConfig;
+the wallpaper uses a shell first-login action. This removes KMOS-authored
+Plasma JavaScript. A fresh KDE login confirmed the panel and Dashboard, but
+revealed that the transparent wallpaper needs a black background and a
+proportional, uncropped image. The revised wallpaper action sets both through
+Plasma's D-Bus API; **it still needs a fresh graphical test**. The older
+milestone tag contains JavaScript and has not been replaced.
 
 ## Start here: Arch Linux x86_64
 

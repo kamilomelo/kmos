@@ -540,8 +540,30 @@ marker="${XDG_CONFIG_HOME:-$HOME/.config}/.kmos-wallpaper-applied"
 [[ ! -e "$marker" ]] || exit 0
 wallpaper="${KMOS_WALLPAPER_IMAGE:-/opt/kmos/assets/wallpapers/kmos-wallpaper.png}"
 [[ -r "$wallpaper" ]] || exit 1
+command -v gdbus >/dev/null 2>&1 || exit 1
+# Use Plasma's wallpaper D-Bus API rather than its image-only CLI: the PNG has
+# transparency, so both PreserveAspectFit and an opaque black Color are needed.
+apply_wallpaper() {
+  local screen="" state="" count=0
+  local parameters="{'Image': <'file://$wallpaper'>, 'FillMode': <int32 1>, 'Color': <(uint32 4278190080,)>}"
+  [[ "$wallpaper" != *"'"* ]] || return 1
+  for screen in {0..15}; do
+    state="$(gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
+      --method org.kde.PlasmaShell.wallpaper "$screen" 2>/dev/null)" || return 1
+    [[ "$state" == *"'wallpaperPlugin':"* ]] || break
+    gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
+      --method org.kde.PlasmaShell.setWallpaper org.kde.image "$parameters" "$screen" >/dev/null || return 1
+    state="$(gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
+      --method org.kde.PlasmaShell.wallpaper "$screen" 2>/dev/null)" || return 1
+    [[ "$state" == *"'Image': <'file://$wallpaper'>"* \
+      && "$state" == *"'FillMode': <1>"* \
+      && "$state" == *"'Color': <(uint32 4278190080,)>"* ]] || return 1
+    ((count+=1))
+  done
+  ((count > 0))
+}
 for attempt in 1 2 3 4 5; do
-  if plasma-apply-wallpaperimage --fill-mode preserveAspectCrop "$wallpaper"; then
+  if apply_wallpaper; then
     touch "$marker"
     exit 0
   fi
