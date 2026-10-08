@@ -1826,7 +1826,7 @@ install_headless_wifi_helper() {
 set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
-  printf 'Usage: ./kmos-headless-wifi.sh\nSet up persistent Wi-Fi via Impala, with an iwctl fallback.\n'
+  printf 'Usage: ./kmos-headless-wifi.sh\nChoose Impala or iwctl to save a persistent iwd Wi-Fi profile.\n'
   exit 0
 fi
 if (($#)); then
@@ -1837,34 +1837,71 @@ if [[ ! -t 0 || ! -t 1 ]]; then
   printf 'Run this helper from an interactive terminal.\n' >&2
   exit 1
 fi
-if ! systemctl is-active --quiet iwd.service; then
-  printf 'iwd is not running. Start iwd.service, then retry; no profiles were changed.\n' >&2
+if ! systemctl is-active --quiet iwd.service || ! systemctl is-enabled --quiet iwd.service; then
+  printf 'iwd must be running and enabled for future boots. Check iwd.service, then retry; no profiles were changed.\n' >&2
   exit 1
 fi
 
-printf 'Ethernet can stay connected. iwd saves Wi-Fi networks for future boots.\n' >&2
-if command -v impala >/dev/null 2>&1; then
-  printf 'Opening Impala. Select and connect to your Wi-Fi network, then quit Impala.\n' >&2
-  if ! impala; then
-    printf 'Impala could not complete; falling back to iwctl.\n' >&2
+printf 'Ethernet can stay connected. iwd saves successfully connected Wi-Fi networks.\n' >&2
+printf '  1) Impala (interactive display; may not work on some terminals)\n' >&2
+printf '  2) iwctl (text commands; recommended for limited screens)\n' >&2
+while true; do
+  read -r -p 'Choose Wi-Fi tool [1/2, default 2; q to quit]: ' choice || exit 1
+  case "$choice" in
+    1|2) break ;;
+    '') choice=2; break ;;
+    q|Q) exit 0 ;;
+    *) printf 'Choose 1, 2, or q.\n' >&2 ;;
+  esac
+done
+
+if [[ "$choice" == 1 ]]; then
+  if command -v impala >/dev/null 2>&1; then
+    printf 'Opening Impala. Connect to Wi-Fi, then quit Impala.\n' >&2
+    if ! impala; then
+      printf 'Impala failed. Switching to iwctl.\n' >&2
+      choice=2
+    else
+      read -r -p 'Did Impala connect successfully? [y/N] ' answer || answer=n
+      case "$answer" in
+        [Yy]|[Yy][Ee][Ss]) ;;
+        *) choice=2 ;;
+      esac
+    fi
   else
-    read -r -p 'Did Impala connect successfully? [y/N] ' answer || answer=n
-    case "$answer" in
-      [Yy]|[Yy][Ee][Ss]) printf 'iwd keeps connected Wi-Fi networks for future boots.\n'; exit 0 ;;
-    esac
+    printf 'Impala is unavailable. Switching to iwctl.\n' >&2
+    choice=2
   fi
-else
-  printf 'Impala is unavailable; using iwctl instead.\n' >&2
 fi
-if ! command -v iwctl >/dev/null 2>&1; then
-  printf 'iwctl is unavailable; install iwd before retrying.\n' >&2
+if [[ "$choice" == 2 ]]; then
+  if ! command -v iwctl >/dev/null 2>&1; then
+    printf 'iwctl is unavailable; install iwd before retrying.\n' >&2
+    exit 1
+  fi
+  printf 'Inside iwctl, type these commands in order (replace DEVICE and SSID):\n' >&2
+  printf '  1. device list                      (find your wireless DEVICE)\n' >&2
+  printf '  2. station DEVICE scan\n' >&2
+  printf '  3. station DEVICE get-networks\n' >&2
+  printf '  4. station DEVICE connect "SSID"     (enter the password if prompted)\n' >&2
+  printf '     For a hidden network: station DEVICE connect-hidden "SSID"\n' >&2
+  printf '  5. station DEVICE show             (check connection)\n' >&2
+  printf '  6. known-networks list             (check that iwd saved the network)\n' >&2
+  printf '  7. exit\n' >&2
+  iwctl || { printf 'iwctl failed; Wi-Fi persistence was not confirmed.\n' >&2; exit 1; }
+fi
+
+printf 'Checking networks saved by iwd:\n' >&2
+if ! iwctl known-networks list; then
+  printf 'Could not check saved Wi-Fi networks. Do not assume this connection will persist.\n' >&2
   exit 1
 fi
-printf 'In iwctl: device list; station DEVICE scan; station DEVICE get-networks; station DEVICE connect SSID; exit\n' >&2
-iwctl
-printf 'When connected, iwd keeps the Wi-Fi profile for future boots.\n'
+read -r -p 'Is the Wi-Fi network you just connected to listed above? [y/N] ' answer || answer=n
+case "$answer" in
+  [Yy]|[Yy][Ee][Ss]) printf 'iwd has saved the Wi-Fi network and is enabled for future boots.\n' ;;
+  *) printf 'Persistence not confirmed. Retry the connection and check known-networks list.\n' >&2; exit 1 ;;
+esac
 WIFI_HELPER
-  success 'Optional headless Wi-Fi setup: /opt/kmos/bin/kmos-headless-wifi.sh (Impala, then iwctl fallback).'
+  success 'Optional headless Wi-Fi setup: /opt/kmos/bin/kmos-headless-wifi.sh (choose Impala or iwctl).'
 }
 
 create_swapfile() {

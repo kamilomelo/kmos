@@ -138,9 +138,11 @@ the headless AUR option installs neither. The KDE AUR package list is separate.
 For an x86 headless install started on Ethernet (without a Wi-Fi handoff), wired
 DHCP and iwd are enabled on the installed system. After first boot, run
 `cd /opt/kmos/bin && ./kmos-headless-wifi.sh` in an interactive terminal to connect
-and save a persistent iwd Wi-Fi profile: the helper opens Impala first and
-offers `iwctl` if Impala cannot be used. Ethernet can remain connected. The
-helper does not replace existing profiles; KDE continues to use NetworkManager.
+and save a persistent iwd Wi-Fi profile. Choose Impala or text-based `iwctl`
+up front (the default); if Impala fails, the helper falls back to `iwctl`. It
+shows sequential `iwctl` commands and asks you to confirm the connected network
+appears in iwd's saved-network list. Ethernet can remain connected. The helper
+does not replace existing profiles; KDE continues to use NetworkManager.
 
 The KDE post-install stage no longer installs scripts that add, remove, unpin
 or reorder Plasma panel widgets, or modify the default panel template. An
