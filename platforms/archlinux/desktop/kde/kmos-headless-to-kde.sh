@@ -125,16 +125,9 @@ resolve_kde_packages() (
   # running its mounted-target installer, prune list or network migration.
   # shellcheck disable=SC1090,SC1091
   source "$SCRIPT_DIR/kmos-kde-install.sh"
-  KDE_PROFILE="$profile" INSTALL_AUR=no
-  # Do not fall back to the published main branch's manifests while running
-  # an experimental x86/next upgrade.
-  # shellcheck disable=SC2329 # Called by the sourced KDE resolver.
-  get_metapackage_pkgbuild() {
-    local relative_path="${2:-}"
-    [[ -n "$relative_path" ]] || relative_path=$(metapackage_relative_path_for_name "$1") || die "Unknown metapackage: $1"
-    [[ -r "$METAPACKAGE_ROOT_DIR/$relative_path" ]] || die "Local metapackage missing: $relative_path"
-    printf '%s\n' "$METAPACKAGE_ROOT_DIR/$relative_path"
-  }
+  # Both paths use the same package selection and resolver. Never fall back
+  # to published main manifests during an experimental live upgrade.
+  KDE_PROFILE="$profile" INSTALL_AUR=no KDE_LOCAL_MANIFESTS_ONLY=yes
   select_kde_metapackages
   load_kde_metapackages
   printf '%s\n' "${KDE_PACKAGES[@]}"

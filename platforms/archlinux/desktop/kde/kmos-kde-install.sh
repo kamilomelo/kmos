@@ -10,6 +10,9 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 METAPACKAGE_ROOT_DIR="$REPO_ROOT/packages/metapackages"
 METAPACKAGE_RAW_ROOT_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/archlinux/packages/metapackages"
+# The live-system upgrader requires the checked-out manifests; the ISO can
+# still fetch published manifests when launched without a full checkout.
+KDE_LOCAL_MANIFESTS_ONLY="${KDE_LOCAL_MANIFESTS_ONLY:-no}"
 KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/archlinux/desktop/kde/kmos-kde-post.sh"
 KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
 INSTALL_AUR="${kmos_INSTALL_AUR:-yes}"
@@ -290,6 +293,10 @@ get_metapackage_pkgbuild() {
   if [[ -r "$local_path" ]]; then
     printf '%s\n' "$local_path"
     return 0
+  fi
+
+  if [[ "$KDE_LOCAL_MANIFESTS_ONLY" == yes ]]; then
+    die "Local metapackage missing: $relative_path"
   fi
 
   remote_url="$METAPACKAGE_RAW_ROOT_URL/$relative_path"

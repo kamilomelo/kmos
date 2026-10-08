@@ -13,7 +13,13 @@ From a checkout of `x86/next`, run the read-only check first:
 ```
 
 The explicit `--install` operation offers the same full/noapps KDE package
-sets as the ISO, with **no AUR installation**. It performs a normal Arch
+sets as the ISO, with **no AUR installation**.
+`x86/next` keeps the ISO and live-upgrade package resolver in sync; the live
+upgrade requires local metapackage manifests instead of fetching `main` ones.
+This package-list refactor has only been checked with offline fixtures, not
+with a new ISO installation.
+
+It performs a normal Arch
 `pacman -Syu` transaction; inspect any proposed replacements or removals
 before approving pacman's prompts. Back up important data first. For the first
 real test, keep local console or Ethernet access available in case a package
