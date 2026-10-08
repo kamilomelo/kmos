@@ -7,6 +7,10 @@ IWD_CONF=/etc/iwd/main.conf
 NM_CONF=/etc/NetworkManager/conf.d/90-kmos-iwd-backend.conf
 MIGRATION_MARKER=/run/kmos-nm-migration.in-progress
 MIGRATION_DONE=/var/lib/kmos/nm-handoff.done
+STAGED_MARKER=/var/lib/kmos/nm-handoff.staged
+BOOT_SCRIPT=/usr/local/lib/kmos/kmos-network-migration.sh
+BOOT_UNIT=/etc/systemd/system/kmos-nm-boot-check.service
+BOOT_UNIT_NAME=kmos-nm-boot-check.service
 WIRED_IFACE= WIFI_IFACE= ROLLBACK_ARMED=no
 
 os_id() {
@@ -20,6 +24,8 @@ kde_ready() { [[ -r /usr/share/kmos/kde-profile ]]; }
 usage() {
   cat <<'EOF'
 Usage: ./platforms/archlinux/tools/kmos-network-migration.sh --plan
+       ./platforms/archlinux/tools/kmos-network-migration.sh --stage-reboot
+       ./platforms/archlinux/tools/kmos-network-migration.sh --cancel-stage
        ./platforms/archlinux/tools/kmos-network-migration.sh --apply
        ./platforms/archlinux/tools/kmos-network-migration.sh --rollback
 
@@ -31,6 +37,10 @@ It preserves saved iwd profiles, tests Ethernet and Wi-Fi under NetworkManager,
 then changes boot services. --rollback restores the prior service setup after
 an interrupted OR completed handoff; NetworkManager profiles are preserved.
 Never run --apply or --rollback over SSH.
+--stage-reboot is a SEPARATE SSH-safe path: it stages boot-service changes but
+does NOT interrupt current connections. Reboot manually; a one-time boot check
+restores iwd/dhcpcd if NetworkManager cannot bring Ethernet online. Wi-Fi can
+then be added manually in KDE. --cancel-stage undoes staging before reboot.
 EOF
 }
 
@@ -74,6 +84,13 @@ plan() {
   }
   printf 'NetworkManager binary: '
   if command -v nmcli >/dev/null 2>&1; then printf 'present\n'; else printf 'missing\n'; fi
+  if [[ -f "$STAGED_MARKER" && ! -L "$STAGED_MARKER" ]]; then
+    printf 'KMOS handoff: staged for the next reboot / boot validation\n'
+  elif [[ -f "$MIGRATION_DONE" && ! -L "$MIGRATION_DONE" ]]; then
+    printf 'KMOS handoff: boot handoff completed; verify Wi-Fi in KDE\n'
+  else
+    printf 'KMOS handoff: not staged\n'
+  fi
   printf 'Services (active / enabled):\n'
   local service
   for service in NetworkManager.service iwd.service dhcpcd.service sshd.service systemd-resolved.service; do
@@ -165,7 +182,8 @@ ready_for_handoff() {
     printf 'Service state differs from the expected headless configuration; refusing.\n' >&2; return 1;
   }
   [[ ! -e "$NM_CONF" && ! -L "$NM_CONF" && ! -e "$MIGRATION_MARKER" && ! -L "$MIGRATION_MARKER" &&
-     ! -e "$MIGRATION_DONE" && ! -L "$MIGRATION_DONE" && ! -L "${NM_CONF%/*}" &&
+     ! -e "$MIGRATION_DONE" && ! -L "$MIGRATION_DONE" && ! -e "$STAGED_MARKER" && ! -L "$STAGED_MARKER" &&
+     ! -L "${NM_CONF%/*}" &&
      ! -L "${MIGRATION_DONE%/*}" ]] || {
     printf 'KMOS migration config or marker already exists; inspect before retrying.\n' >&2; return 1;
   }
@@ -224,7 +242,7 @@ config_is_ours() {
 }
 
 rollback() {
-  [[ "$ROLLBACK_ARMED" == yes || -f "$MIGRATION_MARKER" || -f "$MIGRATION_DONE" ]] || return 0
+  [[ "$ROLLBACK_ARMED" == yes || -f "$MIGRATION_MARKER" || -f "$MIGRATION_DONE" || -f "$STAGED_MARKER" ]] || return 0
   printf 'Restoring the prior network services. Keep the cable attached.\n' >&2
   local failed=0
   systemctl stop NetworkManager.service || failed=1
@@ -233,13 +251,149 @@ rollback() {
   systemctl start iwd.service dhcpcd.service || failed=1
   if config_is_ours; then rm -f -- "$NM_CONF"; fi
   if [[ $(state is-active iwd.service) != active || $(state is-active dhcpcd.service) != active ]]; then failed=1; fi
-  if ((failed == 0)); then rm -f -- "$MIGRATION_MARKER" "$MIGRATION_DONE"; fi
+  if ((failed == 0)); then
+    cleanup_boot_guard || failed=1
+    if ((failed == 0)); then rm -f -- "$MIGRATION_MARKER" "$MIGRATION_DONE" "$STAGED_MARKER" || failed=1; fi
+  fi
   ROLLBACK_ARMED=no
   if ((failed != 0)); then
     printf 'Rollback incomplete; marker retained. Check services from the local console.\n' >&2
     return 1
   fi
   printf 'Rollback attempted. Check wired and Wi-Fi status locally before relying on SSH.\n' >&2
+}
+
+write_boot_unit() {
+  install -Dm0644 /dev/stdin "$BOOT_UNIT" <<'EOF'
+[Unit]
+Description=KMOS one-time NetworkManager Ethernet check and fallback
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/kmos/kmos-network-migration.sh --boot-check
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+cleanup_boot_guard() {
+  systemctl disable "$BOOT_UNIT_NAME" >/dev/null 2>&1 || :
+  # These paths were refused if they existed before staging.
+  [[ ! -L "$BOOT_UNIT" && ! -L "$BOOT_SCRIPT" ]] || return 1
+  if [[ -f "$BOOT_UNIT" ]]; then
+    grep -Fxq 'ExecStart=/usr/local/lib/kmos/kmos-network-migration.sh --boot-check' "$BOOT_UNIT" || return 1
+  fi
+  if [[ -f "$BOOT_SCRIPT" ]]; then
+    grep -Fxq '# Optional, local-console handoff from iwd/dhcpcd to NetworkManager.' "$BOOT_SCRIPT" || return 1
+  fi
+  rm -f -- "$BOOT_UNIT" "$BOOT_SCRIPT"
+  systemctl daemon-reload || :
+}
+
+confirm_staging() {
+  local answer
+  printf 'Stage NetworkManager for the NEXT boot? Current SSH/networking stays active.\n' >&2
+  printf 'Ethernet %s must be available after reboot. Type STAGE NETWORK: ' "$WIRED_IFACE" >&2
+  read -r answer </dev/tty || return 1
+  [[ "$answer" == 'STAGE NETWORK' ]]
+}
+
+stage_reboot() {
+  ready_for_handoff || return 1
+  if [[ -n "${SSH_CONNECTION:-}" ]]; then
+    [[ $(ssh_interface) == "$WIRED_IFACE" ]] || {
+      printf 'SSH must currently be routed over the wired interface.\n' >&2; return 1;
+    }
+  fi
+  check_internet_on "$WIRED_IFACE" || {
+    printf 'Wired internet unavailable; boot migration not staged.\n' >&2; return 1;
+  }
+  require_root --stage-reboot || return 1
+  ready_for_handoff || return 1
+  check_internet_on "$WIRED_IFACE" || return 1
+  [[ ! -e "$BOOT_UNIT" && ! -L "$BOOT_UNIT" && ! -e "$BOOT_SCRIPT" && ! -L "$BOOT_SCRIPT" &&
+     ! -L "${BOOT_SCRIPT%/*}" && ! -L "${BOOT_UNIT%/*}" && ! -L "${STAGED_MARKER%/*}" ]] || {
+    printf 'A boot-check unit/script already exists; review it before staging.\n' >&2; return 1;
+  }
+  confirm_staging || { printf 'Cancelled without changes.\n' >&2; return 1; }
+  install -Dm0600 /dev/stdin "$STAGED_MARKER" <<< "$WIRED_IFACE" || return 1
+  ROLLBACK_ARMED=yes
+  trap 'rollback' EXIT
+  trap 'exit 130' INT TERM
+  install -Dm0755 "$SCRIPT_DIR/kmos-network-migration.sh" "$BOOT_SCRIPT" || return 1
+  write_boot_unit || return 1
+  systemctl daemon-reload || return 1
+  systemctl enable "$BOOT_UNIT_NAME" || return 1
+  write_backend_config || return 1
+  systemctl enable NetworkManager.service || return 1
+  systemctl disable dhcpcd.service iwd.service || return 1
+  [[ $(state is-active dhcpcd.service) == active && $(state is-active iwd.service) == active &&
+     $(state is-active NetworkManager.service) != active ]] || {
+    printf 'Unexpected live service change; restoring the old setup.\n' >&2; return 1;
+  }
+  ROLLBACK_ARMED=no
+  trap - EXIT INT TERM
+  printf 'Staged for reboot. Current SSH and iwd/dhcpcd connections were not stopped.\n'
+  printf 'After reboot, SSH via Ethernet should return under NetworkManager.\n'
+  printf 'If wired NetworkManager cannot connect, the boot check restores iwd/dhcpcd.\n'
+  printf 'Connect Wi-Fi in KDE manually after reboot; old iwd profiles were preserved.\n'
+}
+
+boot_check() {
+  local wired attempt
+  require_boot_root || return 1
+  [[ -f "$STAGED_MARKER" && ! -L "$STAGED_MARKER" ]] || return 0
+  wired=$(cat "$STAGED_MARKER") || return 1
+  [[ "$wired" =~ ^[a-zA-Z0-9_.:-]+$ && -e "$SYS_NET_ROOT/$wired/device" &&
+     $(interface_kind "$wired") == Ethernet ]] || {
+    printf 'Invalid staged Ethernet interface; restoring prior services.\n' >&2
+    rollback
+    return 1
+  }
+  for attempt in {1..8}; do
+    if nm_connected "$wired"; then
+      if ! install -Dm0600 /dev/stdin "$MIGRATION_DONE" <<'EOF'
+KMOS NetworkManager reboot handoff; Wi-Fi requires a user-selected NM connection.
+EOF
+      then
+        rollback
+        return 1
+      fi
+      if ! cleanup_boot_guard; then
+        rollback
+        return 1
+      fi
+      rm -f -- "$STAGED_MARKER" || return 1
+      printf 'NetworkManager Ethernet verified. Configure Wi-Fi with KDE when ready.\n'
+      return 0
+    fi
+    sleep 3
+  done
+  printf 'NetworkManager Ethernet failed; restoring iwd/dhcpcd for this and future boots.\n' >&2
+  rollback
+  return 1
+}
+
+require_boot_root() { ((EUID == 0)); }
+
+cancel_stage() {
+  local answer
+  [[ -f "$STAGED_MARKER" && ! -L "$STAGED_MARKER" ]] || {
+    printf 'No pending reboot migration found.\n' >&2; return 1;
+  }
+  [[ $(state is-active dhcpcd.service) == active && $(state is-active iwd.service) == active &&
+     $(state is-active NetworkManager.service) != active ]] || {
+    printf 'This appears to be after reboot; use the local console or boot fallback instead.\n' >&2; return 1;
+  }
+  require_root --cancel-stage || return 1
+  printf 'Type CANCEL STAGE to restore the original next-boot settings: ' >&2
+  read -r answer </dev/tty || return 1
+  [[ "$answer" == 'CANCEL STAGE' ]] || return 1
+  rollback
 }
 
 confirm_handoff() {
@@ -314,6 +468,9 @@ main() {
   case "${1:-}" in
     --help|-h) (($# == 1)) || { usage >&2; return 2; }; usage ;;
     --plan) (($# == 1)) || { usage >&2; return 2; }; plan ;;
+    --stage-reboot) (($# == 1)) || { usage >&2; return 2; }; stage_reboot ;;
+    --cancel-stage) (($# == 1)) || { usage >&2; return 2; }; cancel_stage ;;
+    --boot-check) (($# == 1)) || return 2; boot_check ;;
     --apply) (($# == 1)) || { usage >&2; return 2; }; apply_handoff ;;
     --rollback) (($# == 1)) || { usage >&2; return 2; }; manual_rollback ;;
     *) usage >&2; return 2 ;;

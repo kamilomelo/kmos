@@ -70,24 +70,40 @@ without changing services:
 ./platforms/archlinux/tools/kmos-network-migration.sh --plan
 ```
 
-For the first handoff, use a **local KDE terminal with a working Ethernet cable
-attached**, not SSH. The separate `--apply` command first checks real wired
-internet through the Ethernet interface, asks you to type `MIGRATE NETWORK`,
-and stops dhcpcd and the existing direct iwd Wi-Fi connection. It then starts
-NetworkManager with **iwd as its Wi-Fi radio backend**. NetworkManager controls
-the connections and IP addresses; `iwctl` no longer manages them. Saved iwd
-profiles are not removed or exported. After wired networking is verified under
-NetworkManager, reconnect to Wi-Fi using KDE's network menu (enter credentials
-there), then type `VERIFY WIFI` in the waiting terminal. Only after *both*
-interfaces pass verification does the script enable NetworkManager on boot
-and disable the old dhcpcd/iwd boot units. No packages or Wi-Fi credentials
-are added by KMOS.
+For a **staged SSH handoff with working Ethernet**, run this from the existing
+SSH session. It checks real internet through Ethernet, asks for confirmation,
+and enables NetworkManager and a one-time boot guard for the **next** boot.
+It disables only the *next-boot* iwd/dhcpcd units; neither the current DHCP
+lease nor your SSH session is stopped. Reboot deliberately when ready. The
+boot guard verifies NM-controlled Ethernet internet and automatically restores
+iwd/dhcpcd if that fails (allow roughly two minutes). If both paths fail,
+use the physical console. Your Ethernet IP address might change after reboot.
+
+```bash
+./platforms/archlinux/tools/kmos-network-migration.sh --stage-reboot
+```
+
+Until reboot, `--cancel-stage` restores the original next-boot setup over SSH.
+After reboot, reconnect over Ethernet; Wi-Fi will **not** automatically import
+an NM profile. Select a Wi-Fi network in KDE and enter its password there.
+NetworkManager controls the connections and IP addresses; iwd is retained only
+as its Wi-Fi radio backend. Old iwd profiles remain on disk, and KMOS neither
+reads nor exports their passwords. Test Wi-Fi with the cable unplugged only
+after KDE shows an active NetworkManager Wi-Fi connection.
+
+Alternatively, a **local-console-only live handoff** remains available. The
+separate `--apply` command stops dhcpcd and the existing direct iwd Wi-Fi
+connection, starts NetworkManager, checks wired internet, then waits while you
+connect Wi-Fi from KDE and type `VERIFY WIFI` in the waiting terminal. Only
+after both interfaces pass does it change the next-boot services. Never run
+`--apply` over SSH. No packages are installed by either handoff.
 
 ```bash
 ./platforms/archlinux/tools/kmos-network-migration.sh --apply
 ```
 
-An unsuccessful handoff attempts to restore the prior services. If the script
+An unsuccessful live handoff attempts to restore the prior services. If a
+staged reboot fails, the boot guard attempts the fallback. If the live script
 is killed unexpectedly, or if the result later needs to be reverted, use
 `./platforms/archlinux/tools/kmos-network-migration.sh --rollback` **from the
 local console**. It retains NetworkManager-created profiles but restores the
