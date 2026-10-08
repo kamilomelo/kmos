@@ -3,9 +3,8 @@
 Use only on an **installed KMOS headless Arch x86_64** system, not an Arch ISO
 and not an arbitrary existing Arch/VPS installation. This path is not part of
 `main` or `v0.9.0`. A real headless → KDE upgrade and the KDE finishing pass
-were reported working. The staged SSH-to-NetworkManager reboot handoff has
-also been verified **over Ethernet**; KDE-managed Wi-Fi without Ethernet still
-needs its field test.
+were reported working. The staged SSH-to-NetworkManager reboot handoff was
+verified on Ethernet and with **Wi-Fi only** after the cable was unplugged.
 
 From a checkout of `x86/next`, run the read-only check first:
 
@@ -86,8 +85,9 @@ use the physical console. Your Ethernet IP address might change after reboot.
 ```
 
 Until reboot, `--cancel-stage` restores the original next-boot setup over SSH.
-After reboot, reconnect over Ethernet; Wi-Fi will **not** automatically import
-an NM profile. Select a Wi-Fi network in KDE and enter its password there.
+After reboot, reconnect over Ethernet. KMOS does **not** copy existing iwd
+credentials into a NetworkManager profile; if Wi-Fi is not connected under
+NetworkManager, select a network in KDE and enter its password there.
 NetworkManager controls the connections and IP addresses; iwd is retained only
 as its Wi-Fi radio backend. Old iwd profiles remain on disk, and KMOS neither
 reads nor exports their passwords. Test Wi-Fi with the cable unplugged only
@@ -111,5 +111,11 @@ is killed unexpectedly, or if the result later needs to be reverted, use
 local console**. It retains NetworkManager-created profiles but restores the
 previous services and removes only KMOS's unchanged backend configuration.
 Test unplugging Ethernet *after* Wi-Fi is verified, at the local console.
-The live `--apply` switch has not been field-verified; keep a way back to the
-local console for Wi-Fi testing after either type of handoff.
+
+**Field result (2026-10-09):** The staged reboot completed with NetworkManager
+controlling Ethernet and Wi-Fi, iwd active only as the Wi-Fi backend, dhcpcd
+inactive, and SSH routed over Ethernet. The Wi-Fi device showed connected in
+`nmcli`; a request bound to `wlan0` succeeded. After Ethernet was unplugged,
+the default route used `wlan0` alone and internet access still worked. The
+local-only `--apply` path, automatic failure fallback, and switching between
+different Wi-Fi SSIDs in KDE remain **unverified on real hardware**.
