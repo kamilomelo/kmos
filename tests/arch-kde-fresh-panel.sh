@@ -108,4 +108,4 @@ write_kdeglobals_defaults "$fixture/kdeglobals"
 install_lookandfeel_defaults
 grep -A1 '^\[KDE\]$' "$fixture/kdeglobals" | grep -Fxq 'LookAndFeelPackage=org.kde.kmos.desktop'
 [[ $(cat "$MOUNT_POINT/home/alice/.config/plasma-org.kde.plasma.desktop-appletsrc") == 'personal panel configuration' ]]
-echo 'KMOS shell-only panel and wallpaper presets: OK (fixtures; revised wallpaper untested graphically).'
+echo 'KMOS shell-only panel and wallpaper presets: OK (fixture checks only).'

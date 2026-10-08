@@ -2,18 +2,17 @@
 
 KMOS is a shell-based operating-system provisioning toolkit. Its x86_64 Arch
 Linux ISO installer offers **headless** or **KDE** installation. The current x86
-milestone is documented in [release notes](./docs/releases/x86-2026-10-08.md);
-new installation experiments will live on `x86/next` rather than changing this
+milestone is documented in [release notes](./docs/releases/x86-2026-10-08-shell-only.md).
+New installation experiments live on `x86/next` rather than changing this
 baseline. Arch Linux ARM (Quartz64 Model B) and Rocky Linux have separate,
 less mature workflows; this x86 milestone does not release those platforms.
 
-**On `x86/next` only:** KMOS's fresh KDE panel uses shell-generated KConfig;
-the wallpaper uses a shell first-login action. This removes KMOS-authored
-Plasma JavaScript. A fresh KDE login confirmed the panel and Dashboard, but
-revealed that the transparent wallpaper needs a black background and a
-proportional, uncropped image. The revised wallpaper action sets both through
-Plasma's D-Bus API; **it still needs a fresh graphical test**. The older
-milestone tag contains JavaScript and has not been replaced.
+KMOS's fresh KDE panel uses shell-generated KConfig, and the wallpaper uses a
+shell first-login action. No KMOS JavaScript is tracked or generated on this
+branch. The panel, Dashboard and transparent wallpaper with an uncropped image
+and black background were confirmed on fresh x86 KDE logins. The previous
+[x86 milestone](./docs/releases/x86-2026-10-08.md) remains in Git history and
+its tag still contains JavaScript; it was not rewritten.
 
 ## Start here: Arch Linux x86_64
 
@@ -45,7 +44,7 @@ For KDE without the extra application groups, start with
 `./kmos-install.sh --profile noapps` and then select KDE. For the full flow and
 limitations, read [Arch Linux flow](#arch-linux-flow),
 [Wi-Fi notes](#if-ethernet-is-not-available), and the
-[x86 milestone notes](./docs/releases/x86-2026-10-08.md).
+[x86 milestone notes](./docs/releases/x86-2026-10-08-shell-only.md).
 
 ## Other platforms
 
@@ -152,18 +151,18 @@ panel layout.** Your panel configuration is in
 `~/.config/plasma-org.kde.plasma.desktop-appletsrc`; back it up before
 rearranging widgets in Plasma or restoring a known-good copy.
 
-The installer now stages a separate **first-run-only** KMOS panel template
+The installer stages a **fresh-user-only** Plasma KConfig panel preset
 based on the May 2026 layout: Dashboard at the left, KDE's task manager and
 system tray, KMOS CPU/GPU, memory, disk and network monitors, three world
 clocks, and Show Desktop. It does not run panel-update hooks against existing
 users or change KDE's packaged default panel. The panel and its widgets were
-verified on a fresh KDE login (2026-10-07). The KMOS colors did not apply in
-that test: Plasma's color tool treats an already-selected `kmos` scheme as a
-successful no-op. The revised one-time first-login action applies the palette
+verified on fresh KDE logins (2026-10-07 and 2026-10-08). KMOS colors did not
+apply in the first test: Plasma's color tool treats an already-selected `kmos`
+scheme as a successful no-op. The revised one-time first-login action applies the palette
 using the existing gray accent and checks the scheme hash before marking it
 complete. It skips users who chose a different scheme and does not reapply
-after later changes. **This revised color fix still needs a real KDE login
-test.**
+after later changes. Its exact color-scheme hash still needs explicit field
+verification.
 
 Fresh KMOS Konsole and Dolphin-terminal profiles explicitly select Kappa Mono;
 the KDE post-install step verifies that fontconfig resolves the downloaded font.
