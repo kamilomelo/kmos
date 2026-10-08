@@ -21,6 +21,7 @@ if ((${#scripts[@]} == 0)); then
 fi
 scripts+=(
   platforms/archlinux/desktop/kde/kmos-kde-finish.sh
+  platforms/archlinux/tools/kmos-network-migration.sh
   platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
   platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh
   platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
@@ -34,6 +35,7 @@ scripts+=(
   tests/arch-headless-kde-preflight.sh
   tests/arch-headless-wifi-helper.sh
   tests/arch-mirror-ranking.sh
+  tests/arch-network-migration-plan.sh
   tests/arch-plan-before-go.sh
   tests/arch-finish-countdown.sh
   tests/arch-kde-panel-safety.sh
@@ -86,6 +88,7 @@ bash tests/arch-headless-kde-boundary.sh
 bash tests/arch-headless-kde-preflight.sh
 bash tests/arch-headless-wifi-helper.sh
 bash tests/arch-mirror-ranking.sh
+bash tests/arch-network-migration-plan.sh
 bash tests/arch-plan-before-go.sh
 bash tests/arch-finish-countdown.sh
 bash tests/arch-kde-panel-safety.sh

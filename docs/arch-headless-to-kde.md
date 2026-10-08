@@ -2,7 +2,8 @@
 
 Use only on an **installed KMOS headless Arch x86_64** system, not an Arch ISO
 and not an arbitrary existing Arch/VPS installation. This path is not part of
-`main` or `v0.9.0` and has **only mocked tests**, not a real upgrade test yet.
+`main` or `v0.9.0`. A real headless → KDE upgrade and the KDE finishing pass
+were reported working; NetworkManager migration remains untested.
 
 From a checkout of `x86/next`, run the read-only check first:
 
@@ -56,3 +57,18 @@ other accounts' home files are changed. System-wide defaults can affect KDE
 users without a personal override. It may download Kappa fonts with the existing
 `curl` tool, but does not delete other fonts. Review the resulting KDE session
 before removing any backup. Rerunning skips defaults that already match.
+
+## NetworkManager handoff (not enabled yet)
+
+The KDE upgrade deliberately retains the headless `iwd`/`dhcpcd` connection.
+The goal is to let **NetworkManager control networking in KDE** instead of
+managing connections directly with `iwctl` and `dhcpcd`. This is not just a
+test of switching between SSIDs. Before a separate, opt-in handoff is built,
+check active routes and a wired fallback without changing services:
+
+```bash
+./platforms/archlinux/tools/kmos-network-migration.sh --plan
+```
+
+Do not start NetworkManager alongside the existing managers or disable the
+working SSH/Wi-Fi services manually. No migration action exists yet.
