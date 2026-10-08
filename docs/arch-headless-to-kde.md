@@ -34,3 +34,25 @@ If an upgrade is interrupted, rerun with the **same profile** after checking
 connectivity and pacman state. An in-progress marker allows retry; a completed
 KMOS KDE profile makes subsequent runs a no-op. Existing non-KMOS KDE or a
 different panel template is refused rather than replaced.
+
+## Optional ISO-look finishing pass (after the upgrade)
+
+The live upgrade deliberately skips the ISO's destructive post-install stage.
+To add its KDE login/lock-screen look, Kappa/Konsole profile, Yakuake, Kate,
+Dolphin and desktop defaults for **your own account**, first preview:
+
+```bash
+./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan
+```
+
+The plan lists existing files that differ from the KMOS defaults and their
+sizes. If you want those changes, run `./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --apply`.
+It asks for initial confirmation and then **each existing file** defaults to
+**No**. Only approved replacements are saved under
+`~/.local/share/kmos/backups/kde-<date>/` for user files or
+`/var/backups/kmos/kde-<date>/` for system files. Missing files are added
+without prompting; no panels, wallpaper choices, networking, packages or
+other accounts' home files are changed. System-wide defaults can affect KDE
+users without a personal override. It may download Kappa fonts with the existing
+`curl` tool, but does not delete other fonts. Review the resulting KDE session
+before removing any backup. Rerunning skips defaults that already match.

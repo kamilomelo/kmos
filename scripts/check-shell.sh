@@ -20,6 +20,7 @@ if ((${#scripts[@]} == 0)); then
   exit 1
 fi
 scripts+=(
+  platforms/archlinux/desktop/kde/kmos-kde-finish.sh
   platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
   platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh
   platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
@@ -38,6 +39,7 @@ scripts+=(
   tests/arch-kde-panel-safety.sh
   tests/arch-kde-fresh-panel.sh
   tests/arch-kde-first-login-colors.sh
+  tests/arch-kde-finish-safety.sh
   tests/arch-kde-kappa-fonts.sh
   tests/arch-krub-policy.sh
   tests/quartz-disk-safety.sh
@@ -89,6 +91,7 @@ bash tests/arch-finish-countdown.sh
 bash tests/arch-kde-panel-safety.sh
 bash tests/arch-kde-fresh-panel.sh
 bash tests/arch-kde-first-login-colors.sh
+bash tests/arch-kde-finish-safety.sh
 bash tests/arch-kde-kappa-fonts.sh
 bash tests/arch-krub-policy.sh
 bash tests/archarm-dispatch.sh
