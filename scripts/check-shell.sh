@@ -36,6 +36,7 @@ scripts+=(
   tests/arch-headless-wifi-helper.sh
   tests/arch-mirror-ranking.sh
   tests/arch-network-migration-plan.sh
+  tests/arch-network-migration-apply.sh
   tests/arch-plan-before-go.sh
   tests/arch-finish-countdown.sh
   tests/arch-kde-panel-safety.sh
@@ -89,6 +90,7 @@ bash tests/arch-headless-kde-preflight.sh
 bash tests/arch-headless-wifi-helper.sh
 bash tests/arch-mirror-ranking.sh
 bash tests/arch-network-migration-plan.sh
+bash tests/arch-network-migration-apply.sh
 bash tests/arch-plan-before-go.sh
 bash tests/arch-finish-countdown.sh
 bash tests/arch-kde-panel-safety.sh

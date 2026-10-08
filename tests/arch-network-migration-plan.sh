@@ -8,10 +8,11 @@ script="$repo/platforms/archlinux/tools/kmos-network-migration.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 "$script" --help > "$fixture/help"
-grep -Fq 'is no migration command yet' "$fixture/help"
+grep -Fq -- '--apply requires a' "$fixture/help"
 if "$script" --apply > "$fixture/rejected" 2>&1; then
-  printf 'An unreviewed network migration was accepted.\n' >&2; exit 1
+  printf 'A non-interactive network migration was accepted.\n' >&2; exit 1
 fi
+grep -Fq 'Local interactive console required' "$fixture/rejected"
 mkdir -p "$fixture/net/enp1s0" "$fixture/net/wlan0/wireless"
 touch "$fixture/net/enp1s0/device" "$fixture/net/wlan0/device"
 printf '1\n' > "$fixture/net/enp1s0/type"

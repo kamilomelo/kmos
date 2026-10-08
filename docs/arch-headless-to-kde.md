@@ -58,17 +58,39 @@ users without a personal override. It may download Kappa fonts with the existing
 `curl` tool, but does not delete other fonts. Review the resulting KDE session
 before removing any backup. Rerunning skips defaults that already match.
 
-## NetworkManager handoff (not enabled yet)
+## Optional NetworkManager handoff (x86/next experiment)
 
 The KDE upgrade deliberately retains the headless `iwd`/`dhcpcd` connection.
 The goal is to let **NetworkManager control networking in KDE** instead of
 managing connections directly with `iwctl` and `dhcpcd`. This is not just a
-test of switching between SSIDs. Before a separate, opt-in handoff is built,
-check active routes and a wired fallback without changing services:
+test of switching between SSIDs. Check active routes and a wired fallback
+without changing services:
 
 ```bash
 ./platforms/archlinux/tools/kmos-network-migration.sh --plan
 ```
 
-Do not start NetworkManager alongside the existing managers or disable the
-working SSH/Wi-Fi services manually. No migration action exists yet.
+For the first handoff, use a **local KDE terminal with a working Ethernet cable
+attached**, not SSH. The separate `--apply` command first checks real wired
+internet through the Ethernet interface, asks you to type `MIGRATE NETWORK`,
+and stops dhcpcd and the existing direct iwd Wi-Fi connection. It then starts
+NetworkManager with **iwd as its Wi-Fi radio backend**. NetworkManager controls
+the connections and IP addresses; `iwctl` no longer manages them. Saved iwd
+profiles are not removed or exported. After wired networking is verified under
+NetworkManager, reconnect to Wi-Fi using KDE's network menu (enter credentials
+there), then type `VERIFY WIFI` in the waiting terminal. Only after *both*
+interfaces pass verification does the script enable NetworkManager on boot
+and disable the old dhcpcd/iwd boot units. No packages or Wi-Fi credentials
+are added by KMOS.
+
+```bash
+./platforms/archlinux/tools/kmos-network-migration.sh --apply
+```
+
+An unsuccessful handoff attempts to restore the prior services. If the script
+is killed unexpectedly, or if the result later needs to be reverted, use
+`./platforms/archlinux/tools/kmos-network-migration.sh --rollback` **from the
+local console**. It retains NetworkManager-created profiles but restores the
+previous services and removes only KMOS's unchanged backend configuration.
+Test unplugging Ethernet *after* Wi-Fi is verified, at the local console.
+This switch is not field-verified yet; keep a way back to the local console.

@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Read-only inventory before handing networking from iwd/dhcpcd to NetworkManager.
+# Optional, local-console handoff from iwd/dhcpcd to NetworkManager.
 set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SYS_NET_ROOT=/sys/class/net
 IWD_CONF=/etc/iwd/main.conf
+NM_CONF=/etc/NetworkManager/conf.d/90-kmos-iwd-backend.conf
+MIGRATION_MARKER=/run/kmos-nm-migration.in-progress
+MIGRATION_DONE=/var/lib/kmos/nm-handoff.done
+WIRED_IFACE= WIFI_IFACE= ROLLBACK_ARMED=no
 
 os_id() {
   # shellcheck disable=SC1091 # Standard local OS identity file.
@@ -15,12 +20,17 @@ kde_ready() { [[ -r /usr/share/kmos/kde-profile ]]; }
 usage() {
   cat <<'EOF'
 Usage: ./platforms/archlinux/tools/kmos-network-migration.sh --plan
+       ./platforms/archlinux/tools/kmos-network-migration.sh --apply
+       ./platforms/archlinux/tools/kmos-network-migration.sh --rollback
 
-Read-only: checks physical Ethernet/Wi-Fi interfaces and the active network
-managers. Does not show saved Wi-Fi credentials or change connections. There
-is no migration command yet. The goal is NetworkManager-controlled networking
-in KDE instead of directly using iwctl/iwd plus dhcpcd. Ethernet/local console
-is a fallback for the one-time handoff, not the networking mode we are testing.
+--plan is read-only and shows no saved Wi-Fi credentials. --apply requires a
+LOCAL keyboard and screen, connected Ethernet, and interactive confirmation.
+It may interrupt networking. It uses iwd only as NetworkManager's Wi-Fi radio
+backend: NetworkManager, not iwctl/dhcpcd, controls connections and IP setup.
+It preserves saved iwd profiles, tests Ethernet and Wi-Fi under NetworkManager,
+then changes boot services. --rollback restores the prior service setup after
+an interrupted OR completed handoff; NetworkManager profiles are preserved.
+Never run --apply or --rollback over SSH.
 EOF
 }
 
@@ -100,13 +110,212 @@ plan() {
   else
     printf 'Check wired connectivity separately before any handoff; carrier/IP alone do not prove internet access.\n'
   fi
-  printf 'Plan complete: nothing changed. NetworkManager handoff is not available yet.\n'
+  printf 'Plan complete: nothing changed. Use --apply only at the local console.\n'
+}
+
+local_console() {
+  [[ -t 0 && -t 1 && -z "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ]] || {
+    printf 'Local interactive console required; SSH is unsafe for the handoff.\n' >&2
+    return 1
+  }
+  if [[ -n "${XDG_SESSION_ID:-}" ]] && command -v loginctl >/dev/null 2>&1; then
+    [[ $(loginctl show-session "$XDG_SESSION_ID" --property=Remote --value 2>/dev/null || true) != yes ]] || {
+      printf 'A remote login session cannot perform the handoff.\n' >&2; return 1;
+    }
+  fi
+}
+
+require_root() {
+  (( EUID == 0 )) && return 0
+  command -v sudo >/dev/null || { printf 'sudo is required; no changes made.\n' >&2; return 1; }
+  exec sudo -- "$SCRIPT_DIR/kmos-network-migration.sh" "$@"
+}
+
+select_interfaces() {
+  local entry iface kind
+  WIRED_IFACE= WIFI_IFACE=
+  for entry in "$SYS_NET_ROOT"/*; do
+    [[ -e "$entry/device" ]] || continue
+    iface="${entry##*/}"
+    kind=$(interface_kind "$iface")
+    if [[ "$kind" == Ethernet && -r "$entry/carrier" && $(cat "$entry/carrier") == 1 ]] &&
+        ipv4_present "$iface" && ethernet_default_route "$iface"; then
+      [[ -z "$WIRED_IFACE" ]] || { printf 'Multiple eligible wired fallbacks; review manually.\n' >&2; return 1; }
+      WIRED_IFACE="$iface"
+    elif [[ "$kind" == Wi-Fi ]] && ipv4_present "$iface"; then
+      [[ -z "$WIFI_IFACE" ]] || { printf 'Multiple active Wi-Fi interfaces; review manually.\n' >&2; return 1; }
+      WIFI_IFACE="$iface"
+    fi
+  done
+  [[ -n "$WIRED_IFACE" && -n "$WIFI_IFACE" ]] || {
+    printf 'Need one working wired interface and one active Wi-Fi interface.\n' >&2; return 1;
+  }
+}
+
+ready_for_handoff() {
+  [[ $(os_id) == arch && $(uname -m) == x86_64 ]] && kde_ready || {
+    printf 'Only an installed KMOS KDE Arch x86_64 system is supported.\n' >&2; return 1;
+  }
+  command -v nmcli >/dev/null && command -v curl >/dev/null && command -v iwctl >/dev/null || {
+    printf 'Existing NetworkManager, curl and iwd tools are required. No packages were installed.\n' >&2; return 1;
+  }
+  [[ $(state is-active NetworkManager.service) != active && $(state is-enabled NetworkManager.service) != enabled &&
+     $(state is-active dhcpcd.service) == active && $(state is-enabled dhcpcd.service) == enabled &&
+     $(state is-active iwd.service) == active && $(state is-enabled iwd.service) == enabled ]] || {
+    printf 'Service state differs from the expected headless configuration; refusing.\n' >&2; return 1;
+  }
+  [[ ! -e "$NM_CONF" && ! -L "$NM_CONF" && ! -e "$MIGRATION_MARKER" && ! -L "$MIGRATION_MARKER" &&
+     ! -e "$MIGRATION_DONE" && ! -L "$MIGRATION_DONE" && ! -L "${NM_CONF%/*}" &&
+     ! -L "${MIGRATION_DONE%/*}" ]] || {
+    printf 'KMOS migration config or marker already exists; inspect before retrying.\n' >&2; return 1;
+  }
+  if [[ -r "$IWD_CONF" ]] && grep -Eq '^[[:space:]]*EnableNetworkConfiguration[[:space:]]*=[[:space:]]*true' "$IWD_CONF"; then
+    printf 'iwd built-in IP configuration is enabled; review it before migrating.\n' >&2; return 1
+  fi
+  local config
+  for config in /etc/NetworkManager/NetworkManager.conf /etc/NetworkManager/conf.d/*.conf; do
+    [[ -r "$config" ]] || continue
+    if grep -Eq '^[[:space:]]*wifi\.backend[[:space:]]*=' "$config"; then
+      printf 'An existing NetworkManager Wi-Fi backend is configured in %s; review before migrating.\n' "$config" >&2
+      return 1
+    fi
+  done
+  select_interfaces || return 1
+  local unit
+  for unit in "dhcpcd@$WIFI_IFACE.service" "dhcpcd@$WIRED_IFACE.service" \
+    "wpa_supplicant@$WIFI_IFACE.service"; do
+    if [[ $(state is-active "$unit") == active ]]; then
+      printf 'Additional network manager %s is active; review before migrating.\n' "$unit" >&2
+      return 1
+    fi
+  done
+}
+
+check_internet_on() {
+  curl -4 -fsS --interface "$1" --connect-timeout 5 --max-time 12 -o /dev/null https://archlinux.org/
+}
+
+nm_connected() {
+  local connection
+  connection=$(nmcli -g GENERAL.STATE device show "$1" 2>/dev/null) || return 1
+  [[ "$connection" == 100* ]] && ipv4_present "$1" && check_internet_on "$1"
+}
+
+wait_for_wired() {
+  local attempt
+  for attempt in {1..12}; do
+    if nm_connected "$WIRED_IFACE"; then return 0; fi
+    sleep 2
+  done
+  printf 'NetworkManager did not bring up wired internet.\n' >&2
+  return 1
+}
+
+write_backend_config() {
+  install -Dm0644 /dev/stdin "$NM_CONF" <<'EOF'
+[device]
+wifi.backend=iwd
+wifi.iwd.autoconnect=false
+EOF
+}
+
+config_is_ours() {
+  [[ -f "$NM_CONF" && ! -L "$NM_CONF" ]] && cmp -s "$NM_CONF" <(printf '[device]\nwifi.backend=iwd\nwifi.iwd.autoconnect=false\n')
+}
+
+rollback() {
+  [[ "$ROLLBACK_ARMED" == yes || -f "$MIGRATION_MARKER" || -f "$MIGRATION_DONE" ]] || return 0
+  printf 'Restoring the prior network services. Keep the cable attached.\n' >&2
+  local failed=0
+  systemctl stop NetworkManager.service || failed=1
+  systemctl disable NetworkManager.service || failed=1
+  systemctl enable iwd.service dhcpcd.service || failed=1
+  systemctl start iwd.service dhcpcd.service || failed=1
+  if config_is_ours; then rm -f -- "$NM_CONF"; fi
+  if [[ $(state is-active iwd.service) != active || $(state is-active dhcpcd.service) != active ]]; then failed=1; fi
+  if ((failed == 0)); then rm -f -- "$MIGRATION_MARKER" "$MIGRATION_DONE"; fi
+  ROLLBACK_ARMED=no
+  if ((failed != 0)); then
+    printf 'Rollback incomplete; marker retained. Check services from the local console.\n' >&2
+    return 1
+  fi
+  printf 'Rollback attempted. Check wired and Wi-Fi status locally before relying on SSH.\n' >&2
+}
+
+confirm_handoff() {
+  local response
+  printf 'Ethernet: %s; Wi-Fi: %s. DHCP and SSH may disconnect temporarily.\n' "$WIRED_IFACE" "$WIFI_IFACE" >&2
+  printf 'Use the local keyboard/screen. Type MIGRATE NETWORK to continue: ' >&2
+  read -r response </dev/tty || return 1
+  [[ "$response" == 'MIGRATE NETWORK' ]]
+}
+
+confirm_wifi() {
+  local response
+  printf '\nEthernet now works through NetworkManager. Keep the cable attached.\n' >&2
+  printf 'Use KDE’s network menu to connect a Wi-Fi network under NetworkManager.\n' >&2
+  printf 'Enter its password in KDE, NOT in this script. Type VERIFY WIFI when connected: ' >&2
+  read -r response </dev/tty || return 1
+  [[ "$response" == 'VERIFY WIFI' ]] || return 1
+  nm_connected "$WIFI_IFACE" || { printf 'NetworkManager Wi-Fi internet not verified.\n' >&2; return 1; }
+}
+
+apply_handoff() {
+  local_console || return 1
+  ready_for_handoff || return 1
+  printf 'Testing wired internet through %s before changing any service...\n' "$WIRED_IFACE"
+  check_internet_on "$WIRED_IFACE" || {
+    printf 'Wired internet test failed; no services changed.\n' >&2; return 1;
+  }
+  confirm_handoff || { printf 'Cancelled without changes.\n' >&2; return 1; }
+  require_root --apply || return 1
+  # Recheck after sudo: the wired fallback and service states must still match.
+  ready_for_handoff || return 1
+  check_internet_on "$WIRED_IFACE" || return 1
+  printf 'In progress: do not reboot until Ethernet and Wi-Fi have both been verified.\n' > "$MIGRATION_MARKER" || return 1
+  ROLLBACK_ARMED=yes
+  trap 'rollback' EXIT
+  trap 'exit 130' INT TERM
+  write_backend_config || return 1
+  systemctl stop dhcpcd.service || return 1
+  iwctl station "$WIFI_IFACE" disconnect || return 1
+  systemctl start NetworkManager.service || return 1
+  wait_for_wired || return 1
+  confirm_wifi || return 1
+  systemctl enable NetworkManager.service || return 1
+  systemctl disable dhcpcd.service || return 1
+  # iwd remains running as NM's radio backend, but NM starts it on future boots.
+  systemctl disable iwd.service || return 1
+  install -Dm0600 /dev/stdin "$MIGRATION_DONE" <<'EOF' || return 1
+KMOS NetworkManager handoff; no credentials stored. --rollback is available locally.
+EOF
+  rm -f -- "$MIGRATION_MARKER" || return 1
+  ROLLBACK_ARMED=no
+  trap - EXIT INT TERM
+  printf 'NetworkManager now controls Ethernet and Wi-Fi. Do not use iwctl to manage connections.\n'
+  printf 'Unplug Ethernet only after confirming KDE Wi-Fi remains online at the local console.\n'
+}
+
+manual_rollback() {
+  local response
+  local_console || return 1
+  [[ ( -f "$MIGRATION_MARKER" && ! -L "$MIGRATION_MARKER" ) ||
+     ( -f "$MIGRATION_DONE" && ! -L "$MIGRATION_DONE" ) ]] || {
+    printf 'No KMOS network handoff to roll back.\n' >&2; return 1;
+  }
+  printf 'Type ROLLBACK NETWORK to restore the previous services: ' >&2
+  read -r response </dev/tty || return 1
+  [[ "$response" == 'ROLLBACK NETWORK' ]] || return 1
+  require_root --rollback || return 1
+  rollback
 }
 
 main() {
   case "${1:-}" in
     --help|-h) (($# == 1)) || { usage >&2; return 2; }; usage ;;
     --plan) (($# == 1)) || { usage >&2; return 2; }; plan ;;
+    --apply) (($# == 1)) || { usage >&2; return 2; }; apply_handoff ;;
+    --rollback) (($# == 1)) || { usage >&2; return 2; }; manual_rollback ;;
     *) usage >&2; return 2 ;;
   esac
 }
