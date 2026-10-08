@@ -1,61 +1,51 @@
 # kmos
 
-kmos is a practical operating-system provisioning toolkit.
+KMOS is a shell-based operating-system provisioning toolkit. Its x86_64 Arch
+Linux ISO installer offers **headless** or **KDE** installation. The current x86
+milestone is documented in [release notes](./docs/releases/x86-2026-10-08.md);
+new installation experiments will live on `x86/next` rather than changing this
+baseline. Arch Linux ARM (Quartz64 Model B) and Rocky Linux have separate,
+less mature workflows; this x86 milestone does not release those platforms.
 
-The primary implemented platform is Arch Linux x86_64. Rocky Linux has a
-post-install workflow; Arch Linux ARM has a Quartz64 Model B workflow. Other
-ARM boards remain future work. Windows has a manual guide under
-`platforms/windows/`. The main focus of this repository is the Linux path.
+## Start here: Arch Linux x86_64
 
-## How To Use It
+**Warning:** this is an ISO installer, not a converter for an existing Arch
+system. It formats the chosen root partition and the verified Arch EFI
+partition. Back up your data. It refuses an unverified or shared Windows EFI
+partition, but you must still check the displayed disk and partition plan
+before typing `FORMAT`. If you use cfdisk, its edits can be saved *before*
+the final `FORMAT` confirmation. Do not run this installer on a VPS or an
+already installed system.
 
-### Main Entry Point
+1. Boot an Arch Linux x86_64 ISO. For an offline USB setup, use
+   `./platforms/archlinux/tools/kmos-usb-flasher.sh` on a working machine.
+2. Connect Ethernet, or use `./platforms/archlinux/tools/kmos-wifi-connect.sh`
+   from a local copy of this repository on the ISO. The Wi-Fi helper saves a
+   handoff for the installed system.
+3. Clone the repository on the ISO and run:
 
-Use the root dispatcher:
+   ```bash
+   git clone https://github.com/kamilomelo/kmos.git
+   cd kmos
+   ./kmos-install.sh
+   ```
 
-```bash
-./kmos-install.sh
-```
+4. Explicitly select **headless (1)** or **KDE (2)**. AUR is a separate,
+   optional prompt. Review the disk, boot, and network plan before proceeding.
 
-For the current implementation, that dispatcher detects Arch Linux and runs:
+For KDE without the extra application groups, start with
+`./kmos-install.sh --profile noapps` and then select KDE. For the full flow and
+limitations, read [Arch Linux flow](#arch-linux-flow),
+[Wi-Fi notes](#if-ethernet-is-not-available), and the
+[x86 milestone notes](./docs/releases/x86-2026-10-08.md).
 
-```bash
-./platforms/archlinux/kmos-archlinux-install.sh
-```
+## Other platforms
 
-The Arch installer also supports:
+- [Quartz64 Model B (Arch Linux ARM)](./platforms/archlinuxarm/boards/quartz64b/README.md): board-specific SD and provisioning workflow; **not** the x86 installer.
+- [Rocky Linux](#rocky-linux): post-install configuration from Rocky minimal.
+- [Windows](./platforms/windows/WINDOWS_SETUP.md): manual guide only.
 
-```bash
-./kmos-install.sh --profile noapps
-```
-
-### Arch Linux Flow
-
-#### 1) Prepare Installation USB
-
-Use:
-
-```bash
-./platforms/archlinux/tools/kmos-usb-flasher.sh
-```
-
-on a working machine to write the Arch ISO to USB.
-
-#### 2) Boot Target Machine With Arch ISO
-
-Boot from the flashed USB and open a shell.
-
-#### 3) If Ethernet Is Available
-
-Clone the repo and run:
-
-```bash
-git clone https://github.com/kamilomelo/kmos.git
-cd kmos
-./kmos-install.sh
-```
-
-The dispatcher will route to the Arch installer.
+## Arch Linux flow
 
 The Arch installer requires a GPT EFI System Partition and a root partition on
 the selected disk. The **selected Arch EFI partition is formatted** to remove
@@ -174,7 +164,7 @@ The `kmos-fonts` package list includes `wqy-microhei` for CJK coverage. Arch's
 as a KDE dependency, but KMOS does not select it as a terminal font. The
 installer downloads only the Kappa families into its managed font directory.
 
-#### 4) If Ethernet Is NOT Available
+### If Ethernet Is Not Available
 
 Use the repository from external media, then run Wi-Fi setup first:
 
