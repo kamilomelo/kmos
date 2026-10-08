@@ -128,7 +128,13 @@ plan() {
   else
     printf 'Check wired connectivity separately before any handoff; carrier/IP alone do not prove internet access.\n'
   fi
-  printf 'Plan complete: nothing changed. Use --apply only at the local console.\n'
+  if [[ -f "$MIGRATION_DONE" && ! -L "$MIGRATION_DONE" ]]; then
+    printf 'Plan complete: nothing changed. Verify NetworkManager Wi-Fi before unplugging Ethernet.\n'
+  elif [[ -f "$STAGED_MARKER" && ! -L "$STAGED_MARKER" ]]; then
+    printf 'Plan complete: nothing changed. Reboot when ready; do not run --apply.\n'
+  else
+    printf 'Plan complete: nothing changed. Use --stage-reboot over SSH or --apply at the local console.\n'
+  fi
 }
 
 local_console() {

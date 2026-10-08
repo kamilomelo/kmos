@@ -3,7 +3,9 @@
 Use only on an **installed KMOS headless Arch x86_64** system, not an Arch ISO
 and not an arbitrary existing Arch/VPS installation. This path is not part of
 `main` or `v0.9.0`. A real headless → KDE upgrade and the KDE finishing pass
-were reported working; NetworkManager migration remains untested.
+were reported working. The staged SSH-to-NetworkManager reboot handoff has
+also been verified **over Ethernet**; KDE-managed Wi-Fi without Ethernet still
+needs its field test.
 
 From a checkout of `x86/next`, run the read-only check first:
 
@@ -109,4 +111,5 @@ is killed unexpectedly, or if the result later needs to be reverted, use
 local console**. It retains NetworkManager-created profiles but restores the
 previous services and removes only KMOS's unchanged backend configuration.
 Test unplugging Ethernet *after* Wi-Fi is verified, at the local console.
-This switch is not field-verified yet; keep a way back to the local console.
+The live `--apply` switch has not been field-verified; keep a way back to the
+local console for Wi-Fi testing after either type of handoff.
