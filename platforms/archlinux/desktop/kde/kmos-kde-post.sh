@@ -223,70 +223,112 @@ EOF
 }
 
 install_fresh_kmos_panel() {
-  local stock="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js"
-  local template="$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.kmos.defaultPanel"
-  local layout="$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.kmos.desktop/contents/layouts/org.kde.plasma.desktop-layout.js"
-  local setup="$REPO_ROOT/assets/plasma/kmos-panel-setup.js"
-  local plugin=""
+  local template="$MOUNT_POINT/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc"
+  local home_dir="" username="" target="" plugin=""
 
-  [[ -f "$stock" && ! -L "$stock" && -r "$setup" ]] || die 'Missing stock panel or KMOS setup; no panel defaults staged.'
-  [[ $(grep -Fxc 'panel.addWidget("org.kde.plasma.kickoff")' "$stock") == 1 \
-    && $(grep -Fxc 'panel.addWidget("org.kde.plasma.systemtray")' "$stock") == 1 \
-    && $(grep -Fxc 'panel.addWidget("org.kde.plasma.digitalclock")' "$stock") == 1 \
-    && $(grep -Fxc 'panel.addWidget("org.kde.plasma.showdesktop")' "$stock") == 1 ]] \
-    || die 'Stock panel changed; refusing to guess at widget placement.'
   for plugin in org.kde.plasma.kickerdash org.kde.plasma.systemmonitor.kmos-cpu-gpu \
     org.kde.plasma.systemmonitor.kmos-mem org.kde.plasma.systemmonitor.kmos-disk \
     org.kde.plasma.systemmonitor.net; do
     [[ -r "$MOUNT_POINT/usr/share/plasma/plasmoids/$plugin/metadata.json" ]] \
       || die "Required KMOS panel widget is missing: $plugin"
   done
-  [[ ! -e "$template" && ! -L "$template" && ! -e "$layout" && ! -L "$layout" ]] \
-    || die 'KMOS panel defaults already exist; refusing to overwrite them.'
+  [[ ! -e "$template" && ! -L "$template" ]] \
+    || die 'Fresh-user Plasma layout already exists; refusing to replace it.'
 
-  install -Dm0644 /dev/stdin "$template/metadata.json" <<'EOF'
-{
-    "KPackageStructure": "Plasma/LayoutTemplate",
-    "KPlugin": {
-        "Id": "org.kde.kmos.defaultPanel",
-        "Name": "KMOS default panel",
-        "Description": "Fresh KMOS panel based on the KDE default panel",
-        "License": "MIT",
-        "Version": "1.0"
-    },
-    "X-Plasma-ContainmentCategories": ["panel"]
-}
-EOF
-  # Preserve KDE's panel geometry, task manager, tray and conditional input
-  # method. Substitute only the May 2026 KMOS launcher and widget sequence.
-  awk '
-    $0 == "panel.addWidget(\"org.kde.plasma.kickoff\")" {
-      print "panel.addWidget(\"org.kde.plasma.kickerdash\")"; next
-    }
-    $0 == "panel.addWidget(\"org.kde.plasma.digitalclock\")" {
-      print "panel.addWidget(\"org.kde.plasma.systemmonitor.kmos-cpu-gpu\")"
-      print "panel.addWidget(\"org.kde.plasma.systemmonitor.kmos-mem\")"
-      print "panel.addWidget(\"org.kde.plasma.systemmonitor.kmos-disk\")"
-      print "panel.addWidget(\"org.kde.plasma.systemmonitor.net\")"
-      print "panel.addWidget(\"org.kde.plasma.digitalclock\")"
-      print "panel.addWidget(\"org.kde.plasma.digitalclock\")"
-      print "panel.addWidget(\"org.kde.plasma.digitalclock\")"; next
-    }
-    {print}
-  ' "$stock" | install -Dm0644 /dev/stdin "$template/contents/layout.js"
-  cat "$setup" >> "$template/contents/layout.js"
+  # Seed KConfig for accounts that have never started Plasma. Plasma loads
+  # existing containments instead of executing its default panel layout script.
+  # It creates desktops for available screens without hard-coding screen IDs.
+  install -Dm0644 /dev/stdin "$template" <<'PANEL_CONFIG'
+[Containments][3]
+formfactor=2
+lastScreen=0
+location=4
+plugin=org.kde.panel
 
-  # Plasma reads the active global theme from [KDE] LookAndFeelPackage and
-  # executes this layout only if the account has no existing Plasma layout.
-  install -Dm0644 /dev/stdin "$layout" <<'EOF'
-loadTemplate("org.kde.kmos.defaultPanel")
+[Containments][3][General]
+AppletOrder=4;5;6;7;8;21;22;23;24;25;26;27;28
 
-var desktopsArray = desktopsForActivity(currentActivity());
-for (var j = 0; j < desktopsArray.length; j++) {
-    desktopsArray[j].wallpaperPlugin = "org.kde.image";
-}
-EOF
-  success 'KMOS panel staged for new Plasma layouts only; existing panels were not changed.'
+[Containments][3][Applets][4]
+plugin=org.kde.plasma.kickerdash
+
+[Containments][3][Applets][4][Configuration][General]
+Icon=start-here-kde
+icon=start-here-kde
+
+[Containments][3][Applets][5]
+plugin=org.kde.plasma.pager
+
+[Containments][3][Applets][6]
+plugin=org.kde.plasma.icontasks
+
+[Containments][3][Applets][6][Configuration][General]
+launchers=
+
+[Containments][3][Applets][7]
+plugin=org.kde.plasma.marginsseparator
+
+[Containments][3][Applets][8]
+plugin=org.kde.plasma.systemtray
+
+[Containments][3][Applets][21]
+plugin=org.kde.plasma.systemmonitor.kmos-cpu-gpu
+
+[Containments][3][Applets][22]
+plugin=org.kde.plasma.systemmonitor.kmos-mem
+
+[Containments][3][Applets][23]
+plugin=org.kde.plasma.systemmonitor.kmos-disk
+
+[Containments][3][Applets][24]
+plugin=org.kde.plasma.systemmonitor.net
+
+[Containments][3][Applets][25]
+plugin=org.kde.plasma.digitalclock
+
+[Containments][3][Applets][25][Configuration][Appearance]
+dateFormat=isoDate
+displayTimezoneFormat=FullText
+lastSelectedTimezone=America/Bogota
+selectedTimeZones=America/Bogota
+showDate=false
+showLocalTimezone=true
+
+[Containments][3][Applets][26]
+plugin=org.kde.plasma.digitalclock
+
+[Containments][3][Applets][26][Configuration][Appearance]
+dateFormat=isoDate
+displayTimezoneFormat=FullText
+lastSelectedTimezone=Local
+selectedTimeZones=Local
+showDate=true
+showLocalTimezone=true
+
+[Containments][3][Applets][27]
+plugin=org.kde.plasma.digitalclock
+
+[Containments][3][Applets][27][Configuration][Appearance]
+dateFormat=isoDate
+displayTimezoneFormat=FullText
+lastSelectedTimezone=Asia/Shanghai
+selectedTimeZones=Asia/Shanghai
+showDate=false
+showLocalTimezone=true
+
+[Containments][3][Applets][28]
+plugin=org.kde.plasma.showdesktop
+PANEL_CONFIG
+
+  if [[ -d "$MOUNT_POINT/home" ]]; then
+    while IFS= read -r -d '' home_dir; do
+      target="$home_dir/.config/plasma-org.kde.plasma.desktop-appletsrc"
+      [[ ! -e "$target" && ! -L "$target" ]] || continue
+      username="$(basename "$home_dir")"
+      install -Dm0644 "$template" "$target"
+      arch-chroot "$MOUNT_POINT" chown "$username:$username" "/home/$username/.config" "/home/$username/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
+  fi
+  success 'KMOS panel preset staged for new Plasma users only; existing panels were preserved.'
 }
 
 write_konsole_profile() {
@@ -486,21 +528,47 @@ apply_lockscreen_defaults() {
 }
 
 apply_desktop_wallpaper_defaults() {
-  install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/zz-kmos-wallpaper.js" <<EOF
-var allDesktops = desktops();
-for (var i = 0; i < allDesktops.length; ++i) {
-    var desktop = allDesktops[i];
-    desktop.wallpaperPlugin = "org.kde.image";
-    desktop.currentConfigGroup = ["Wallpaper", "org.kde.image", "General"];
-    desktop.writeConfig("Image", "file://$TARGET_WALLPAPER");
-    desktop.writeConfig("FillMode", "1");
-    desktop.writeConfig("Color", "#000000");
-    desktop.writeConfig("Blur", "false");
-    desktop.reloadConfig();
-}
-EOF
+  local script="$MOUNT_POINT/usr/share/kmos/bin/kmos-first-login-wallpaper.sh"
+  local desktop="$MOUNT_POINT/etc/skel/.config/autostart/kmos-first-login-wallpaper.desktop"
+  local template="$MOUNT_POINT/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc"
+  local home_dir="" username="" target=""
 
-  success "Desktop wallpaper defaults staged for first Plasma start."
+  install -Dm0755 /dev/stdin "$script" <<'WALLPAPER_SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+marker="${XDG_CONFIG_HOME:-$HOME/.config}/.kmos-wallpaper-applied"
+[[ ! -e "$marker" ]] || exit 0
+wallpaper="${KMOS_WALLPAPER_IMAGE:-/opt/kmos/assets/wallpapers/kmos-wallpaper.png}"
+[[ -r "$wallpaper" ]] || exit 1
+for attempt in 1 2 3 4 5; do
+  if plasma-apply-wallpaperimage --fill-mode preserveAspectCrop "$wallpaper"; then
+    touch "$marker"
+    exit 0
+  fi
+  sleep 2
+done
+exit 1
+WALLPAPER_SCRIPT
+  install -Dm0644 /dev/stdin "$desktop" <<'WALLPAPER_DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=KMOS first-login wallpaper
+Exec=/usr/share/kmos/bin/kmos-first-login-wallpaper.sh
+OnlyShowIn=KDE;
+WALLPAPER_DESKTOP
+
+  if [[ -d "$MOUNT_POINT/home" ]]; then
+    while IFS= read -r -d '' home_dir; do
+      # The KDE panel preset marks an account that has not used Plasma yet.
+      cmp -s "$template" "$home_dir/.config/plasma-org.kde.plasma.desktop-appletsrc" || continue
+      target="$home_dir/.config/autostart/kmos-first-login-wallpaper.desktop"
+      [[ ! -e "$target" && ! -L "$target" ]] || continue
+      username="$(basename "$home_dir")"
+      install -Dm0644 "$desktop" "$target"
+      arch-chroot "$MOUNT_POINT" chown "$username:$username" "/home/$username/.config/autostart" "/home/$username/.config/autostart/kmos-first-login-wallpaper.desktop"
+    done < <(find "$MOUNT_POINT/home" -mindepth 1 -maxdepth 1 -type d -print0)
+  fi
+  success 'Desktop wallpaper staged for fresh KDE users via a shell first-login action.'
 }
 
 apply_color_scheme_defaults() {

@@ -7,6 +7,12 @@ new installation experiments will live on `x86/next` rather than changing this
 baseline. Arch Linux ARM (Quartz64 Model B) and Rocky Linux have separate,
 less mature workflows; this x86 milestone does not release those platforms.
 
+**On `x86/next` only:** KMOS's fresh KDE panel and wallpaper are being moved to
+shell-generated KConfig and a shell first-login action. This removes KMOS-authored
+Plasma JavaScript from the proposed installer, but **the replacement has not
+passed a fresh graphical KDE login yet**. Use the milestone tag for the last
+field-tested panel behavior; that older snapshot does contain JavaScript.
+
 ## Start here: Arch Linux x86_64
 
 **Warning:** this is an ISO installer, not a converter for an existing Arch
