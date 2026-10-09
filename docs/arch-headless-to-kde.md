@@ -20,6 +20,16 @@ upgrade requires local metapackage manifests instead of fetching `main` ones.
 This package-list refactor has only been checked with offline fixtures, not
 with a new ISO installation.
 
+On the **experimental x86/next Arch ISO installer**, `./kmos-install.sh` now
+asks for optional KDE metapackages and extra repository packages when KDE is
+chosen. The selection and local manifest resolution run **before** the final
+disk approval/format. `fzf` is optional; a numbered prompt works without it.
+Custom selection skips the legacy KDE package-pruning step so packages you
+choose are not removed after installation. AUR remains off for custom KDE
+selection. Explicit `--profile full|noapps` preserves the older ISO package
+sets and behavior. **This ISO change is fixture-tested only; do not treat it
+as a field-tested replacement for `main`/`v0.9.0`.**
+
 On a **new headless → KDE upgrade**, run the script without arguments to
 choose optional package groups and extra official-repository packages:
 

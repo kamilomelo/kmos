@@ -23,6 +23,7 @@ scripts+=(
   platforms/archlinux/desktop/kde/kmos-kde-finish.sh
   platforms/archlinux/tools/kmos-network-migration.sh
   platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
+  platforms/archlinux/desktop/kde/kmos-kde-package-select.sh
   platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh
   platforms/archlinuxarm/boards/quartz64b/provision-kmos-headless.sh
   platforms/archlinuxarm/boards/quartz64b/connect-quartz64b-wifi.sh
@@ -34,6 +35,7 @@ scripts+=(
   tests/arch-headless-kde-boundary.sh
   tests/arch-kde-package-parity.sh
   tests/arch-kde-package-selector.sh
+  tests/arch-iso-kde-selection.sh
   tests/arch-headless-kde-preflight.sh
   tests/arch-headless-wifi-helper.sh
   tests/arch-mirror-ranking.sh
@@ -91,6 +93,7 @@ bash tests/arch-headless-aur.sh
 bash tests/arch-headless-kde-boundary.sh
 bash tests/arch-kde-package-parity.sh
 bash tests/arch-kde-package-selector.sh
+bash tests/arch-iso-kde-selection.sh
 bash tests/arch-headless-kde-preflight.sh
 bash tests/arch-headless-wifi-helper.sh
 bash tests/arch-mirror-ranking.sh

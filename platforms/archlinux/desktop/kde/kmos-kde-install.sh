@@ -177,9 +177,9 @@ parse_args() {
   done
 
   case "$KDE_PROFILE" in
-    full|noapps) ;;
+    full|noapps|custom) ;;
     *)
-      die "Unknown KDE profile: $KDE_PROFILE (allowed: full, noapps)"
+      die "Unknown KDE profile: $KDE_PROFILE (allowed: full, noapps, custom)"
       ;;
   esac
 }
@@ -191,6 +191,18 @@ verify_target() {
 
 select_kde_metapackages() {
   case "$KDE_PROFILE" in
+    custom)
+      INSTALL_AUR=no
+      KDE_LOCAL_MANIFESTS_ONLY=yes
+      local selector="$SCRIPT_DIR/kmos-kde-package-select.sh"
+      [[ -r "$selector" ]] || die 'Local KDE selector missing.'
+      # shellcheck disable=SC1090
+      source "$selector"
+      read -r -a SELECTED_KDE_METAPACKAGES <<< "${kmos_KDE_METAPACKAGES:-}"
+      read -r -a EXTRA_KDE_PACKAGES <<< "${kmos_KDE_EXTRA_PACKAGES:-}"
+      validate_kde_selection || die 'Invalid custom KDE selection.'
+      SELECTED_METAPACKAGES=(kmos-kde-noapps "${SELECTED_KDE_METAPACKAGES[@]}")
+      ;;
     noapps)
       INSTALL_AUR="no"
       SELECTED_METAPACKAGES=(
@@ -231,6 +243,10 @@ load_kde_metapackages() {
     resolve_metapackage_depends "$pkgbuild"
   done
   mapfile -t KDE_PACKAGES < <(printf '%s\n' "${KDE_PACKAGES[@]}" | sort -u)
+  if [[ "$KDE_PROFILE" == custom ]]; then
+    KDE_PACKAGES+=("${EXTRA_KDE_PACKAGES[@]}")
+    mapfile -t KDE_PACKAGES < <(printf '%s\n' "${KDE_PACKAGES[@]}" | sort -u)
+  fi
   [[ ${#KDE_PACKAGES[@]} -gt 0 ]] || die "KDE metapackage has no dependencies."
 
   detail "Profile" "$KDE_PROFILE"
@@ -381,6 +397,10 @@ remove_optional_kwallet_helpers() {
 }
 
 remove_unwanted_packages() {
+  if [[ "$KDE_PROFILE" == custom ]]; then
+    info 'Custom KDE selection: skipping legacy package pruning.'
+    return 0
+  fi
   local package=""
   local line=""
   local installed=()
@@ -411,6 +431,10 @@ remove_unwanted_packages() {
 }
 
 preserve_kwallet_backend() {
+  if [[ "$KDE_PROFILE" == custom ]]; then
+    info 'Custom KDE selection: preserving user-selected KWallet helpers.'
+    return 0
+  fi
   remove_optional_kwallet_helpers
   success "KWallet backend preserved for Secret Service clients."
 }

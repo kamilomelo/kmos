@@ -56,7 +56,7 @@ INSTALL_KDE="no"
 INSTALL_HEADLESS_AUR="no"
 DESKTOP_CHOICE_MADE=0
 AUR_HELPER="${kmos_AUR_HELPER:-paru}"
-KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
+KDE_PROFILE="${kmos_KDE_PROFILE:-custom}"
 ENABLE_WIFI_AFTER_BOOT="no"
 WIFI_BACKEND="unconfigured"
 WIFI_ADAPTER=""
@@ -287,9 +287,9 @@ parse_args() {
   done
 
   case "$KDE_PROFILE" in
-    full|noapps) ;;
+    full|noapps|custom) ;;
     *)
-      die "Unknown KDE profile: $KDE_PROFILE (allowed: full, noapps)"
+      die "Unknown KDE profile: $KDE_PROFILE (allowed: full, noapps, custom)"
       ;;
   esac
 }
@@ -952,11 +952,22 @@ collect_system_config() {
   done
 }
 
+choose_kde_packages() {
+  local kde_dir="$SCRIPT_DIR/desktop/kde"
+  # shellcheck disable=SC1090 # Require the local checked-out selector.
+  source "$kde_dir/kmos-kde-package-select.sh"
+  select_live_packages
+}
+
 collect_desktop_config() {
   local choice
   info 'Select desktop and AUR options now; installation will not ask again later.'
   DESKTOP_CHOICE_MADE=0
-  printf '  1) Headless (no KDE)\n  2) KDE desktop (%s)\n' "$KDE_PROFILE" >&2
+  if [[ "$KDE_PROFILE" == custom ]]; then
+    printf '  1) Headless (no KDE)\n  2) KDE desktop (choose packages)\n' >&2
+  else
+    printf '  1) Headless (no KDE)\n  2) KDE desktop (%s)\n' "$KDE_PROFILE" >&2
+  fi
   while true; do
     printf 'Choose system type [1/2] (required, no default): ' >&2
     read -r choice || die 'No desktop/headless choice received; installation cancelled before FORMAT.'
@@ -968,6 +979,27 @@ collect_desktop_config() {
   done
   DESKTOP_CHOICE_MADE=1
   if [[ "$INSTALL_KDE" == yes ]]; then
+    if [[ "$KDE_PROFILE" == custom ]]; then
+      local kde_dir="$SCRIPT_DIR/desktop/kde" pkg
+      [[ -r "$kde_dir/kmos-kde-package-select.sh" && -r "$kde_dir/kmos-kde-install.sh" &&
+         -r "$kde_dir/kmos-kde-post.sh" &&
+         -r "$SCRIPT_DIR/packages/metapackages/kde/noapps/PKGBUILD" ]] ||
+        die 'Complete local KDE sources are required for selection before formatting.'
+      choose_kde_packages || die 'KDE package selection cancelled before formatting.'
+      for pkg in "${EXTRA_KDE_PACKAGES[@]}"; do
+        pacman -Si -- "$pkg" >/dev/null 2>&1 || die "Repository package unavailable before formatting: $pkg"
+      done
+      kmos_KDE_METAPACKAGES="${SELECTED_KDE_METAPACKAGES[*]}"
+      kmos_KDE_EXTRA_PACKAGES="${EXTRA_KDE_PACKAGES[*]}"
+      # Check every local metapackage dependency before disk approval.
+      ( source "$kde_dir/kmos-kde-install.sh"
+        KDE_PROFILE=custom KDE_LOCAL_MANIFESTS_ONLY=yes
+        select_kde_metapackages
+        load_kde_metapackages
+      ) || die 'Cannot resolve selected KDE packages before formatting.'
+      detail 'KDE groups' "kmos-kde-noapps ${SELECTED_KDE_METAPACKAGES[*]}"
+      detail 'Extra packages' "${EXTRA_KDE_PACKAGES[*]:-none}"
+    fi
     # KDE migrates the live Wi-Fi handoff to NetworkManager from its WPA file.
     add_package wpa_supplicant
     WIFI_BACKEND=networkmanager
@@ -2224,10 +2256,13 @@ run_kde_installer() {
   local fetched_installer="/tmp/kmos-kde-install.sh"
 
   if [[ -f "$local_installer" ]]; then
-    kmos_KDE_PROFILE="$KDE_PROFILE" kmos_INSTALL_AUR="$INSTALL_KDE_AUR" kmos_AUR_HELPER="$AUR_HELPER" bash "$local_installer" --target "$MOUNT_POINT"
+    kmos_KDE_PROFILE="$KDE_PROFILE" kmos_INSTALL_AUR="$INSTALL_KDE_AUR" kmos_AUR_HELPER="$AUR_HELPER" \
+      kmos_KDE_METAPACKAGES="${kmos_KDE_METAPACKAGES:-}" kmos_KDE_EXTRA_PACKAGES="${kmos_KDE_EXTRA_PACKAGES:-}" \
+      bash "$local_installer" --target "$MOUNT_POINT"
     return 0
   fi
 
+  [[ "$KDE_PROFILE" != custom ]] || die 'Custom KDE selection requires the local installer; refusing a remote fallback.'
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL "$KDE_INSTALLER_URL" -o "$fetched_installer" || die "Could not fetch KDE installer."
   elif command -v wget >/dev/null 2>&1; then

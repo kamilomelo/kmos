@@ -5,6 +5,8 @@
 # shellcheck disable=SC2034,SC2154
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/kmos-kde-package-select.sh"
 
 usage() {
   cat <<'EOF'
@@ -142,56 +144,6 @@ resolve_kde_packages() (
   load_kde_metapackages
   printf '%s\n' "${KDE_PACKAGES[@]}"
 )
-
-# Only these locally shipped, optional metapackages can be selected. The
-# noapps foundation is always resolved first and cannot be deselected.
-OPTIONAL_KDE_METAPACKAGES=(
-  kmos-browsers kmos-docs kmos-fonts kmos-graphics kmos-kde-multimedia
-  kmos-maintenance kmos-network kmos-privacy
-)
-SELECTED_KDE_METAPACKAGES=()
-EXTRA_KDE_PACKAGES=()
-
-read_selector_line() { read -r "$1" </dev/tty; }
-
-select_live_packages() {
-  local selection= name allowed entry
-  local -a choices=()
-  SELECTED_KDE_METAPACKAGES=() EXTRA_KDE_PACKAGES=()
-  printf 'Required KDE foundation: kmos-kde-noapps (includes KDE base).\n' >&2
-  if command -v fzf >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
-    selection=$(printf '%s\n' "${OPTIONAL_KDE_METAPACKAGES[@]}" | fzf --multi --prompt='Optional KDE groups > ' --header='TAB selects, ENTER confirms; ESC cancels') || return 1
-    [[ -n "$selection" ]] && mapfile -t choices <<< "$selection"
-  else
-    printf 'Optional groups (enter numbers separated by spaces, or ENTER for none):\n' >&2
-    for entry in "${!OPTIONAL_KDE_METAPACKAGES[@]}"; do
-      printf '  %s) %s\n' "$((entry + 1))" "${OPTIONAL_KDE_METAPACKAGES[entry]}" >&2
-    done
-    read_selector_line selection || return 1
-    local -a indices=()
-    read -r -a indices <<< "$selection"
-    for entry in "${indices[@]}"; do
-      [[ "$entry" =~ ^[1-8]$ ]] || { printf 'Invalid group number: %s\n' "$entry" >&2; return 1; }
-      choices+=("${OPTIONAL_KDE_METAPACKAGES[entry - 1]}")
-    done
-  fi
-  for name in "${choices[@]}"; do
-    allowed=no
-    for entry in "${OPTIONAL_KDE_METAPACKAGES[@]}"; do
-      [[ "$name" == "$entry" ]] && allowed=yes
-    done
-    [[ "$allowed" == yes ]] || { printf 'Unknown optional group: %s\n' "$name" >&2; return 1; }
-    SELECTED_KDE_METAPACKAGES+=("$name")
-  done
-  printf 'Extra official-repository package names (space-separated; ENTER for none): ' >&2
-  read_selector_line selection || return 1
-  read -r -a EXTRA_KDE_PACKAGES <<< "$selection"
-  for name in "${EXTRA_KDE_PACKAGES[@]}"; do
-    [[ "$name" =~ ^[a-zA-Z0-9@._+-]+$ && "$name" != kmos-* ]] || {
-      printf 'Invalid repository package: %s\n' "$name" >&2; return 1;
-    }
-  done
-}
 
 stage_live_defaults() (
   local home_dir username cfg
