@@ -207,5 +207,9 @@ different Wi-Fi SSIDs in KDE remain **unverified on real hardware**.
 **Another field result (2026-10-09):** On a headless-to-KDE machine with wired
 Ethernet and disconnected Wi-Fi, NM started Ethernet DHCP but the earlier boot
 guard rolled back after about 24 seconds, before NM's 45-second DHCP timeout.
-The rollback correctly restored iwd/dhcpcd. The longer two-minute guarded wait
-is fixture-tested but still needs a successful field retest on that machine.
+The rollback correctly restored iwd/dhcpcd. After extending the guarded wait,
+the same machine successfully completed the staged reboot: NetworkManager was
+active/enabled with Ethernet IPv4 and a default route, iwd was active/disabled
+as the NM backend, and dhcpcd was inactive/disabled. Its Wi-Fi remained
+disconnected at this checkpoint; connecting it through KDE and testing without
+Ethernet are still pending on this machine.
