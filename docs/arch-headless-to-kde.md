@@ -1,10 +1,16 @@
 # Experimental headless → KDE (x86/next)
 
-Use only on an **installed KMOS headless Arch x86_64** system, not an Arch ISO
-and not an arbitrary existing Arch/VPS installation. This path is not part of
-`main` or `v0.9.0`. A real headless → KDE upgrade and the KDE finishing pass
-were reported working. The staged SSH-to-NetworkManager reboot handoff was
-verified on Ethernet and with **Wi-Fi only** after the cable was unplugged.
+Use the live upgrade only on an **installed KMOS headless Arch x86_64** system,
+not an Arch ISO or an arbitrary existing Arch/VPS installation. This work is
+on `x86/next`, not `main` or `v0.9.0`.
+
+**Verification snapshot (2026-10-09):** A headless → KDE upgrade and the
+separate visual finishing pass worked on hardware. A staged next-boot handoff
+to NetworkManager worked after extending the Ethernet DHCP wait: Ethernet,
+NetworkManager-controlled Wi-Fi, and Wi-Fi-only internet with the cable unplugged
+were verified. The **new combined one-command upgrade** has only fixture tests;
+the revised package/AUR choices have not had a fresh ISO field test. Keep
+`main` and `v0.9.0` untouched until those final tests pass.
 
 From a checkout of `x86/next`, you can inspect the system with the optional
 read-only check (the guided install also runs this check):
@@ -17,8 +23,8 @@ The legacy explicit `--install --profile full|noapps` options remain available
 without AUR; the `noapps` manifest is also still used by Quartz64. It is **not**
 part of guided x86 package selection. Guided ISO and live upgrades use the same
 mandatory desktop package sets; the live upgrade requires local manifests
-rather than fetching the published `main` manifests. This reorganized selection has only
-been checked with offline fixtures, not a new ISO installation.
+rather than fetching the published `main` manifests. This reorganized selection
+has only been checked with offline fixtures, not a new ISO installation.
 
 On the **experimental x86/next Arch ISO installer**, `./kmos-install.sh` always
 installs the shared Arch CLI tools. Choosing KDE adds mandatory KDE base,
@@ -196,23 +202,49 @@ local console**. It retains NetworkManager-created profiles but restores the
 previous services and removes only KMOS's unchanged backend configuration.
 Test unplugging Ethernet *after* Wi-Fi is verified, at the local console.
 
-**Field result (2026-10-09):** The staged reboot completed with NetworkManager
-controlling Ethernet and Wi-Fi, iwd active only as the Wi-Fi backend, dhcpcd
-inactive, and SSH routed over Ethernet. The Wi-Fi device showed connected in
-`nmcli`; a request bound to `wlan0` succeeded. After Ethernet was unplugged,
-the default route used `wlan0` alone and internet access still worked. The
-local-only `--apply` path, automatic failure fallback, and switching between
-different Wi-Fi SSIDs in KDE remain **unverified on real hardware**.
+### Field results and remaining test
 
-**Another field result (2026-10-09):** On a headless-to-KDE machine with wired
-Ethernet and disconnected Wi-Fi, NM started Ethernet DHCP but the earlier boot
-guard rolled back after about 24 seconds, before NM's 45-second DHCP timeout.
-The rollback correctly restored iwd/dhcpcd. After extending the guarded wait,
-the same machine successfully completed the staged reboot: NetworkManager was
-active/enabled with Ethernet IPv4 and a default route, iwd was active/disabled
-as the NM backend, and dhcpcd was inactive/disabled. Its Wi-Fi remained
-disconnected at the first checkpoint. After connecting through KDE, `nmcli`
-reported `wlan0` connected and an HTTPS request explicitly bound to `wlan0`
-succeeded. With Ethernet unplugged, `wlan0` was the sole default route and
-an unbound HTTPS request succeeded, confirming Wi-Fi-only internet on this
-headless-to-KDE machine.
+Two staged handoffs were verified on hardware. On one machine, NM controlled
+Ethernet and Wi-Fi after reboot, and internet continued on Wi-Fi alone. On the
+headless-to-KDE machine, the first boot check correctly rolled back to
+`iwd`/`dhcpcd`: it waited about 24 seconds, shorter than NM's 45-second
+Ethernet DHCP timeout. After extending the guarded wait to two minutes, the
+next reboot completed with NM active/enabled, iwd active/disabled as its Wi-Fi
+backend, dhcpcd inactive/disabled, and SSH routed over Ethernet. Wi-Fi
+connected in KDE; an HTTPS request bound to `wlan0` succeeded. With Ethernet
+unplugged, `wlan0` was the sole default route and unbound HTTPS also succeeded.
+The local-only `--apply` path, automatic rollback on a **genuinely failed** NM
+connection with the longer wait, and switching SSIDs in KDE remain unverified
+on hardware. The earlier short-timeout rollback did work.
+
+## Final field-test checklist (before any release merge)
+
+Use a **dedicated test machine** and a fresh Arch x86_64 ISO. Keep Ethernet
+and local-console access available; back up data. From an `x86/next` checkout
+on the live ISO, run `./kmos-install.sh` without profile flags. The ISO installer
+formats selected partitions; verify the disk/EFI target before typing `FORMAT`.
+
+1. **Fresh KDE:** inspect the concise package questions before `FORMAT`. Check
+   Kamilo productivity defaults to Yes, free-text repository extras persist,
+   and AUR consent defaults to Yes. With AUR approved, confirm `tododo-bin` and
+   any explicitly selected extras; do not assume optional drivers are selected
+   automatically. To verify the decline path, use a *separate fresh install*
+   (never rerun the ISO installer on an installed system) and check that neither
+   an AUR helper nor AUR packages are installed.
+   On first boot, check Spectacle, Kdenlive, Firefox Developer Edition, chosen
+   productivity packages, the new-panel Dashboard icon, and networking. Confirm
+   pacman does not ask for rust/rustup, JACK, Qt multimedia or tessdata providers.
+2. **Fresh headless → KDE:** on a fresh *headless* KMOS install, obtain an
+   `x86/next` checkout and run `./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh`
+   as a regular user, without `sudo` or profile flags. Confirm **the same run**
+   guides package selection, offers reviewable visual finishing with backups,
+   and—only if wired safeguards pass—asks separately to stage NM for next boot.
+   It must not stop active SSH/network services or reboot automatically. After
+   the deliberate reboot, check KDE visuals without overwriting personal panels,
+   NM Ethernet, Wi-Fi connected through KDE, and Wi-Fi-only internet at the
+   local console with Ethernet unplugged. A disconnected Wi-Fi interface before
+   staging is supported, but Wi-Fi credentials must be entered in KDE afterward.
+
+Do not rerun the ISO installer on the installed system or rerun the live KDE
+installer after KDE is marked complete. Capture results and unresolved failures
+before deciding whether to merge `x86/next` into `main`.

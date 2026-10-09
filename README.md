@@ -28,8 +28,9 @@ detected Windows EFI partition; you must still review every selected device.
 The experimental `x86/next` branch instead offers a single optional Kamilo
 productivity set, free-text repository extras and an explicit AUR choice in
 the normal no-argument KDE install flow. That reorganized ISO path is not
-field-tested yet;
-use `main` for the tested release.
+field-tested yet; use `main` for the tested release. The experimental
+[headless → KDE guide and final-test checklist](./docs/arch-headless-to-kde.md)
+record what has passed on hardware and what still needs testing before a merge.
 
 ## Helpers
 
