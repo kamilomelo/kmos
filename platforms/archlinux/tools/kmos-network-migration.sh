@@ -76,7 +76,7 @@ ssh_interface() {
 }
 
 plan() {
-  local iface kind carrier dhcp wifi=0 wired=0 ssh_dev
+  local iface kind carrier dhcp wifi=0 wired=0 wired_ready=0 wifi_ready=0 ssh_dev
   [[ -r /etc/os-release ]] || { printf 'Cannot identify this OS.\n' >&2; return 1; }
   [[ $(os_id) == arch && $(uname -m) == x86_64 ]] || {
     printf 'Only installed Arch Linux x86_64 is supported.\n' >&2; return 1;
@@ -116,9 +116,15 @@ plan() {
     printf '  %s: %s, carrier=%s, IPv4=%s' "$iface" "$kind" "$carrier" "$dhcp"
     if [[ "$kind" == Ethernet ]]; then
       ((wired+=1))
-      if ethernet_default_route "$iface"; then printf ', default route=yes'; else printf ', default route=no'; fi
+      if ethernet_default_route "$iface"; then
+        printf ', default route=yes'
+        if [[ "$carrier" == 1 && "$dhcp" == yes ]]; then ((wired_ready+=1)); fi
+      else
+        printf ', default route=no'
+      fi
     elif [[ "$kind" == Wi-Fi ]]; then
       ((wifi+=1))
+      [[ "$dhcp" != yes ]] || ((wifi_ready+=1))
     fi
     printf '\n'
   done
@@ -134,7 +140,14 @@ plan() {
   elif [[ -f "$STAGED_MARKER" && ! -L "$STAGED_MARKER" ]]; then
     printf 'Plan complete: nothing changed. Reboot when ready; do not run --apply.\n'
   else
-    printf 'Plan complete: nothing changed. Use --stage-reboot over SSH or --apply at the local console.\n'
+    printf 'Plan complete: nothing changed. This inventory does not test wired internet or service eligibility.\n'
+    if ((wired_ready != 1 || wifi != 1)); then
+      printf 'Handoff not ready: requires one wired interface with carrier, IPv4 and a default route, plus one physical Wi-Fi interface.\n'
+    elif ((wifi_ready == 0)); then
+      printf 'Wi-Fi has no IPv4: --apply requires active Wi-Fi and will refuse. --stage-reboot can use disconnected Wi-Fi, but rechecks wired internet, services and SSH route before confirmation.\n'
+    else
+      printf 'For an eligible handoff, use --stage-reboot for next boot or --apply at the local console; both recheck prerequisites.\n'
+    fi
   fi
 }
 

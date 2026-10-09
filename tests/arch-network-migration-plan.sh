@@ -52,6 +52,28 @@ grep -Fq 'Plan complete: nothing changed' "$fixture/plan"
 (
   # shellcheck disable=SC1091
   source "$script"
+  SYS_NET_ROOT="$fixture/net" IWD_CONF="$fixture/iwd.conf"
+  STAGED_MARKER="$fixture/no-stage" MIGRATION_DONE="$fixture/no-done"
+  os_id() { printf 'arch\n'; }
+  uname() { printf 'x86_64\n'; }
+  kde_ready() { :; }
+  nmcli() { :; }
+  state() { printf 'inactive\n'; }
+  ip() {
+    case "$*" in
+      '-o -4 addr show dev enp1s0 scope global') printf 'fixture-IPv4\n' ;;
+      '-4 route show default dev enp1s0') printf 'fixture-default-route\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  unset SSH_CONNECTION SSH_CLIENT SSH_TTY
+  plan
+) > "$fixture/wired-only-plan"
+grep -Fq 'Wi-Fi has no IPv4: --apply requires active Wi-Fi and will refuse' "$fixture/wired-only-plan"
+grep -Fq -- '--stage-reboot can use disconnected Wi-Fi' "$fixture/wired-only-plan"
+(
+  # shellcheck disable=SC1091
+  source "$script"
   SYS_NET_ROOT="$fixture/net"
   IWD_CONF="$fixture/iwd.conf"
   STAGED_MARKER="$fixture/no-stage" MIGRATION_DONE="$fixture/no-done"
