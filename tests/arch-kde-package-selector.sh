@@ -85,6 +85,7 @@ grep -Fq 'Invalid repository package: kmos-unknown' "$fixture/invalid-package"
   package_installed() { return 1; }
   panel_template_available() { :; }
   require_root() { [[ "$*" == '--install --select' ]]; }
+  guided_upgrade_user() { printf 'fixture-user\n'; }
   select_live_packages() {
     SELECTED_KDE_METAPACKAGES=(kmos-kamilo-productivity)
     EXTRA_KDE_PACKAGES=(firefox)
@@ -95,6 +96,8 @@ grep -Fq 'Invalid repository package: kmos-unknown' "$fixture/invalid-package"
   service_state() { printf 'active\n'; }
   service_enabled() { printf 'disabled\n'; }
   stage_live_defaults() { :; }
+  apply_visual_finish() { [[ "$1" == fixture-user ]] && printf 'visual-finish\n' >> "$fixture/custom-order"; }
+  stage_network_for_reboot() { printf 'network-stage\n' >> "$fixture/custom-order"; }
   systemctl() { [[ "$*" == 'enable sddm.service' || "$*" == 'set-default graphical.target' ]]; }
   install() { cat > "$fixture/custom-profile"; }
   pacman() {
@@ -103,6 +106,7 @@ grep -Fq 'Invalid repository package: kmos-unknown' "$fixture/invalid-package"
   }
   install_layer custom
 ) > "$fixture/custom-install-output" 2>&1
+[[ $(cat "$fixture/custom-order") == $'visual-finish\nnetwork-stage' ]]
 grep -Fxq firefox "$fixture/custom-pacman-packages"
 grep -Fxq plasma-desktop "$fixture/custom-pacman-packages"
 [[ $(cat "$fixture/custom-profile") == custom ]]

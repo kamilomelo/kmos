@@ -86,32 +86,43 @@ upgrade interrupts SSH/Wi-Fi. Run the script as `./script.sh`, **not** by
 prefixing `sudo`; it requests privileges itself and asks you to type
 `INSTALL KDE` before any writes.
 
-KMOS does **not** disable `iwd`, `dhcpcd`, or `sshd` or start/enable
-NetworkManager on this path. Plasma's NetworkManager tray may not manage Wi-Fi
-while iwd remains in charge; use the existing iwd/Impala connection. A system
-or package hook could still affect networking during a full system upgrade.
-The script stages KMOS's panel, wallpaper and color defaults only for users
-without those personal configurations, enables SDDM for the next boot, and
-does not reboot automatically. It does **not** run the ISO KDE post-install
-cleanup, optional AUR installation, font removals or existing-user KDE
-configuration rewrites. Therefore visual details not included in these safe
-defaults may differ from a fresh ISO KDE install until separately validated.
+KMOS does **not** stop `iwd`, `dhcpcd`, or `sshd` during the upgrade. Unless you
+separately approve next-boot staging, it does not change their enabled state or
+enable NetworkManager. Plasma's network tray may not manage Wi-Fi while direct
+iwd remains in charge; use the existing iwd/Impala connection until the
+handoff. A system or package hook could still affect networking during a full
+system upgrade.
+The guided script stages KMOS's panel, wallpaper and color defaults only where
+it does not overwrite personal configurations, enables SDDM for the next boot,
+and calls the reviewable visual finishing pass **during the same invocation**
+for the invoking regular user. Existing settings still need individual approval
+and are backed up before replacement. It does **not** run the ISO's destructive
+font/package cleanup or install AUR packages. After finishing, it offers the
+guarded **next-boot** NetworkManager handoff if a working wired fallback and
+service state pass the checks. The handoff asks for `STAGE NETWORK` explicitly;
+it only changes next-boot services, never interrupts the active SSH/network
+connection, and does not reboot automatically. Without eligible Ethernet, it
+skips the handoff; KDE and visuals can still be installed, but NetworkManager
+will not manage connections until you stage a separate handoff.
 For a new panel, the Application Dashboard icon uses the SVG data from
 `platforms/archlinux/assets/icons/kmos.ico`, installed as the uniquely named `kmos-dashboard` icon
 in hicolor. It does not overwrite Breeze icons or change existing personal
 panel configurations. An already-configured dashboard must be changed from
 its KDE widget settings if its owner wants the new icon.
 
-If an upgrade is interrupted, rerun with the **same profile** after checking
-connectivity and pacman state. An in-progress marker allows retry; a completed
-KMOS KDE profile makes subsequent runs a no-op. Existing non-KMOS KDE or a
+If package installation is interrupted, rerun with the **same profile** after
+checking connectivity and pacman state. An in-progress marker allows retry; a
+completed KMOS KDE profile makes subsequent runs a no-op. If finishing or
+network staging is interrupted *after* KDE is marked complete, use the
+individual `--apply` or `--stage-reboot` commands below instead. Existing non-KMOS KDE or a
 different panel template is refused rather than replaced.
 
-## Optional ISO-look finishing pass (after the upgrade)
+## Visual finishing and retries
 
-The live upgrade deliberately skips the ISO's destructive post-install stage.
-To add its KDE login/lock-screen look, Kappa/Konsole profile, Yakuake, Kate,
-Dolphin and desktop defaults for **your own account**, first preview:
+The guided upgrade offers the reviewable finishing pass automatically. For an
+older upgrade or a retry after interruption, you can preview the KDE
+login/lock-screen look, Kappa/Konsole profile, Yakuake, Kate, Dolphin and other
+desktop defaults for **your own account**:
 
 ```bash
 ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan
@@ -129,9 +140,12 @@ users without a personal override. It may download Kappa fonts with the existing
 `curl` tool, but does not delete other fonts. Review the resulting KDE session
 before removing any backup. Rerunning skips defaults that already match.
 
-## Optional NetworkManager handoff (x86/next experiment)
+## NetworkManager handoff (x86/next experiment)
 
-The KDE upgrade deliberately retains the headless `iwd`/`dhcpcd` connection.
+The KDE upgrade deliberately retains the headless `iwd`/`dhcpcd` connection
+until a reboot following an approved handoff. The guided path offers staging
+after the visual finish if its Ethernet safety check passes. On an already
+upgraded machine, use the commands below without rerunning the KDE installer.
 The goal is to let **NetworkManager control networking in KDE** instead of
 managing connections directly with `iwctl` and `dhcpcd`. This is not just a
 test of switching between SSIDs. Check active routes and a wired fallback

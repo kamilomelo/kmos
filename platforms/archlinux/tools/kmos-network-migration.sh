@@ -41,6 +41,7 @@ Never run --apply or --rollback over SSH.
 does NOT interrupt current connections. Reboot manually; a one-time boot check
 restores iwd/dhcpcd if NetworkManager cannot bring Ethernet online. Wi-Fi can
 then be added manually in KDE. --cancel-stage undoes staging before reboot.
+--can-stage is a read-only readiness check for the guided KDE upgrade.
 EOF
 }
 
@@ -156,7 +157,7 @@ require_root() {
 }
 
 select_interfaces() {
-  local entry iface kind
+  local entry iface kind mode="${1:-live}"
   WIRED_IFACE= WIFI_IFACE=
   for entry in "$SYS_NET_ROOT"/*; do
     [[ -e "$entry/device" ]] || continue
@@ -166,17 +167,18 @@ select_interfaces() {
         ipv4_present "$iface" && ethernet_default_route "$iface"; then
       [[ -z "$WIRED_IFACE" ]] || { printf 'Multiple eligible wired fallbacks; review manually.\n' >&2; return 1; }
       WIRED_IFACE="$iface"
-    elif [[ "$kind" == Wi-Fi ]] && ipv4_present "$iface"; then
+    elif [[ "$kind" == Wi-Fi ]] && { [[ "$mode" == stage ]] || ipv4_present "$iface"; }; then
       [[ -z "$WIFI_IFACE" ]] || { printf 'Multiple active Wi-Fi interfaces; review manually.\n' >&2; return 1; }
       WIFI_IFACE="$iface"
     fi
   done
   [[ -n "$WIRED_IFACE" && -n "$WIFI_IFACE" ]] || {
-    printf 'Need one working wired interface and one active Wi-Fi interface.\n' >&2; return 1;
+    printf 'Need one working wired interface and one physical Wi-Fi interface.\n' >&2; return 1;
   }
 }
 
 ready_for_handoff() {
+  local mode="${1:-live}"
   [[ $(os_id) == arch && $(uname -m) == x86_64 ]] && kde_ready || {
     printf 'Only an installed KMOS KDE Arch x86_64 system is supported.\n' >&2; return 1;
   }
@@ -205,7 +207,7 @@ ready_for_handoff() {
       return 1
     fi
   done
-  select_interfaces || return 1
+  select_interfaces "$mode" || return 1
   local unit
   for unit in "dhcpcd@$WIFI_IFACE.service" "dhcpcd@$WIRED_IFACE.service" \
     "wpa_supplicant@$WIFI_IFACE.service"; do
@@ -309,8 +311,8 @@ confirm_staging() {
   [[ "$answer" == 'STAGE NETWORK' ]]
 }
 
-stage_reboot() {
-  ready_for_handoff || return 1
+can_stage() {
+  ready_for_handoff stage || return 1
   if [[ -n "${SSH_CONNECTION:-}" ]]; then
     [[ $(ssh_interface) == "$WIRED_IFACE" ]] || {
       printf 'SSH must currently be routed over the wired interface.\n' >&2; return 1;
@@ -319,9 +321,12 @@ stage_reboot() {
   check_internet_on "$WIRED_IFACE" || {
     printf 'Wired internet unavailable; boot migration not staged.\n' >&2; return 1;
   }
+}
+
+stage_reboot() {
+  can_stage || return 1
   require_root --stage-reboot || return 1
-  ready_for_handoff || return 1
-  check_internet_on "$WIRED_IFACE" || return 1
+  can_stage || return 1
   [[ ! -e "$BOOT_UNIT" && ! -L "$BOOT_UNIT" && ! -e "$BOOT_SCRIPT" && ! -L "$BOOT_SCRIPT" &&
      ! -L "${BOOT_SCRIPT%/*}" && ! -L "${BOOT_UNIT%/*}" && ! -L "${STAGED_MARKER%/*}" ]] || {
     printf 'A boot-check unit/script already exists; review it before staging.\n' >&2; return 1;
@@ -475,6 +480,7 @@ main() {
   case "${1:-}" in
     --help|-h) (($# == 1)) || { usage >&2; return 2; }; usage ;;
     --plan) (($# == 1)) || { usage >&2; return 2; }; plan ;;
+    --can-stage) (($# == 1)) || { usage >&2; return 2; }; can_stage ;;
     --stage-reboot) (($# == 1)) || { usage >&2; return 2; }; stage_reboot ;;
     --cancel-stage) (($# == 1)) || { usage >&2; return 2; }; cancel_stage ;;
     --boot-check) (($# == 1)) || return 2; boot_check ;;

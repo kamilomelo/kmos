@@ -291,7 +291,7 @@ main() {
   trap 'rm -rf -- "$temp"' EXIT
   printf 'KMOS KDE defaults for %s (%s). Existing files require individual approval.\n' "$user" "$mode"
   if [[ "$mode" == apply ]]; then
-    printf 'Review --plan first. Type APPLY KMOS to add missing defaults and review existing files: ' >&2
+    printf 'Type APPLY KMOS to add missing defaults and review existing files: ' >&2
     read -r answer </dev/tty || return 1
     [[ "$answer" == 'APPLY KMOS' ]] || { fail 'Cancelled without changes.'; return 1; }
   fi

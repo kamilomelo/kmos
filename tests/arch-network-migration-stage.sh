@@ -28,13 +28,30 @@ fi
 grep -Fq 'Service state differs' "$fixture/wrong-system"
 [[ ! -e "$fixture/wrong-staged" && ! -e "$fixture/wrong-nm.conf" ]]
 
+mkdir -p "$fixture/interfaces/enp1s0" "$fixture/interfaces/wlan0/wireless"
+touch "$fixture/interfaces/enp1s0/device" "$fixture/interfaces/wlan0/device"
+printf '1\n' > "$fixture/interfaces/enp1s0/carrier"
+(
+  # shellcheck disable=SC1091
+  source "$script"
+  SYS_NET_ROOT="$fixture/interfaces"
+  interface_kind() { [[ "$1" == enp1s0 ]] && printf 'Ethernet\n' || printf 'Wi-Fi\n'; }
+  ipv4_present() { [[ "$1" == enp1s0 ]]; }
+  ethernet_default_route() { [[ "$1" == enp1s0 ]]; }
+  select_interfaces stage
+  [[ "$WIRED_IFACE" == enp1s0 && "$WIFI_IFACE" == wlan0 ]]
+  if select_interfaces live; then
+    printf 'Live handoff accepted unconnected Wi-Fi.\n' >&2; exit 1
+  fi
+) > "$fixture/interface-check" 2>&1
+
 (
   # shellcheck disable=SC1091
   source "$script"
   NM_CONF="$fixture/nm.conf" STAGED_MARKER="$fixture/staged"
   MIGRATION_MARKER="$fixture/live" MIGRATION_DONE="$fixture/done"
   BOOT_SCRIPT="$fixture/installed-script" BOOT_UNIT="$fixture/boot.service"
-  ready_for_handoff() { WIRED_IFACE=enp1s0 WIFI_IFACE=wlan0; }
+  ready_for_handoff() { [[ "$1" == stage ]] || return 1; WIRED_IFACE=enp1s0 WIFI_IFACE=wlan0; }
   ssh_interface() { printf 'enp1s0\n'; }
   check_internet_on() { [[ "$1" == enp1s0 ]]; }
   confirm_staging() { :; }
@@ -42,6 +59,8 @@ grep -Fq 'Service state differs' "$fixture/wrong-system"
   state() { [[ "$2" == NetworkManager.service ]] && printf 'inactive\n' || printf 'active\n'; }
   systemctl() { printf '%s\n' "$*" >> "$fixture/stage-order"; }
   SSH_CONNECTION='192.0.2.9 1234 192.0.2.10 22'
+  can_stage
+  [[ ! -e "$STAGED_MARKER" && ! -e "$NM_CONF" && ! -e "$BOOT_UNIT" ]]
   stage_reboot
   [[ -r "$STAGED_MARKER" && -f "$BOOT_SCRIPT" && -f "$BOOT_UNIT" && -f "$NM_CONF" ]]
   [[ $(cat "$STAGED_MARKER") == enp1s0 ]]
@@ -100,7 +119,7 @@ if (
   NM_CONF="$fixture/partial-nm.conf" STAGED_MARKER="$fixture/partial-stage"
   MIGRATION_MARKER="$fixture/partial-live" MIGRATION_DONE="$fixture/partial-done"
   BOOT_SCRIPT="$fixture/partial-script" BOOT_UNIT="$fixture/partial-boot.service"
-  ready_for_handoff() { WIRED_IFACE=enp1s0 WIFI_IFACE=wlan0; }
+  ready_for_handoff() { [[ "$1" == stage ]] || return 1; WIRED_IFACE=enp1s0 WIFI_IFACE=wlan0; }
   check_internet_on() { :; }
   confirm_staging() { :; }
   require_root() { :; }

@@ -38,6 +38,7 @@ scripts+=(
   tests/arch-iso-kde-selection.sh
   tests/arch-kde-aur-selection.sh
   tests/arch-headless-kde-preflight.sh
+  tests/arch-headless-kde-one-shot.sh
   tests/arch-headless-wifi-helper.sh
   tests/arch-mirror-ranking.sh
   tests/arch-network-migration-plan.sh
@@ -97,6 +98,7 @@ bash tests/arch-kde-package-selector.sh
 bash tests/arch-iso-kde-selection.sh
 bash tests/arch-kde-aur-selection.sh
 bash tests/arch-headless-kde-preflight.sh
+bash tests/arch-headless-kde-one-shot.sh
 bash tests/arch-headless-wifi-helper.sh
 bash tests/arch-mirror-ranking.sh
 bash tests/arch-network-migration-plan.sh

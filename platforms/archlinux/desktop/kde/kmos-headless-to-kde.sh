@@ -15,12 +15,13 @@ Usage: ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
        ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --install [--profile full|noapps]
        ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --install --select
 
---preflight is read-only and needs no root. --install adds KDE packages and
- fresh-user defaults; it never partitions disks, requests package removal, or
- switches network services. AUR is not installed. Pacman may offer replacements
- and upgrade existing packages; review its prompts before approving.
- Running without arguments guides package selection and confirmation.
- --select installs mandatory KDE base/apps and Firefox Developer Edition,
+--preflight is read-only and needs no root. Guided installation adds KDE and
+  reviewable visual defaults, then offers a guarded NEXT-BOOT NetworkManager
+  handoff when verified Ethernet is available. It never formats disks or stops
+  active SSH/network services. AUR is not installed. Pacman may offer package
+  replacements and upgrades; review those prompts. No automatic reboot.
+  Running without arguments guides package selection and confirmation.
+--select installs mandatory KDE base/apps and Firefox Developer Edition,
  then offers the Kamilo productivity set and extra repository packages.
  This live upgrade does not install AUR packages.
 Use a backup and arrange local console or Ethernet access for the first test.
@@ -180,10 +181,50 @@ stage_live_defaults() (
 confirm_install() {
   local answer
   printf 'KDE packages will be installed; pacman may upgrade existing packages.\n' >&2
-  printf 'Wi-Fi (iwd/dhcpcd) and sshd will not be switched or disabled by KMOS.\n' >&2
+  printf 'Current SSH/network services stay active; next-boot NM staging is separately confirmed.\n' >&2
   printf 'Type INSTALL KDE to continue: ' >&2
   read -r answer </dev/tty || return 1
   [[ "$answer" == 'INSTALL KDE' ]]
+}
+
+guided_upgrade_user() {
+  local name uid
+  name="${SUDO_USER:-$(id -un)}"
+  uid=$(id -u "$name" 2>/dev/null) || return 1
+  [[ "$name" != root && "$uid" =~ ^[0-9]+$ && "$uid" -ge 1000 ]] || {
+    printf 'Run the guided upgrade as a regular KMOS user; it requests sudo itself.\n' >&2
+    return 1
+  }
+  printf '%s\n' "$name"
+}
+
+apply_visual_finish() {
+  local user="$1"
+  [[ -x "$SCRIPT_DIR/kmos-kde-finish.sh" ]] || {
+    printf 'KDE visual finishing script is missing; run it from a complete checkout.\n' >&2; return 1;
+  }
+  "$SCRIPT_DIR/kmos-kde-finish.sh" --apply --user "$user"
+}
+
+network_migration_script() { printf '%s\n' "$SCRIPT_DIR/../../tools/kmos-network-migration.sh"; }
+
+stage_network_for_reboot() {
+  local network_script
+  network_script=$(network_migration_script) || return 1
+  if [[ ! -x "$network_script" ]]; then
+    printf 'NetworkManager not staged: migration tool missing. Keep iwd/dhcpcd running.\n' >&2
+    return 0
+  fi
+  if ! "$network_script" --can-stage >/dev/null 2>&1; then
+    printf 'NetworkManager not staged: a verified wired fallback is unavailable or service state differs.\n' >&2
+    printf 'Keep iwd/dhcpcd running; use the migration tool --plan when Ethernet is ready.\n' >&2
+    return 0
+  fi
+  printf 'Ethernet is eligible for a next-boot NetworkManager handoff.\n' >&2
+  "$network_script" --stage-reboot || {
+    printf 'NetworkManager staging did not complete; review --plan before reboot.\n' >&2
+    return 1
+  }
 }
 
 require_root() {
@@ -193,7 +234,7 @@ require_root() {
 }
 
 install_layer() {
-  local profile="$1" pkg list before_iwd before_dhcpcd before_nm before_nm_enabled
+  local profile="$1" pkg list before_iwd before_dhcpcd before_nm before_nm_enabled target_user=
   local -a packages=()
   preflight
   if kde_profile_present; then
@@ -220,6 +261,7 @@ install_layer() {
   }
   if [[ "$profile" == custom ]]; then
     require_root --install --select || return 1
+    target_user=$(guided_upgrade_user) || return 1
     select_live_packages || { printf 'Selection cancelled; nothing installed.\n' >&2; return 1; }
     list=$(resolve_kde_packages "$profile" "${SELECTED_KDE_METAPACKAGES[@]}") || return 1
   else
@@ -232,7 +274,7 @@ install_layer() {
     [[ "$pkg" =~ ^[a-zA-Z0-9@._+-]+$ ]] || { printf 'Invalid package: %s\n' "$pkg" >&2; return 1; }
   done
   printf 'KDE profile: %s; packages: %s; AUR: no\n' "$profile" "${#packages[@]}"
-  printf 'NetworkManager may be installed as a KDE dependency but will NOT be enabled.\n'
+  printf 'Active networking stays unchanged; guided mode may offer next-boot NetworkManager staging.\n'
   if [[ "$profile" != custom ]]; then require_root --install --profile "$profile"; fi
   confirm_install || { printf 'Cancelled without changes.\n' >&2; return 1; }
   mark_upgrade "$profile" || { printf 'Cannot record an upgrade attempt; no packages installed.\n' >&2; return 1; }
@@ -254,7 +296,14 @@ install_layer() {
   systemctl set-default graphical.target || return 1
   install -Dm0644 /dev/stdin /usr/share/kmos/kde-profile <<< "$profile" || return 1
   clear_upgrade || return 1
-  printf 'KDE staged. Network services were not switched. Reboot when you are ready.\n'
+  if [[ "$profile" == custom ]]; then
+    apply_visual_finish "$target_user" || {
+      printf 'KDE is installed, but visual finishing needs review; rerun kmos-kde-finish.sh --apply.\n' >&2
+      return 1
+    }
+    stage_network_for_reboot || return 1
+  fi
+  printf 'KDE staged. Active network services were not stopped. Reboot when you are ready.\n'
 }
 
 main() {
