@@ -19,6 +19,23 @@ upgrade requires local metapackage manifests instead of fetching `main` ones.
 This package-list refactor has only been checked with offline fixtures, not
 with a new ISO installation.
 
+On a **new headless → KDE upgrade** you may instead choose optional package
+groups and extra official-repository packages interactively:
+
+```bash
+./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --install --select
+```
+
+This always includes the `kmos-kde-noapps` foundation (KDE base and its
+dependencies). Optional locally shipped metapackages are offered via `fzf`
+when already installed or a numbered Bash prompt otherwise; extra repository
+package names are entered separately. KMOS does not install `fzf` or AUR
+packages for this path. The selection is displayed before the existing
+`INSTALL KDE` confirmation and pacman transaction; invalid group names are
+rejected. This **live-upgrade selector is fixture-tested only**; the ISO path
+still uses `full`/`noapps` and is unchanged. An already upgraded KDE machine
+is not a valid target for re-running `--install`.
+
 It performs a normal Arch
 `pacman -Syu` transaction; inspect any proposed replacements or removals
 before approving pacman's prompts. Back up important data first. For the first

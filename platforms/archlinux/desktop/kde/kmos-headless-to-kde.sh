@@ -10,11 +10,14 @@ usage() {
   cat <<'EOF'
 Usage: ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
        ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --install [--profile full|noapps]
+       ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --install --select
 
 --preflight is read-only and needs no root. --install adds KDE packages and
  fresh-user defaults; it never partitions disks, requests package removal, or
  switches network services. AUR is not installed. Pacman may offer replacements
  and upgrade existing packages; review its prompts before approving.
+ --select keeps the noapps KDE foundation and offers optional metapackages and
+ repository packages. Uses fzf if already installed, otherwise a text prompt.
 Use a backup and arrange local console or Ethernet access for the first test.
 EOF
 }
@@ -121,6 +124,7 @@ preflight() {
 
 resolve_kde_packages() (
   local profile="$1"
+  shift
   # The ISO KDE stage already defines the package sets. Source it without
   # running its mounted-target installer, prune list or network migration.
   # shellcheck disable=SC1090,SC1091
@@ -128,10 +132,64 @@ resolve_kde_packages() (
   # Both paths use the same package selection and resolver. Never fall back
   # to published main manifests during an experimental live upgrade.
   KDE_PROFILE="$profile" INSTALL_AUR=no KDE_LOCAL_MANIFESTS_ONLY=yes
-  select_kde_metapackages
+  if [[ "$profile" == custom ]]; then
+    SELECTED_METAPACKAGES=(kmos-kde-noapps "$@")
+  else
+    select_kde_metapackages
+  fi
   load_kde_metapackages
   printf '%s\n' "${KDE_PACKAGES[@]}"
 )
+
+# Only these locally shipped, optional metapackages can be selected. The
+# noapps foundation is always resolved first and cannot be deselected.
+OPTIONAL_KDE_METAPACKAGES=(
+  kmos-browsers kmos-docs kmos-fonts kmos-graphics kmos-kde-multimedia
+  kmos-maintenance kmos-network kmos-privacy
+)
+SELECTED_KDE_METAPACKAGES=()
+EXTRA_KDE_PACKAGES=()
+
+read_selector_line() { read -r "$1" </dev/tty; }
+
+select_live_packages() {
+  local selection= name allowed entry
+  local -a choices=()
+  SELECTED_KDE_METAPACKAGES=() EXTRA_KDE_PACKAGES=()
+  printf 'Required KDE foundation: kmos-kde-noapps (includes KDE base).\n' >&2
+  if command -v fzf >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
+    selection=$(printf '%s\n' "${OPTIONAL_KDE_METAPACKAGES[@]}" | fzf --multi --prompt='Optional KDE groups > ' --header='TAB selects, ENTER confirms; ESC cancels') || return 1
+    [[ -n "$selection" ]] && mapfile -t choices <<< "$selection"
+  else
+    printf 'Optional groups (enter numbers separated by spaces, or ENTER for none):\n' >&2
+    for entry in "${!OPTIONAL_KDE_METAPACKAGES[@]}"; do
+      printf '  %s) %s\n' "$((entry + 1))" "${OPTIONAL_KDE_METAPACKAGES[entry]}" >&2
+    done
+    read_selector_line selection || return 1
+    local -a indices=()
+    read -r -a indices <<< "$selection"
+    for entry in "${indices[@]}"; do
+      [[ "$entry" =~ ^[1-8]$ ]] || { printf 'Invalid group number: %s\n' "$entry" >&2; return 1; }
+      choices+=("${OPTIONAL_KDE_METAPACKAGES[entry - 1]}")
+    done
+  fi
+  for name in "${choices[@]}"; do
+    allowed=no
+    for entry in "${OPTIONAL_KDE_METAPACKAGES[@]}"; do
+      [[ "$name" == "$entry" ]] && allowed=yes
+    done
+    [[ "$allowed" == yes ]] || { printf 'Unknown optional group: %s\n' "$name" >&2; return 1; }
+    SELECTED_KDE_METAPACKAGES+=("$name")
+  done
+  printf 'Extra official-repository package names (space-separated; ENTER for none): ' >&2
+  read_selector_line selection || return 1
+  read -r -a EXTRA_KDE_PACKAGES <<< "$selection"
+  for name in "${EXTRA_KDE_PACKAGES[@]}"; do
+    [[ "$name" =~ ^[a-zA-Z0-9@._+-]+$ && "$name" != kmos-* ]] || {
+      printf 'Invalid repository package: %s\n' "$name" >&2; return 1;
+    }
+  done
+}
 
 stage_live_defaults() (
   local home_dir username cfg
@@ -205,15 +263,22 @@ install_layer() {
   [[ -r "$SCRIPT_DIR/../../packages/metapackages/kde/base/PKGBUILD" ]] || {
     printf 'KDE package manifests are missing.\n' >&2; return 1;
   }
-  list=$(resolve_kde_packages "$profile") || return 1
+  if [[ "$profile" == custom ]]; then
+    require_root --install --select || return 1
+    select_live_packages || { printf 'Selection cancelled; nothing installed.\n' >&2; return 1; }
+    list=$(resolve_kde_packages "$profile" "${SELECTED_KDE_METAPACKAGES[@]}") || return 1
+  else
+    list=$(resolve_kde_packages "$profile") || return 1
+  fi
   mapfile -t packages <<< "$list"
+  packages+=("${EXTRA_KDE_PACKAGES[@]}")
   ((${#packages[@]} > 0)) || { printf 'No KDE packages resolved.\n' >&2; return 1; }
   for pkg in "${packages[@]}"; do
     [[ "$pkg" =~ ^[a-zA-Z0-9@._+-]+$ ]] || { printf 'Invalid package: %s\n' "$pkg" >&2; return 1; }
   done
   printf 'KDE profile: %s; packages: %s; AUR: no\n' "$profile" "${#packages[@]}"
   printf 'NetworkManager may be installed as a KDE dependency but will NOT be enabled.\n'
-  require_root --install --profile "$profile"
+  if [[ "$profile" != custom ]]; then require_root --install --profile "$profile"; fi
   confirm_install || { printf 'Cancelled without changes.\n' >&2; return 1; }
   mark_upgrade "$profile" || { printf 'Cannot record an upgrade attempt; no packages installed.\n' >&2; return 1; }
   before_iwd=$(service_state iwd.service)
@@ -243,10 +308,11 @@ main() {
     --preflight) (( $# == 1 )) || { usage >&2; return 2; }; preflight ;;
     --install)
       local profile=full
-      if (( $# == 3 )) && [[ "$2" == --profile ]]; then profile="$3"
+      if (( $# == 2 )) && [[ "$2" == --select ]]; then profile=custom
+      elif (( $# == 3 )) && [[ "$2" == --profile ]]; then profile="$3"
       elif (( $# != 1 )); then usage >&2; return 2
       fi
-      [[ "$profile" == full || "$profile" == noapps ]] || { usage >&2; return 2; }
+      [[ "$profile" == full || "$profile" == noapps || "$profile" == custom ]] || { usage >&2; return 2; }
       install_layer "$profile"
       ;;
     *) usage >&2; return 2 ;;
