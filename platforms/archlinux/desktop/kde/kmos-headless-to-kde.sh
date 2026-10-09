@@ -8,7 +8,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'EOF'
-Usage: ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
+Usage: ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
+       ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
        ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --install [--profile full|noapps]
        ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --install --select
 
@@ -16,6 +17,7 @@ Usage: ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
  fresh-user defaults; it never partitions disks, requests package removal, or
  switches network services. AUR is not installed. Pacman may offer replacements
  and upgrade existing packages; review its prompts before approving.
+ Running without arguments guides package selection and confirmation.
  --select keeps the noapps KDE foundation and offers optional metapackages and
  repository packages. Uses fzf if already installed, otherwise a text prompt.
 Use a backup and arrange local console or Ethernet access for the first test.
@@ -303,7 +305,8 @@ install_layer() {
 }
 
 main() {
-  case "${1:---help}" in
+  case "${1:---guided}" in
+    --guided) (( $# == 0 )) || { usage >&2; return 2; }; install_layer custom ;;
     --help|-h) (( $# <= 1 )) || { usage >&2; return 2; }; usage ;;
     --preflight) (( $# == 1 )) || { usage >&2; return 2; }; preflight ;;
     --install)

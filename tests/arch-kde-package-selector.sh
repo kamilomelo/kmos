@@ -7,7 +7,14 @@ script="$repo/platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 "$script" --help > "$fixture/help"
+grep -Fq 'Usage: ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh' "$fixture/help"
 grep -Fq -- '--install --select' "$fixture/help"
+(
+  source "$script"
+  install_layer() { printf '%s\n' "$1"; }
+  main
+) > "$fixture/default-mode"
+[[ $(cat "$fixture/default-mode") == custom ]]
 
 (
   source "$script"

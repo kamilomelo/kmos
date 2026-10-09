@@ -6,24 +6,25 @@ and not an arbitrary existing Arch/VPS installation. This path is not part of
 were reported working. The staged SSH-to-NetworkManager reboot handoff was
 verified on Ethernet and with **Wi-Fi only** after the cable was unplugged.
 
-From a checkout of `x86/next`, run the read-only check first:
+From a checkout of `x86/next`, you can inspect the system with the optional
+read-only check (the guided install also runs this check):
 
 ```bash
 ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
 ```
 
-The explicit `--install` operation offers the same full/noapps KDE package
-sets as the ISO, with **no AUR installation**.
+The legacy explicit `--install --profile full|noapps` options offer the same
+package sets as the ISO, with **no AUR installation**.
 `x86/next` keeps the ISO and live-upgrade package resolver in sync; the live
 upgrade requires local metapackage manifests instead of fetching `main` ones.
 This package-list refactor has only been checked with offline fixtures, not
 with a new ISO installation.
 
-On a **new headless → KDE upgrade** you may instead choose optional package
-groups and extra official-repository packages interactively:
+On a **new headless → KDE upgrade**, run the script without arguments to
+choose optional package groups and extra official-repository packages:
 
 ```bash
-./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --install --select
+./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
 ```
 
 This always includes the `kmos-kde-noapps` foundation (KDE base and its
@@ -34,7 +35,8 @@ packages for this path. The selection is displayed before the existing
 `INSTALL KDE` confirmation and pacman transaction; invalid group names are
 rejected. This **live-upgrade selector is fixture-tested only**; the ISO path
 still uses `full`/`noapps` and is unchanged. An already upgraded KDE machine
-is not a valid target for re-running `--install`.
+is not a valid target for re-running the installer. `--preflight` remains
+read-only; explicit `--install` modes remain available for tests.
 
 It performs a normal Arch
 `pacman -Syu` transaction; inspect any proposed replacements or removals
