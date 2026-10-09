@@ -7,8 +7,8 @@
    id="svg3919"
    version="1.1"
    inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
-   sodipodi:docname="logoKM-R.svg"
-   inkscape:export-filename="logoKM-R.png"
+   sodipodi:docname="logoKM-X.svg"
+   inkscape:export-filename="logoKM-X.png"
    inkscape:export-xdpi="96"
    inkscape:export-ydpi="96"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
@@ -79,7 +79,7 @@
     <linearGradient
        id="linearGradient88">
       <stop
-         style="stop-color:#ffd800;stop-opacity:1;"
+         style="stop-color:#808080;stop-opacity:1;"
          offset="0"
          id="stop87" />
       <stop
@@ -90,7 +90,7 @@
     <linearGradient
        id="linearGradient86">
       <stop
-         style="stop-color:#ffd800;stop-opacity:1;"
+         style="stop-color:#808080;stop-opacity:1;"
          offset="0"
          id="stop85" />
       <stop
@@ -2283,8 +2283,8 @@
      inkscape:pageopacity="0"
      inkscape:pageshadow="2"
      inkscape:zoom="3.8"
-     inkscape:cx="114.73684"
-     inkscape:cy="98.552632"
+     inkscape:cx="68.684211"
+     inkscape:cy="101.44737"
      inkscape:document-units="px"
      inkscape:current-layer="svg3919"
      showgrid="false"
@@ -2321,19 +2321,9 @@
        inkscape:export-filename="/home/kamilo/KM-RoBoTa/webroot/km-robota/images/home_bkg.jpg.png"
        sodipodi:nodetypes="cczzccczzccc"
        inkscape:connector-curvature="0"
-       id="path3861-2-2-5-3-8-0-3-0-3-6"
-       d="m 1853.5471,2447.1808 c 5.2369,-8.1976 9.2318,-13.7574 18.7633,-21.732 9.7752,-7.4974 18.4948,-10.705 28.6965,-9.9888 10.2015,0.7165 20.4736,7.4264 27.5927,15.523 7.1193,8.0967 12.7441,19.8876 12.7986,28.3542 0.054,6.9396 -0.7218,11.0911 -5.7373,16.4828 -7.4055,6.9667 -16.0495,8.3333 -24.7207,8.7425 -6.6711,-0.1158 -13.6759,-0.9388 -19.7691,-1.8652 -6.0934,-0.9264 -10.375,-2.1232 -17.4324,-3.1129 -7.0574,-0.9895 -5.6315,-1.102 -13.342,-1.7547 -10.0521,-0.1754 -12.8561,-3.39 -13.1957,-11.3467 0.2942,-7.4315 2.9959,-13.3914 6.3461,-19.3022 z"
-       style="display:inline;fill:url(#linearGradient272);fill-opacity:1;stroke:url(#linearGradient273);stroke-width:0.8;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       transform="translate(-1804.3006,-2359.9627)" />
-    <path
-       inkscape:export-ydpi="43.436523"
-       inkscape:export-xdpi="43.436523"
-       inkscape:export-filename="/home/kamilo/KM-RoBoTa/webroot/km-robota/images/home_bkg.jpg.png"
-       sodipodi:nodetypes="cczzccczzccc"
-       inkscape:connector-curvature="0"
        id="path3861-2-4-4-7-1-8-2-9"
        d="m 1825.4264,2445.1709 c 8.8505,-14.1203 15.6018,-23.6978 31.7101,-37.4343 16.5204,-12.9144 31.2567,-18.4398 48.4977,-17.2059 17.2409,1.2341 34.6008,12.792 46.6324,26.7389 12.0315,13.9469 21.5379,34.2573 21.6298,48.8415 0.092,11.9538 -1.22,19.1047 -9.6962,28.3922 -12.5154,12.0003 -27.1239,14.3546 -41.7784,15.0592 -11.2746,-0.1995 -23.1127,-1.617 -33.4104,-3.2128 -10.2977,-1.5958 -17.5337,-3.6572 -29.4609,-5.3619 -11.9271,-1.7046 -9.5172,-1.8984 -22.5483,-3.0226 -16.9882,-0.3022 -21.727,-5.8395 -22.3012,-19.5451 0.4975,-12.8014 5.0635,-23.0675 10.7254,-33.2492 z"
-       style="display:inline;fill:url(#linearGradient268);fill-opacity:1;stroke:url(#linearGradient269);stroke-width:0.800098;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:url(#linearGradient268);fill-opacity:1;stroke:url(#linearGradient269);stroke-width:0.800098;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        transform="translate(-1804.3006,-2359.9627)" />
     <path
        inkscape:export-ydpi="43.436523"
@@ -2343,7 +2333,7 @@
        inkscape:connector-curvature="0"
        id="path3861-2-2-6-3-3-9-1-3-97-8"
        d="m 1840.5678,2446.1758 c 6.9048,-11.1588 12.172,-18.7277 24.7389,-29.5833 12.8885,-10.2058 24.385,-14.5725 37.8356,-13.5971 13.4506,0.975 26.9939,10.109 36.3804,21.1308 9.3865,11.0219 16.8029,27.0725 16.8747,38.598 0.071,9.4467 -0.9518,15.098 -7.5645,22.4377 -9.7641,9.4833 -21.161,11.3439 -32.5937,11.9007 -8.7959,-0.1577 -18.0315,-1.2777 -26.0652,-2.539 -8.0338,-1.2611 -13.6789,-2.8901 -22.984,-4.2373 -9.3049,-1.3472 -7.4248,-1.5003 -17.5914,-2.3887 -13.2532,-0.2388 -16.9503,-4.6147 -17.3977,-15.4459 0.3879,-10.1165 3.9499,-18.2296 8.3669,-26.2759 z"
-       style="display:inline;fill:#000000;fill-opacity:1;stroke:url(#linearGradient270);stroke-width:0.8;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:#000000;fill-opacity:1;stroke:url(#linearGradient270);stroke-width:0.8;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        transform="translate(-1804.3006,-2359.9627)" />
     <path
        transform="matrix(0.1667265,0,0,0.16275735,1.1518,-18.9189)"
@@ -2354,7 +2344,17 @@
        inkscape:connector-curvature="0"
        id="path3861-2-2-0-2-6-2-0-8-4-1"
        d="m 243.33571,649.00768 c 37.20945,-59.53141 65.59333,-99.90976 133.31621,-157.82275 69.45562,-54.44721 131.41027,-77.74237 203.89517,-72.53965 72.4849,5.20273 145.46967,53.93074 196.05309,112.73052 50.58348,58.7998 90.55028,144.42814 90.93706,205.91523 0.38685,50.39668 -5.12932,80.54503 -40.76508,119.70114 -52.61807,50.59303 -114.0352,60.51885 -175.64597,63.48957 -47.40112,-0.84152 -97.17126,-6.81725 -140.46507,-13.54529 -43.29381,-6.72809 -73.71566,-15.41857 -123.86004,-22.60562 -50.14443,-7.18697 -40.0127,-8.0038 -94.79858,-12.74344 -71.42164,-1.27386 -91.34504,-24.61912 -93.75904,-82.40174 2.0915,-53.9703 21.2883,-97.25232 45.09225,-140.17797 z"
-       style="display:inline;mix-blend-mode:normal;fill:none;stroke:url(#linearGradient271);stroke-width:4.85676;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;filter:url(#filter3952-4-1-1-7-2-41-4)" />
+       style="mix-blend-mode:normal;fill:none;stroke:url(#linearGradient271);stroke-width:4.85676;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;filter:url(#filter3952-4-1-1-7-2-41-4)" />
+    <path
+       inkscape:export-ydpi="43.436523"
+       inkscape:export-xdpi="43.436523"
+       inkscape:export-filename="/home/kamilo/KM-RoBoTa/webroot/km-robota/images/home_bkg.jpg.png"
+       sodipodi:nodetypes="cczzccczzccc"
+       inkscape:connector-curvature="0"
+       id="path3861-2-2-5-3-8-0-3-0-3-6"
+       d="m 1853.5471,2447.1808 c 5.2369,-8.1976 9.2318,-13.7574 18.7633,-21.732 9.7752,-7.4974 18.4948,-10.705 28.6965,-9.9888 10.2015,0.7165 20.4736,7.4264 27.5927,15.523 7.1193,8.0967 12.7441,19.8876 12.7986,28.3542 0.054,6.9396 -0.7218,11.0911 -5.7373,16.4828 -7.4055,6.9667 -16.0495,8.3333 -24.7207,8.7425 -6.6711,-0.1158 -13.6759,-0.9388 -19.7691,-1.8652 -6.0934,-0.9264 -10.375,-2.1232 -17.4324,-3.1129 -7.0574,-0.9895 -5.6315,-1.102 -13.342,-1.7547 -10.0521,-0.1754 -12.8561,-3.39 -13.1957,-11.3467 0.2942,-7.4315 2.9959,-13.3914 6.3461,-19.3022 z"
+       style="fill:url(#linearGradient272);fill-opacity:1;stroke:url(#linearGradient273);stroke-width:0.8;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       transform="translate(-1804.3006,-2359.9627)" />
     <path
        inkscape:export-ydpi="43.436523"
        inkscape:export-xdpi="43.436523"
