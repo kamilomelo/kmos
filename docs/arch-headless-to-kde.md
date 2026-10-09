@@ -68,6 +68,11 @@ does not reboot automatically. It does **not** run the ISO KDE post-install
 cleanup, optional AUR installation, font removals or existing-user KDE
 configuration rewrites. Therefore visual details not included in these safe
 defaults may differ from a fresh ISO KDE install until separately validated.
+For a new panel, the Application Dashboard icon uses the SVG data from
+`platforms/archlinux/assets/icons/kmos.ico`, installed as the uniquely named `kmos-dashboard` icon
+in hicolor. It does not overwrite Breeze icons or change existing personal
+panel configurations. An already-configured dashboard must be changed from
+its KDE widget settings if its owner wants the new icon.
 
 If an upgrade is interrupted, rerun with the **same profile** after checking
 connectivity and pacman state. An in-progress marker allows retry; a completed

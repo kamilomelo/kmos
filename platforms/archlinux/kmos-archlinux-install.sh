@@ -982,10 +982,13 @@ collect_desktop_config() {
       local kde_dir="$SCRIPT_DIR/desktop/kde" pkg
       [[ -r "$kde_dir/kmos-kde-package-select.sh" && -r "$kde_dir/kmos-kde-install.sh" &&
          -r "$kde_dir/kmos-kde-post.sh" &&
+         -r "$SCRIPT_DIR/assets/icons/kmos.ico" &&
          -r "$SCRIPT_DIR/packages/metapackages/kde/base/PKGBUILD" &&
          -r "$SCRIPT_DIR/packages/metapackages/kde/apps/PKGBUILD" &&
          -r "$SCRIPT_DIR/packages/metapackages/desktop-shared/productivity/PKGBUILD" ]] ||
         die 'Complete local KDE sources are required for selection before formatting.'
+      grep -q '<svg' "$SCRIPT_DIR/assets/icons/kmos.ico" ||
+        die 'KMOS Dashboard SVG icon is invalid; refusing to format.'
       choose_kde_packages || die 'KDE package selection cancelled before formatting.'
       select_kde_aur || die 'AUR selection cancelled before formatting.'
       kmos_KDE_AUR_PACKAGES="${SELECTED_KDE_AUR_PACKAGES[*]}"

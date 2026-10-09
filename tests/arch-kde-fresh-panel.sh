@@ -14,10 +14,38 @@ for plugin in org.kde.plasma.kickerdash org.kde.plasma.systemmonitor.net; do
   printf '{}\n' > "$MOUNT_POINT/usr/share/plasma/plasmoids/$plugin/metadata.json"
 done
 cp -a "$repo/platforms/archlinux/assets/sysmonitor/." "$MOUNT_POINT/usr/share/plasma/plasmoids/"
+theme_icon="$MOUNT_POINT/usr/share/icons/breeze/places/16/start-here-kde.svg"
+mkdir -p "${theme_icon%/*}"
+printf 'Original Breeze icon\n' > "$theme_icon"
 arch-chroot() { [[ "$1" == "$MOUNT_POINT" && "$2" == chown ]]; }
 
 install_fresh_kmos_panel
 preset="$MOUNT_POINT/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc"
+dashboard_icon="$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/kmos-dashboard.svg"
+cmp "$ASSET_DASHBOARD_ICON" "$dashboard_icon"
+install_kmos_dashboard_icon
+[[ $(stat -c %a "$dashboard_icon") == 644 ]]
+[[ $(cat "$theme_icon") == 'Original Breeze icon' ]]
+grep -Fxq 'Icon=kmos-dashboard' "$preset"
+grep -Fxq 'icon=kmos-dashboard' "$preset"
+if (
+  MOUNT_POINT="$fixture/conflict"
+  target="$MOUNT_POINT/usr/share/icons/hicolor/scalable/apps/kmos-dashboard.svg"
+  mkdir -p "${target%/*}"
+  printf 'Personal icon\n' > "$target"
+  install_kmos_dashboard_icon
+) > "$fixture/icon-conflict" 2>&1; then
+  printf 'An existing Dashboard icon was overwritten.\n' >&2; exit 1
+fi
+[[ $(cat "$fixture/conflict/usr/share/icons/hicolor/scalable/apps/kmos-dashboard.svg") == 'Personal icon' ]]
+if (
+  MOUNT_POINT="$fixture/symlink"
+  mkdir -p "$MOUNT_POINT/usr/share/icons" "$fixture/other-icons"
+  ln -s "$fixture/other-icons" "$MOUNT_POINT/usr/share/icons/hicolor"
+  install_kmos_dashboard_icon
+) > "$fixture/icon-symlink" 2>&1; then
+  printf 'A symlinked icon directory was accepted.\n' >&2; exit 1
+fi
 cmp "$preset" "$MOUNT_POINT/home/bob/.config/plasma-org.kde.plasma.desktop-appletsrc"
 [[ $(cat "$MOUNT_POINT/home/alice/.config/plasma-org.kde.plasma.desktop-appletsrc") == 'personal panel configuration' ]]
 [[ $(stat -c %a "$preset") == 644 ]]
@@ -33,6 +61,9 @@ for clock in America/Bogota Local Asia/Shanghai; do
   grep -Fxq "selectedTimeZones=$clock" "$preset"
 done
 grep -Fxq 'launchers=' "$preset"
+if grep -Fq 'start-here-kde' "$preset"; then
+  printf 'Dashboard icon fell back to Breeze.\n' >&2; exit 1
+fi
 [[ ! -e "$MOUNT_POINT/usr/share/plasma/layout-templates/org.kde.kmos.defaultPanel" ]]
 [[ ! -e "$MOUNT_POINT/usr/share/plasma/look-and-feel/org.kde.kmos.desktop/contents/layouts/org.kde.plasma.desktop-layout.js" ]]
 [[ ! -e "$repo/platforms/archlinux/assets/plasma/kmos-panel-setup.js" ]]

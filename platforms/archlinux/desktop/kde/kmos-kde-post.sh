@@ -22,6 +22,7 @@ ASSET_YAKUAKE_SKIN_DIR="$REPO_ROOT/assets/yakuake/monochrome"
 ASSET_KATE_THEME_AYU="$REPO_ROOT/assets/kate/kmos-ayu.theme"
 ASSET_KATE_THEME_GITHUB="$REPO_ROOT/assets/kate/kmos-github.theme"
 ASSET_AUR_PACKAGE_LIST="$REPO_AUR_DIR/aur-packages.kmos"
+ASSET_DASHBOARD_ICON="$REPO_ROOT/assets/icons/kmos.ico"
 TARGET_WALLPAPER="/opt/kmos/assets/wallpapers/kmos-wallpaper.png"
 TARGET_COLOR_SCHEME="/opt/kmos/assets/color-schemes/kmos.colors"
 TARGET_KONSOLE_COLOR_SCHEME="/opt/kmos/assets/konsole/kmos.colorscheme"
@@ -225,6 +226,23 @@ frameContrast=0.2
 EOF
 }
 
+install_kmos_dashboard_icon() {
+  local target="${MOUNT_POINT%/}/usr/share/icons/hicolor/scalable/apps/kmos-dashboard.svg"
+  local parent="${target%/*}"
+  [[ -f "$ASSET_DASHBOARD_ICON" && -r "$ASSET_DASHBOARD_ICON" ]] || die "Missing KMOS Dashboard icon: $ASSET_DASHBOARD_ICON"
+  grep -q '<svg' "$ASSET_DASHBOARD_ICON" || die 'KMOS Dashboard icon must contain SVG data.'
+  [[ ! -L "$target" ]] || die "Symlink refused for KMOS Dashboard icon: $target"
+  while [[ -n "$parent" && "$parent" != / ]]; do
+    [[ ! -L "$parent" ]] || die "Symlink parent refused for KMOS Dashboard icon: $parent"
+    parent="${parent%/*}"
+  done
+  if [[ -e "$target" ]]; then
+    [[ -f "$target" ]] && cmp -s -- "$ASSET_DASHBOARD_ICON" "$target" || die "Existing Dashboard icon differs: $target"
+    return 0
+  fi
+  install -Dm0644 "$ASSET_DASHBOARD_ICON" "$target"
+}
+
 install_fresh_kmos_panel() {
   local template="$MOUNT_POINT/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc"
   local home_dir="" username="" target="" plugin=""
@@ -237,6 +255,7 @@ install_fresh_kmos_panel() {
   done
   [[ ! -e "$template" && ! -L "$template" ]] \
     || die 'Fresh-user Plasma layout already exists; refusing to replace it.'
+  install_kmos_dashboard_icon
 
   # Seed KConfig for accounts that have never started Plasma. Plasma loads
   # existing containments instead of executing its default panel layout script.
@@ -255,8 +274,8 @@ AppletOrder=4;5;6;7;8;21;22;23;24;25;26;27;28
 plugin=org.kde.plasma.kickerdash
 
 [Containments][3][Applets][4][Configuration][General]
-Icon=start-here-kde
-icon=start-here-kde
+Icon=kmos-dashboard
+icon=kmos-dashboard
 
 [Containments][3][Applets][5]
 plugin=org.kde.plasma.pager
