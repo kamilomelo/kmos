@@ -213,5 +213,6 @@ active/enabled with Ethernet IPv4 and a default route, iwd was active/disabled
 as the NM backend, and dhcpcd was inactive/disabled. Its Wi-Fi remained
 disconnected at the first checkpoint. After connecting through KDE, `nmcli`
 reported `wlan0` connected and an HTTPS request explicitly bound to `wlan0`
-succeeded. The cable-unplugged route and internet test is still pending on
-this machine.
+succeeded. With Ethernet unplugged, `wlan0` was the sole default route and
+an unbound HTTPS request succeeded, confirming Wi-Fi-only internet on this
+headless-to-KDE machine.
