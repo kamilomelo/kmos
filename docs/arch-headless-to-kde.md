@@ -160,8 +160,8 @@ SSH session. It checks real internet through Ethernet, asks for confirmation,
 and enables NetworkManager and a one-time boot guard for the **next** boot.
 It disables only the *next-boot* iwd/dhcpcd units; neither the current DHCP
 lease nor your SSH session is stopped. Reboot deliberately when ready. The
-boot guard verifies NM-controlled Ethernet internet and automatically restores
-iwd/dhcpcd if that fails (allow roughly two minutes). If both paths fail,
+boot guard allows up to two minutes for NM-controlled Ethernet internet and
+automatically restores iwd/dhcpcd if that fails. If both paths fail,
 use the physical console. Your Ethernet IP address might change after reboot.
 
 ```bash
@@ -203,3 +203,9 @@ inactive, and SSH routed over Ethernet. The Wi-Fi device showed connected in
 the default route used `wlan0` alone and internet access still worked. The
 local-only `--apply` path, automatic failure fallback, and switching between
 different Wi-Fi SSIDs in KDE remain **unverified on real hardware**.
+
+**Another field result (2026-10-09):** On a headless-to-KDE machine with wired
+Ethernet and disconnected Wi-Fi, NM started Ethernet DHCP but the earlier boot
+guard rolled back after about 24 seconds, before NM's 45-second DHCP timeout.
+The rollback correctly restored iwd/dhcpcd. The longer two-minute guarded wait
+is fixture-tested but still needs a successful field retest on that machine.

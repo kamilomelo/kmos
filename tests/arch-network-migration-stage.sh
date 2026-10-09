@@ -89,6 +89,34 @@ touch "$fixture/sysnet/enp1s0/device"
 ) > "$fixture/boot-output"
 grep -Fxq 'disable kmos-nm-boot-check.service' "$fixture/boot-order"
 
+# DHCP was still pending after ~24 seconds in the field; the boot guard must
+# wait beyond the old eight three-second checks rather than rolling back early.
+(
+  # shellcheck disable=SC1091
+  source "$script"
+  NM_CONF="$fixture/slow-nm.conf" STAGED_MARKER="$fixture/slow-staged"
+  MIGRATION_MARKER="$fixture/slow-live" MIGRATION_DONE="$fixture/slow-done"
+  BOOT_SCRIPT="$fixture/slow-script" BOOT_UNIT="$fixture/slow-boot.service"
+  SYS_NET_ROOT="$fixture/sysnet"
+  printf 'enp1s0\n' > "$STAGED_MARKER"
+  write_backend_config
+  install -Dm0755 "$script" "$BOOT_SCRIPT"
+  write_boot_unit
+  grep -Fxq 'TimeoutStartSec=240' "$BOOT_UNIT"
+  interface_kind() { printf 'Ethernet\n'; }
+  attempts=0
+  nm_connected() { ((attempts+=1)); ((attempts >= 17)); }
+  sleep() { SECONDS=$((SECONDS+$1)); }
+  require_boot_root() { :; }
+  systemctl() { printf '%s\n' "$*" >> "$fixture/slow-order"; }
+  boot_check
+  ((attempts >= 17))
+  [[ -f "$MIGRATION_DONE" && ! -e "$STAGED_MARKER" ]]
+) > "$fixture/slow-boot" 2>&1
+if grep -Fq 'stop NetworkManager.service' "$fixture/slow-order"; then
+  printf 'Slow DHCP triggered a premature rollback.\n' >&2; exit 1
+fi
+
 (
   # shellcheck disable=SC1091
   source "$script"
@@ -103,7 +131,7 @@ grep -Fxq 'disable kmos-nm-boot-check.service' "$fixture/boot-order"
   interface_kind() { printf 'Ethernet\n'; }
   nm_connected() { return 1; }
   require_boot_root() { :; }
-  sleep() { :; }
+  sleep() { SECONDS=$((SECONDS+$1)); }
   state() { printf 'active\n'; }
   systemctl() { printf '%s\n' "$*" >> "$fixture/failure-order"; }
   if boot_check; then

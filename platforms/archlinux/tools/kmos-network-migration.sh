@@ -242,10 +242,12 @@ nm_connected() {
 }
 
 wait_for_wired() {
-  local attempt
-  for attempt in {1..12}; do
-    if nm_connected "$WIRED_IFACE"; then return 0; fi
-    sleep 2
+  local iface="${1:-$WIRED_IFACE}" deadline=$((SECONDS + 120))
+  # DHCP can take up to 45 seconds for one attempt. Leave time for retries,
+  # while keeping the one-time boot guard's rollback within its unit timeout.
+  while ((SECONDS < deadline)); do
+    if nm_connected "$iface"; then return 0; fi
+    sleep 3
   done
   printf 'NetworkManager did not bring up wired internet.\n' >&2
   return 1
@@ -295,7 +297,7 @@ Wants=NetworkManager.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/lib/kmos/kmos-network-migration.sh --boot-check
-TimeoutStartSec=180
+TimeoutStartSec=240
 
 [Install]
 WantedBy=multi-user.target
@@ -369,7 +371,7 @@ stage_reboot() {
 }
 
 boot_check() {
-  local wired attempt
+  local wired
   require_boot_root || return 1
   [[ -f "$STAGED_MARKER" && ! -L "$STAGED_MARKER" ]] || return 0
   wired=$(cat "$STAGED_MARKER") || return 1
@@ -379,25 +381,22 @@ boot_check() {
     rollback
     return 1
   }
-  for attempt in {1..8}; do
-    if nm_connected "$wired"; then
-      if ! install -Dm0600 /dev/stdin "$MIGRATION_DONE" <<'EOF'
+  if wait_for_wired "$wired"; then
+    if ! install -Dm0600 /dev/stdin "$MIGRATION_DONE" <<'EOF'
 KMOS NetworkManager reboot handoff; Wi-Fi requires a user-selected NM connection.
 EOF
-      then
-        rollback
-        return 1
-      fi
-      if ! cleanup_boot_guard; then
-        rollback
-        return 1
-      fi
-      rm -f -- "$STAGED_MARKER" || return 1
-      printf 'NetworkManager Ethernet verified. Configure Wi-Fi with KDE when ready.\n'
-      return 0
+    then
+      rollback
+      return 1
     fi
-    sleep 3
-  done
+    if ! cleanup_boot_guard; then
+      rollback
+      return 1
+    fi
+    rm -f -- "$STAGED_MARKER" || return 1
+    printf 'NetworkManager Ethernet verified. Configure Wi-Fi with KDE when ready.\n'
+    return 0
+  fi
   printf 'NetworkManager Ethernet failed; restoring iwd/dhcpcd for this and future boots.\n' >&2
   rollback
   return 1
