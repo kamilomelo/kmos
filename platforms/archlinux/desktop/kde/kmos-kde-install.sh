@@ -17,7 +17,6 @@ KDE_POST_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/p
 KDE_PROFILE="${kmos_KDE_PROFILE:-full}"
 INSTALL_AUR="${kmos_INSTALL_AUR:-yes}"
 AUR_HELPER="${kmos_AUR_HELPER:-paru}"
-PRUNE_LIST_FILE="$REPO_ROOT/assets/prune/kde-remove-packages.kmos"
 PACMAN_RETRIES="${kmos_PACMAN_RETRIES:-4}"
 
 UI_RESET=""
@@ -182,6 +181,9 @@ parse_args() {
       die "Unknown KDE profile: $KDE_PROFILE (allowed: full, noapps, custom)"
       ;;
   esac
+  if [[ "$KDE_PROFILE" == custom && -z "${kmos_INSTALL_AUR+x}" ]]; then
+    INSTALL_AUR=no
+  fi
 }
 
 verify_target() {
@@ -192,7 +194,6 @@ verify_target() {
 select_kde_metapackages() {
   case "$KDE_PROFILE" in
     custom)
-      INSTALL_AUR=no
       KDE_LOCAL_MANIFESTS_ONLY=yes
       local selector="$SCRIPT_DIR/kmos-kde-package-select.sh"
       [[ -r "$selector" ]] || die 'Local KDE selector missing.'
@@ -201,7 +202,7 @@ select_kde_metapackages() {
       read -r -a SELECTED_KDE_METAPACKAGES <<< "${kmos_KDE_METAPACKAGES:-}"
       read -r -a EXTRA_KDE_PACKAGES <<< "${kmos_KDE_EXTRA_PACKAGES:-}"
       validate_kde_selection || die 'Invalid custom KDE selection.'
-      SELECTED_METAPACKAGES=(kmos-kde-noapps "${SELECTED_KDE_METAPACKAGES[@]}")
+      SELECTED_METAPACKAGES=(kmos-kde-base kmos-kde-apps kmos-desktop-productivity "${SELECTED_KDE_METAPACKAGES[@]}")
       ;;
     noapps)
       INSTALL_AUR="no"
@@ -274,7 +275,8 @@ metapackage_relative_path_for_name() {
   case "$1" in
     kmos-audio) printf 'desktop-shared/audio/PKGBUILD\n' ;;
     kmos-browsers) printf 'desktop-shared/browsers/PKGBUILD\n' ;;
-    kmos-deprecated) printf 'desktop-shared/deprecated/PKGBUILD\n' ;;
+    kmos-desktop-productivity) printf 'desktop-shared/productivity/PKGBUILD\n' ;;
+    kmos-kamilo-productivity) printf 'desktop-shared/kamilo/PKGBUILD\n' ;;
     kmos-devices) printf 'desktop-shared/devices/PKGBUILD\n' ;;
     kmos-docs) printf 'desktop-shared/docs/PKGBUILD\n' ;;
     kmos-filesystems) printf 'desktop-shared/filesystems/PKGBUILD\n' ;;
@@ -284,6 +286,7 @@ metapackage_relative_path_for_name() {
     kmos-network) printf 'desktop-shared/network/PKGBUILD\n' ;;
     kmos-privacy) printf 'desktop-shared/privacy/PKGBUILD\n' ;;
     kmos-kde-base) printf 'kde/base/PKGBUILD\n' ;;
+    kmos-kde-apps) printf 'kde/apps/PKGBUILD\n' ;;
     kmos-kde-multimedia) printf 'kde/multimedia/PKGBUILD\n' ;;
     kmos-kde-plasma) printf 'kde/base/plasma/PKGBUILD\n' ;;
     kmos-kde-noapps) printf 'kde/noapps/PKGBUILD\n' ;;
@@ -393,40 +396,6 @@ remove_optional_kwallet_helpers() {
 
   if [[ ${#installed[@]} -gt 0 ]]; then
     run_target_pacman_without_packagekit_hook "-Rns --noconfirm ${installed[*]}" || warn "Could not remove optional KWallet helper packages."
-  fi
-}
-
-remove_unwanted_packages() {
-  if [[ "$KDE_PROFILE" == custom ]]; then
-    info 'Custom KDE selection: skipping legacy package pruning.'
-    return 0
-  fi
-  local package=""
-  local line=""
-  local installed=()
-  local remove_list=()
-
-  if [[ -f "$PRUNE_LIST_FILE" ]]; then
-    while IFS= read -r line; do
-      line="${line%%#*}"
-      line="${line#"${line%%[![:space:]]*}"}"
-      line="${line%"${line##*[![:space:]]}"}"
-      [[ -n "$line" ]] || continue
-      remove_list+=("$line")
-    done < "$PRUNE_LIST_FILE"
-  else
-    warn "Prune list not found: $PRUNE_LIST_FILE"
-  fi
-
-  for package in "${remove_list[@]}"; do
-    if arch-chroot "$MOUNT_POINT" pacman -Q "$package" >/dev/null 2>&1; then
-      installed+=("$package")
-    fi
-  done
-
-  if [[ ${#installed[@]} -gt 0 ]]; then
-    run_target_pacman_without_packagekit_hook "-Rns --noconfirm ${installed[*]}" || warn "Could not remove one or more unwanted packages: ${installed[*]}"
-    success "Removed unwanted packages when present: ${installed[*]}"
   fi
 }
 
@@ -627,7 +596,9 @@ EOF
   fi
 
   rm -f "$sudoers_file"
-  arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm rust cargo >/dev/null 2>&1 || warn "Could not remove temporary Rust build packages."
+  if [[ "$KDE_PROFILE" != custom ]]; then
+    arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm rust cargo >/dev/null 2>&1 || warn "Could not remove temporary Rust build packages."
+  fi
   success "paru bootstrapped for KDE install."
 }
 
@@ -689,9 +660,13 @@ run_kde_post_installer() {
   local fetched_installer="/tmp/kmos-kde-post.sh"
 
   if [[ -f "$local_installer" ]]; then
-    kmos_INSTALL_AUR="$INSTALL_AUR" kmos_AUR_HELPER="$AUR_HELPER" bash "$local_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
+    kmos_INSTALL_AUR="$INSTALL_AUR" kmos_AUR_HELPER="$AUR_HELPER" \
+      kmos_KDE_AUR_PACKAGES="${kmos_KDE_AUR_PACKAGES:-}" \
+      bash "$local_installer" --target "$MOUNT_POINT" --profile "$KDE_PROFILE"
     return 0
   fi
+
+  [[ "$KDE_PROFILE" != custom ]] || die 'Custom KDE post-install requires the local script; refusing a remote fallback.'
 
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL "$KDE_POST_INSTALLER_URL" -o "$fetched_installer" || die "Could not fetch KDE post installer."
@@ -714,7 +689,6 @@ main() {
   select_kde_metapackages
   load_kde_metapackages
   install_kde_packages
-  remove_unwanted_packages
   install_kde_assets
   preserve_kwallet_backend
   migrate_wifi_to_networkmanager

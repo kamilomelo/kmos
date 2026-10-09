@@ -25,8 +25,10 @@ without the extra application groups, run `./kmos-install.sh --profile noapps`
 instead. The installer checks the Arch EFI target and refuses to format a
 detected Windows EFI partition; you must still review every selected device.
 
-The experimental `x86/next` branch instead offers KDE package selection in
-the normal no-argument install flow. That ISO path is not field-tested yet;
+The experimental `x86/next` branch instead offers a single optional Kamilo
+productivity set, free-text repository extras and an explicit AUR choice in
+the normal no-argument KDE install flow. That reorganized ISO path is not
+field-tested yet;
 use `main` for the tested release.
 
 ## Helpers

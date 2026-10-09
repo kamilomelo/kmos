@@ -96,6 +96,9 @@ parse_args() {
     esac
     shift
   done
+  if [[ "$KDE_PROFILE" == custom && -z "${kmos_INSTALL_AUR+x}" ]]; then
+    INSTALL_AUR=no
+  fi
 }
 
 require_root() {
@@ -850,10 +853,22 @@ get_aur_builder_user() {
 }
 
 stage_aur_package_list() {
-  [[ -r "$ASSET_AUR_PACKAGE_LIST" ]] || die "Missing AUR package list asset: $ASSET_AUR_PACKAGE_LIST"
-
-  install -Dm0644 "$ASSET_AUR_PACKAGE_LIST" "$MOUNT_POINT/usr/share/kmos/aur/aur-packages.kmos"
-  install -Dm0644 "$ASSET_AUR_PACKAGE_LIST" "$MOUNT_POINT$TARGET_AUR_PACKAGE_LIST"
+  if [[ "$KDE_PROFILE" == custom ]]; then
+    local selector="$SCRIPT_DIR/kmos-kde-package-select.sh"
+    local -a packages=()
+    [[ -r "$selector" ]] || die 'Local AUR selector missing.'
+    # shellcheck disable=SC1090
+    source "$selector"
+    read -r -a SELECTED_KDE_AUR_PACKAGES <<< "${kmos_KDE_AUR_PACKAGES:-}"
+    validate_kde_aur_selection || die 'Invalid AUR choices.'
+    packages=(tododo-bin "${SELECTED_KDE_AUR_PACKAGES[@]}")
+    install -Dm0644 /dev/stdin "$MOUNT_POINT/usr/share/kmos/aur/aur-packages.kmos" < <(printf '%s\n' "${packages[@]}")
+    install -Dm0644 /dev/stdin "$MOUNT_POINT$TARGET_AUR_PACKAGE_LIST" < <(printf '%s\n' "${packages[@]}")
+  else
+    [[ -r "$ASSET_AUR_PACKAGE_LIST" ]] || die "Missing AUR package list asset: $ASSET_AUR_PACKAGE_LIST"
+    install -Dm0644 "$ASSET_AUR_PACKAGE_LIST" "$MOUNT_POINT/usr/share/kmos/aur/aur-packages.kmos"
+    install -Dm0644 "$ASSET_AUR_PACKAGE_LIST" "$MOUNT_POINT$TARGET_AUR_PACKAGE_LIST"
+  fi
 }
 
 run_target_pacman_without_packagekit_hook() {
@@ -1008,8 +1023,12 @@ install_aur_packages() {
     *) warn "Unknown AUR helper: $AUR_HELPER; skipping AUR package installation."; return 0 ;;
   esac
 
-  [[ -r "$ASSET_AUR_PACKAGE_LIST" ]] || return 0
-  mapfile -t packages < <(read_package_list_file "$ASSET_AUR_PACKAGE_LIST")
+  if [[ "$KDE_PROFILE" == custom ]]; then
+    packages=(tododo-bin)
+  else
+    [[ -r "$ASSET_AUR_PACKAGE_LIST" ]] || return 0
+    mapfile -t packages < <(read_package_list_file "$ASSET_AUR_PACKAGE_LIST")
+  fi
   [[ ${#packages[@]} -gt 0 ]] || return 0
 
   builder_user="$(get_aur_builder_user)" || {
@@ -1087,8 +1106,10 @@ apply_post_tweaks() {
   apply_kate_defaults
   apply_virtual_desktop_defaults
   install_extra_fonts
-  remove_noto_fonts
-  remove_legacy_kmos_font_packages
+  if [[ "$KDE_PROFILE" != custom ]]; then
+    remove_noto_fonts
+    remove_legacy_kmos_font_packages
+  fi
   install_aur_packages
   record_profile
   success "KDE post-install hook executed."

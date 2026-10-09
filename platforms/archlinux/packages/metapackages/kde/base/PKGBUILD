@@ -10,8 +10,13 @@ depends=(
   'dolphin'
   'konsole'
   'kmos-kde-plasma'
+  'kmos-audio'
+  'kmos-devices'
+  'kmos-filesystems'
   'networkmanager'
   'sddm'
+  'ttf-dejavu'
+  'xorg-xwayland'
 )
 
 package() {

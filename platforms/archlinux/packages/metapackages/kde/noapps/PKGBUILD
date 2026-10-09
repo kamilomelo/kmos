@@ -1,4 +1,6 @@
 # Maintainer: Kamilo Melo
+# Legacy profile retained for Quartz64 and explicit x86 --profile noapps.
+# The guided x86 install uses KDE base + KDE apps + desktop productivity instead.
 pkgname=kmos-kde-noapps
 pkgver=2026.05.08
 pkgrel=1

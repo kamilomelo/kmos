@@ -334,8 +334,7 @@ load_nodesktop_metapackage() {
   local package=""
 
   if [[ ! -r "$pkgbuild" ]]; then
-    warn "Nodesktop metapackage not found: $pkgbuild"
-    return 0
+    die "Mandatory shared Arch packages missing: $pkgbuild"
   fi
 
   while IFS= read -r package; do
@@ -983,9 +982,17 @@ collect_desktop_config() {
       local kde_dir="$SCRIPT_DIR/desktop/kde" pkg
       [[ -r "$kde_dir/kmos-kde-package-select.sh" && -r "$kde_dir/kmos-kde-install.sh" &&
          -r "$kde_dir/kmos-kde-post.sh" &&
-         -r "$SCRIPT_DIR/packages/metapackages/kde/noapps/PKGBUILD" ]] ||
+         -r "$SCRIPT_DIR/packages/metapackages/kde/base/PKGBUILD" &&
+         -r "$SCRIPT_DIR/packages/metapackages/kde/apps/PKGBUILD" &&
+         -r "$SCRIPT_DIR/packages/metapackages/desktop-shared/productivity/PKGBUILD" ]] ||
         die 'Complete local KDE sources are required for selection before formatting.'
       choose_kde_packages || die 'KDE package selection cancelled before formatting.'
+      select_kde_aur || die 'AUR selection cancelled before formatting.'
+      kmos_KDE_AUR_PACKAGES="${SELECTED_KDE_AUR_PACKAGES[*]}"
+      if [[ "$INSTALL_KDE_AUR" == yes ]]; then
+        [[ -r "$SCRIPT_DIR/packages/aur/aur-packages.kmos" ]] ||
+          die 'Local AUR package inventory is required before formatting.'
+      fi
       for pkg in "${EXTRA_KDE_PACKAGES[@]}"; do
         pacman -Si -- "$pkg" >/dev/null 2>&1 || die "Repository package unavailable before formatting: $pkg"
       done
@@ -993,17 +1000,24 @@ collect_desktop_config() {
       kmos_KDE_EXTRA_PACKAGES="${EXTRA_KDE_PACKAGES[*]}"
       # Check every local metapackage dependency before disk approval.
       ( source "$kde_dir/kmos-kde-install.sh"
-        KDE_PROFILE=custom KDE_LOCAL_MANIFESTS_ONLY=yes
+        KDE_PROFILE=custom KDE_LOCAL_MANIFESTS_ONLY=yes INSTALL_AUR="$INSTALL_KDE_AUR"
         select_kde_metapackages
         load_kde_metapackages
       ) || die 'Cannot resolve selected KDE packages before formatting.'
-      detail 'KDE groups' "kmos-kde-noapps ${SELECTED_KDE_METAPACKAGES[*]}"
+      detail 'KDE groups' "kmos-kde-base kmos-kde-apps kmos-desktop-productivity ${SELECTED_KDE_METAPACKAGES[*]}"
       detail 'Extra packages' "${EXTRA_KDE_PACKAGES[*]:-none}"
+      if [[ "$INSTALL_KDE_AUR" == yes ]]; then
+        detail 'AUR picks' "tododo-bin ${kmos_KDE_AUR_PACKAGES:-}"
+      else
+        detail 'AUR picks' 'none'
+      fi
     fi
     # KDE migrates the live Wi-Fi handoff to NetworkManager from its WPA file.
     add_package wpa_supplicant
     WIFI_BACKEND=networkmanager
-    if [[ "$KDE_PROFILE" == full ]] && ask_yes_no "Install an AUR helper and AUR desktop packages?" yes; then
+    if [[ "$KDE_PROFILE" == custom ]]; then
+      : # AUR was selected before the disk approval plan.
+    elif [[ "$KDE_PROFILE" == full ]] && ask_yes_no "Install an AUR helper and AUR desktop packages?" yes; then
       INSTALL_KDE_AUR=yes
       AUR_HELPER="$(prompt_choice "AUR helper options" "$AUR_HELPER" paru yay)"
     else
@@ -1088,6 +1102,13 @@ confirm_install_plan() {
   if [[ "$INSTALL_KDE" == yes ]]; then
     detail "Desktop" "KDE $KDE_PROFILE"
     detail "AUR packages" "$INSTALL_KDE_AUR"
+    if [[ "$KDE_PROFILE" == custom ]]; then
+      detail "KDE groups" "kmos-kde-base kmos-kde-apps kmos-desktop-productivity ${kmos_KDE_METAPACKAGES:-}"
+      detail "Repo extras" "${kmos_KDE_EXTRA_PACKAGES:-none}"
+      if [[ "$INSTALL_KDE_AUR" == yes ]]; then
+        detail "AUR picks" "tododo-bin ${kmos_KDE_AUR_PACKAGES:-}"
+      fi
+    fi
   else
     detail "Desktop" "headless"
     detail "Wi-Fi tools" "Impala + iwd; first-boot backend: $WIFI_BACKEND"
@@ -2258,6 +2279,7 @@ run_kde_installer() {
   if [[ -f "$local_installer" ]]; then
     kmos_KDE_PROFILE="$KDE_PROFILE" kmos_INSTALL_AUR="$INSTALL_KDE_AUR" kmos_AUR_HELPER="$AUR_HELPER" \
       kmos_KDE_METAPACKAGES="${kmos_KDE_METAPACKAGES:-}" kmos_KDE_EXTRA_PACKAGES="${kmos_KDE_EXTRA_PACKAGES:-}" \
+      kmos_KDE_AUR_PACKAGES="${kmos_KDE_AUR_PACKAGES:-}" \
       bash "$local_installer" --target "$MOUNT_POINT"
     return 0
   fi

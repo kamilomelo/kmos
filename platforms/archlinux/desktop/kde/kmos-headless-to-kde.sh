@@ -20,8 +20,9 @@ Usage: ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
  switches network services. AUR is not installed. Pacman may offer replacements
  and upgrade existing packages; review its prompts before approving.
  Running without arguments guides package selection and confirmation.
- --select keeps the noapps KDE foundation and offers optional metapackages and
- repository packages. Uses fzf if already installed, otherwise a text prompt.
+ --select installs mandatory KDE base/apps and Firefox Developer Edition,
+ then offers the Kamilo productivity set and extra repository packages.
+ This live upgrade does not install AUR packages.
 Use a backup and arrange local console or Ethernet access for the first test.
 EOF
 }
@@ -137,7 +138,7 @@ resolve_kde_packages() (
   # to published main manifests during an experimental live upgrade.
   KDE_PROFILE="$profile" INSTALL_AUR=no KDE_LOCAL_MANIFESTS_ONLY=yes
   if [[ "$profile" == custom ]]; then
-    SELECTED_METAPACKAGES=(kmos-kde-noapps "$@")
+    SELECTED_METAPACKAGES=(kmos-kde-base kmos-kde-apps kmos-desktop-productivity "$@")
   else
     select_kde_metapackages
   fi

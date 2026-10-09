@@ -1,42 +1,82 @@
 #!/usr/bin/env bash
-# Pin both KDE profiles to the tested ISO package sets; no package operations.
+# Verify shared ISO/live guided manifests and preserve all previous full apps.
+# No package manager, network or target system operations.
 # shellcheck disable=SC1090,SC1091
 set -euo pipefail
 repo=$(git rev-parse --show-toplevel)
 iso="$repo/platforms/archlinux/desktop/kde/kmos-kde-install.sh"
 live="$repo/platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh"
+base="$repo/platforms/archlinux/kmos-archlinux-install.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 
-for profile in full noapps; do
+(
+  source "$base"
+  load_nodesktop_metapackage >/dev/null 2>&1
+  for required in opencode ripgrep starship btop iwd impala; do
+    [[ " ${BASE_PACKAGES[*]} " == *" $required "* ]]
+  done
+  [[ " ${BASE_PACKAGES[*]} " != *' firefox-developer-edition '* ]]
+)
+if (
+  source "$base"
+  NODESKTOP_METAPACKAGE_DIR="$fixture/missing"
+  load_nodesktop_metapackage
+) > "$fixture/missing-base" 2>&1; then
+  printf 'Missing mandatory shared Arch packages were accepted.\n' >&2; exit 1
+fi
+grep -Fq 'Mandatory shared Arch packages missing' "$fixture/missing-base"
+
+for personal in no yes; do
+  group=
+  if [[ "$personal" == yes ]]; then group=kmos-kamilo-productivity; fi
   (
     source "$iso"
-    KDE_PROFILE="$profile" INSTALL_AUR=no KDE_LOCAL_MANIFESTS_ONLY=yes
+    KDE_PROFILE=custom INSTALL_AUR=no KDE_LOCAL_MANIFESTS_ONLY=yes
+    kmos_KDE_METAPACKAGES="$group"
     select_kde_metapackages
-    load_kde_metapackages 2> "$fixture/$profile-details"
+    load_kde_metapackages 2> "$fixture/$personal-details"
     printf '%s\n' "${KDE_PACKAGES[@]}"
-  ) > "$fixture/$profile-iso"
+  ) > "$fixture/$personal-iso"
   (
     source "$live"
-    resolve_kde_packages "$profile"
-  ) > "$fixture/$profile-live" 2> "$fixture/$profile-live-details"
-  cmp "$fixture/$profile-iso" "$fixture/$profile-live"
+    if [[ -n "$group" ]]; then resolve_kde_packages custom "$group"
+    else resolve_kde_packages custom; fi
+  ) > "$fixture/$personal-live" 2> "$fixture/$personal-live-details"
+  cmp "$fixture/$personal-iso" "$fixture/$personal-live"
+  for required in plasma-desktop networkmanager sddm firefox-developer-edition spectacle kdenlive; do
+    grep -Fxq "$required" "$fixture/$personal-iso"
+  done
 done
+for personal in typst inkscape simple-scan rust cargo; do
+  grep -Fxq "$personal" "$fixture/yes-iso"
+done
+if grep -Eq '^(typst|inkscape|simple-scan|rust|cargo)$' "$fixture/no-iso"; then
+  printf 'Optional productivity package was made mandatory.\n' >&2; exit 1
+fi
 
-[[ $(wc -l < "$fixture/full-iso") == 96 ]]
-[[ $(sha256sum "$fixture/full-iso" | cut -d ' ' -f 1) == 6eb146dc47bdda748f0a487554afee31f5125eca1bfd3ae6c51498092d699209 ]]
-[[ $(wc -l < "$fixture/noapps-iso") == 74 ]]
-[[ $(sha256sum "$fixture/noapps-iso" | cut -d ' ' -f 1) == 4a3ab32b8b53a7b2a60bfa8f447ca0403be3c5a5d9d1601e94bc4f5eb56f060b ]]
+# Legacy full is an inventory reference: the selected Kamilo layer keeps every
+# previously selected official-repository package and adds three approved ones.
+(
+  source "$iso"
+  KDE_PROFILE=full INSTALL_AUR=no KDE_LOCAL_MANIFESTS_ONLY=yes
+  select_kde_metapackages
+  load_kde_metapackages 2> "$fixture/legacy-details"
+  printf '%s\n' "${KDE_PACKAGES[@]}"
+) > "$fixture/legacy-full"
+if comm -23 "$fixture/legacy-full" "$fixture/yes-iso" | grep .; then
+  printf 'A legacy full package was lost in the guided profile.\n' >&2; exit 1
+fi
+[[ $(comm -13 "$fixture/legacy-full" "$fixture/yes-iso") == $'cargo\nrust\nsimple-scan' ]]
 
-# A missing local manifest must not silently resolve against published main.
+# Never silently use published main manifests when an experimental source is missing.
 if (
   source "$iso"
   METAPACKAGE_ROOT_DIR="$fixture/missing"
   KDE_LOCAL_MANIFESTS_ONLY=yes
-  get_metapackage_pkgbuild kmos-kde-noapps
+  get_metapackage_pkgbuild kmos-kde-apps
 ) > "$fixture/missing-output" 2>&1; then
-  printf 'Missing manifest was accepted by the live resolver.\n' >&2
-  exit 1
+  printf 'Missing manifest was accepted by the live resolver.\n' >&2; exit 1
 fi
-grep -Fq 'Local metapackage missing: kde/noapps/PKGBUILD' "$fixture/missing-output"
-printf 'ISO and live full/noapps package sets match the tested baseline (fixture only).\n'
+grep -Fq 'Local metapackage missing: kde/apps/PKGBUILD' "$fixture/missing-output"
+printf 'Guided ISO/live package parity and legacy-full coverage: OK (fixtures only).\n'

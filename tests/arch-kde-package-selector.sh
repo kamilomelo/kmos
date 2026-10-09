@@ -25,11 +25,11 @@ grep -Fq -- '--install --select' "$fixture/help"
   input=0
   read_selector_line() {
     ((input += 1))
-    if ((input == 1)); then printf -v "$1" '%s' '1 5';
+    if ((input == 1)); then printf -v "$1" '%s' 'y';
     else printf -v "$1" '%s' 'firefox'; fi
   }
   select_live_packages
-  [[ ${SELECTED_KDE_METAPACKAGES[*]} == 'kmos-browsers kmos-kde-multimedia' ]]
+  [[ ${SELECTED_KDE_METAPACKAGES[*]} == kmos-kamilo-productivity ]]
   [[ ${EXTRA_KDE_PACKAGES[*]} == firefox ]]
   resolve_kde_packages custom "${SELECTED_KDE_METAPACKAGES[@]}"
   printf '%s\n' "${EXTRA_KDE_PACKAGES[@]}"
@@ -42,12 +42,12 @@ if (
     if [[ "$1" == -v && "$2" == fzf ]]; then return 1; fi
     builtin command "$@"
   }
-  read_selector_line() { printf -v "$1" '%s' '9'; }
-  select_live_packages
+  SELECTED_KDE_METAPACKAGES=(kmos-invalid)
+  validate_kde_selection
 ) > "$fixture/invalid-output" 2>&1; then
-  printf 'Invalid optional metapackage index was accepted.\n' >&2; exit 1
+  printf 'Invalid optional metapackage was accepted.\n' >&2; exit 1
 fi
-grep -Fq 'Invalid group number: 9' "$fixture/invalid-output"
+grep -Fq 'Unknown optional group: kmos-invalid' "$fixture/invalid-output"
 if (
   source "$script"
   command() {
@@ -75,7 +75,7 @@ grep -Fq 'Invalid repository package: kmos-unknown' "$fixture/invalid-package"
   panel_template_available() { :; }
   require_root() { [[ "$*" == '--install --select' ]]; }
   select_live_packages() {
-    SELECTED_KDE_METAPACKAGES=(kmos-browsers)
+    SELECTED_KDE_METAPACKAGES=(kmos-kamilo-productivity)
     EXTRA_KDE_PACKAGES=(firefox)
   }
   confirm_install() { :; }

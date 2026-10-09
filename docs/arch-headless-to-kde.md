@@ -13,40 +13,42 @@ read-only check (the guided install also runs this check):
 ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
 ```
 
-The legacy explicit `--install --profile full|noapps` options offer the same
-package sets as the ISO, with **no AUR installation**.
-`x86/next` keeps the ISO and live-upgrade package resolver in sync; the live
-upgrade requires local metapackage manifests instead of fetching `main` ones.
-This package-list refactor has only been checked with offline fixtures, not
-with a new ISO installation.
+The legacy explicit `--install --profile full|noapps` options remain available
+without AUR; the `noapps` manifest is also still used by Quartz64. It is **not**
+part of guided x86 package selection. Guided ISO and live upgrades use the same
+mandatory desktop package sets; the live upgrade requires local manifests
+rather than fetching the published `main` manifests. This reorganized selection has only
+been checked with offline fixtures, not a new ISO installation.
 
-On the **experimental x86/next Arch ISO installer**, `./kmos-install.sh` now
-asks for optional KDE metapackages and extra repository packages when KDE is
-chosen. The selection and local manifest resolution run **before** the final
-disk approval/format. `fzf` is optional; a numbered prompt works without it.
-Custom selection skips the legacy KDE package-pruning step so packages you
-choose are not removed after installation. AUR remains off for custom KDE
-selection. Explicit `--profile full|noapps` preserves the older ISO package
-sets and behavior. **This ISO change is fixture-tested only; do not treat it
-as a field-tested replacement for `main`/`v0.9.0`.**
+On the **experimental x86/next Arch ISO installer**, `./kmos-install.sh` always
+installs the shared Arch CLI tools. Choosing KDE adds mandatory KDE base,
+KDE apps (including Spectacle and Kdenlive), and desktop productivity
+(`firefox-developer-edition`). One yes/no question shows the actual optional
+Kamilo productivity packages. The free-text official-repository package
+prompt remains. AUR is asked separately (yes by default): choose `paru` or
+`yay`, then select optional AUR packages by name or with `fzf` when already
+available; `tododo-bin` is included only when AUR is approved. All choices and
+local manifests are validated **before** final disk approval/format. There is
+no Firefox pruning policy; guided installs also skip the old font/package
+cleanup. Explicit `--profile full|noapps` remains for compatibility, not the
+recommended flow. **This reorganization is fixture-tested only; do not treat
+it as a field-tested replacement for `main`/`v0.9.0`.**
 
 On a **new headless → KDE upgrade**, run the script without arguments to
-choose optional package groups and extra official-repository packages:
+choose the optional Kamilo set and extra official-repository packages:
 
 ```bash
 ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
 ```
 
-This always includes the `kmos-kde-noapps` foundation (KDE base and its
-dependencies). Optional locally shipped metapackages are offered via `fzf`
-when already installed or a numbered Bash prompt otherwise; extra repository
-package names are entered separately. KMOS does not install `fzf` or AUR
-packages for this path. The selection is displayed before the existing
-`INSTALL KDE` confirmation and pacman transaction; invalid group names are
-rejected. This **live-upgrade selector is fixture-tested only**; the ISO path
-still uses `full`/`noapps` and is unchanged. An already upgraded KDE machine
-is not a valid target for re-running the installer. `--preflight` remains
-read-only; explicit `--install` modes remain available for tests.
+This always includes KDE base, KDE apps and mandatory desktop productivity.
+The optional Kamilo list is displayed before its yes/no question; extra
+repository names are entered separately. This live upgrade does **not** install
+`fzf` or AUR packages. The selection is shown before the `INSTALL KDE`
+confirmation and pacman transaction. The revised live-upgrade selector is
+**fixture-tested only**. An already upgraded KDE machine is not a valid target
+for re-running the installer. `--preflight` remains read-only; explicit
+`--install` modes remain available for tests.
 
 It performs a normal Arch
 `pacman -Syu` transaction; inspect any proposed replacements or removals

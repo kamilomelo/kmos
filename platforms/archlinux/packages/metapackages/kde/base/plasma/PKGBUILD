@@ -48,7 +48,6 @@ depends=(
   'print-manager'
   'qqc2-breeze-style'
   'sddm-kcm'
-  'spectacle'
   'systemsettings'
   'xdg-desktop-portal-kde'
 )

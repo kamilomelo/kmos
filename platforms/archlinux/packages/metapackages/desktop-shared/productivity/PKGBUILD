@@ -1,0 +1,13 @@
+# Maintainer: Kamilo Melo
+pkgname=kmos-desktop-productivity
+pkgver=2026.10.09
+pkgrel=1
+pkgdesc="kmos mandatory desktop productivity package set"
+arch=('any')
+url="https://github.com/kamilomelo/kmos"
+license=('MIT')
+depends=(
+  'firefox-developer-edition'
+)
+
+package() { :; }

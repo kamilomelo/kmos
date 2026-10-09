@@ -64,7 +64,6 @@ kde_script="$repo/platforms/archlinux/desktop/kde/kmos-kde-install.sh"
   verify_target() { record mounted-target-check; }
   load_kde_metapackages() { record resolve-packages; }
   install_kde_packages() { record packages; }
-  remove_unwanted_packages() { record prune; }
   install_kde_assets() { record assets; }
   preserve_kwallet_backend() { record kwallet; }
   migrate_wifi_to_networkmanager() { record wifi-migration; }
@@ -77,6 +76,6 @@ kde_script="$repo/platforms/archlinux/desktop/kde/kmos-kde-install.sh"
   [[ " ${SELECTED_METAPACKAGES[*]} " == *' kmos-kde-base '* ]]
   [[ " ${SELECTED_METAPACKAGES[*]} " == *' kmos-network '* ]]
 )
-[[ $(cat "$fixture/kde-order") == $'mounted-target-check\nresolve-packages\npackages\nprune\nassets\nkwallet\nwifi-migration\nservices\naur\npost' ]]
+[[ $(cat "$fixture/kde-order") == $'mounted-target-check\nresolve-packages\npackages\nassets\nkwallet\nwifi-migration\nservices\naur\npost' ]]
 
 printf 'Arch base -> KDE ordering and mounted-target boundary: OK (mocked only).\n'

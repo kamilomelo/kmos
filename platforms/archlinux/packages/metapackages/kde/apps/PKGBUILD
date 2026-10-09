@@ -1,8 +1,8 @@
 # Maintainer: Kamilo Melo
-pkgname=kmos-kde-utils
-pkgver=2026.05.08
+pkgname=kmos-kde-apps
+pkgver=2026.10.09
 pkgrel=1
-pkgdesc="kmos KDE utility package set"
+pkgdesc="kmos mandatory KDE applications"
 arch=('any')
 url="https://github.com/kamilomelo/kmos"
 license=('MIT')
@@ -15,10 +15,15 @@ depends=(
   'markdownpart'
   'okular'
   'partitionmanager'
-  'spectacle' # Legacy noapps/Quartz64 compatibility; guided x86 uses kmos-kde-apps.
   'yakuake'
+  'ffmpegthumbs'
+  'gwenview'
+  'haruna'
+  'kamoso'
+  'kdenlive'
+  'kdegraphics-thumbnailers'
+  'kolourpaint'
+  'spectacle'
 )
 
-package() {
-  :
-}
+package() { :; }

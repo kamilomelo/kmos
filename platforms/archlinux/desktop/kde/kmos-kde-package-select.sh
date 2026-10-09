@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
-# Shared optional KDE selection for live upgrades and ISO planning.
-OPTIONAL_KDE_METAPACKAGES=(
-  kmos-browsers kmos-docs kmos-fonts kmos-graphics kmos-kde-multimedia
-  kmos-maintenance kmos-network kmos-privacy
+# Shared package choices for ISO KDE and live headless -> KDE upgrades.
+KDE_PERSONAL_GROUP=kmos-kamilo-productivity
+OPTIONAL_KDE_METAPACKAGES=("$KDE_PERSONAL_GROUP")
+OPTIONAL_KDE_AUR_PACKAGES=(
+  brother-ql1100nwb kchat-appimage kdrive-bin onlyoffice-bin
+  paisa-bin rtl8821au-dkms-git
 )
 SELECTED_KDE_METAPACKAGES=()
 EXTRA_KDE_PACKAGES=()
+SELECTED_KDE_AUR_PACKAGES=()
 
 read_selector_line() { read -r "$1" </dev/tty; }
 
 validate_kde_selection() {
-  local name allowed entry
+  local name
   for name in "${SELECTED_KDE_METAPACKAGES[@]}"; do
-    allowed=no
-    for entry in "${OPTIONAL_KDE_METAPACKAGES[@]}"; do
-      [[ "$name" == "$entry" ]] && allowed=yes
-    done
-    [[ "$allowed" == yes ]] || { printf 'Unknown optional group: %s\n' "$name" >&2; return 1; }
+    [[ "$name" == "$KDE_PERSONAL_GROUP" ]] || {
+      printf 'Unknown optional group: %s\n' "$name" >&2; return 1;
+    }
   done
   for name in "${EXTRA_KDE_PACKAGES[@]}"; do
     [[ "$name" =~ ^[a-zA-Z0-9@._+-]+$ && "$name" != kmos-* ]] || {
@@ -25,29 +26,73 @@ validate_kde_selection() {
   done
 }
 
+validate_kde_aur_selection() {
+  local name entry allowed
+  for name in "${SELECTED_KDE_AUR_PACKAGES[@]}"; do
+    allowed=no
+    for entry in "${OPTIONAL_KDE_AUR_PACKAGES[@]}"; do
+      [[ "$name" == "$entry" ]] && allowed=yes
+    done
+    [[ "$allowed" == yes ]] || { printf 'Unknown AUR choice: %s\n' "$name" >&2; return 1; }
+  done
+}
+
+show_personal_packages() {
+  local manifest
+  manifest="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../packages/metapackages/desktop-shared/kamilo" && pwd)/PKGBUILD"
+  [[ -r "$manifest" ]] || { printf 'Kamilo package manifest missing.\n' >&2; return 1; }
+  printf 'Optional Kamilo productivity packages:\n' >&2
+  # The manifest is part of the local trusted repository; only print its deps.
+  # shellcheck disable=SC1090 # Trusted local manifest validated above.
+  (source "$manifest"; printf '  %s\n' "${depends[@]}") >&2
+}
+
 select_live_packages() {
-  local selection= entry
-  local -a choices=() indices=()
+  local selection=
   SELECTED_KDE_METAPACKAGES=() EXTRA_KDE_PACKAGES=()
-  printf 'Required KDE foundation: kmos-kde-noapps (includes KDE base).\n' >&2
-  if command -v fzf >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
-    selection=$(printf '%s\n' "${OPTIONAL_KDE_METAPACKAGES[@]}" | fzf --multi --prompt='Optional KDE groups > ' --header='TAB selects, ENTER confirms; ESC cancels') || return 1
-    [[ -n "$selection" ]] && mapfile -t choices <<< "$selection"
-  else
-    printf 'Optional groups (enter numbers separated by spaces, or ENTER for none):\n' >&2
-    for entry in "${!OPTIONAL_KDE_METAPACKAGES[@]}"; do
-      printf '  %s) %s\n' "$((entry + 1))" "${OPTIONAL_KDE_METAPACKAGES[entry]}" >&2
-    done
-    read_selector_line selection || return 1
-    read -r -a indices <<< "$selection"
-    for entry in "${indices[@]}"; do
-      [[ "$entry" =~ ^[1-8]$ ]] || { printf 'Invalid group number: %s\n' "$entry" >&2; return 1; }
-      choices+=("${OPTIONAL_KDE_METAPACKAGES[entry - 1]}")
-    done
-  fi
-  SELECTED_KDE_METAPACKAGES=("${choices[@]}")
+  printf 'Mandatory: shared Arch tools, KDE base, KDE apps (including Kdenlive and Spectacle), Firefox Developer Edition.\n' >&2
+  show_personal_packages || return 1
+  printf 'Add the optional Kamilo productivity set? [y/N]: ' >&2
+  read_selector_line selection || return 1
+  case "$selection" in
+    [Yy]|[Yy][Ee][Ss]) SELECTED_KDE_METAPACKAGES=("$KDE_PERSONAL_GROUP") ;;
+    ''|[Nn]|[Nn][Oo]) ;;
+    *) printf 'Answer yes or no; selection cancelled.\n' >&2; return 1 ;;
+  esac
   printf 'Extra official-repository package names (space-separated; ENTER for none): ' >&2
   read_selector_line selection || return 1
   read -r -a EXTRA_KDE_PACKAGES <<< "$selection"
   validate_kde_selection
+}
+
+select_kde_aur() {
+  local selection=
+  local -a names=()
+  SELECTED_KDE_AUR_PACKAGES=()
+  printf 'Install AUR packages (includes tododo-bin)? [Y/n]: ' >&2
+  read_selector_line selection || return 1
+  case "$selection" in
+    ''|[Yy]|[Yy][Ee][Ss]) INSTALL_KDE_AUR=yes ;;
+    [Nn]|[Nn][Oo]) INSTALL_KDE_AUR=no; return 0 ;;
+    *) printf 'Answer yes or no; selection cancelled.\n' >&2; return 1 ;;
+  esac
+  printf 'AUR helper: 1) paru (default)  2) yay. Choose [1/2]: ' >&2
+  read_selector_line selection || return 1
+  case "$selection" in
+    ''|1) AUR_HELPER=paru ;;
+    2) AUR_HELPER=yay ;;
+    *) printf 'Unknown AUR helper; selection cancelled.\n' >&2; return 1 ;;
+  esac
+  printf 'Optional AUR packages (tododo-bin is always included):\n' >&2
+  printf '  %s\n' "${OPTIONAL_KDE_AUR_PACKAGES[@]}" >&2
+  if command -v fzf >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
+    selection=$(printf '%s\n' "${OPTIONAL_KDE_AUR_PACKAGES[@]}" | fzf --multi --prompt='Optional AUR > ' --header='TAB selects, ENTER confirms; ESC cancels') || return 1
+    [[ -n "$selection" ]] && mapfile -t names <<< "$selection"
+  else
+    printf 'Optional AUR package names (space-separated; ENTER for none): ' >&2
+    read_selector_line selection || return 1
+    read -r -a names <<< "$selection"
+  fi
+  SELECTED_KDE_AUR_PACKAGES=("${names[@]}")
+  validate_kde_aur_selection
 }

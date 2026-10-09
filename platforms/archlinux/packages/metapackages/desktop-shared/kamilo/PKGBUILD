@@ -1,0 +1,29 @@
+# Maintainer: Kamilo Melo
+pkgname=kmos-kamilo-productivity
+pkgver=2026.10.09
+pkgrel=1
+pkgdesc="Optional Kamilo productivity and personal desktop applications"
+arch=('any')
+url="https://github.com/kamilomelo/kmos"
+license=('MIT')
+depends=(
+  'bleachbit'
+  'filezilla'
+  'hunspell-en_us'
+  'inkscape'
+  'networkmanager-openvpn'
+  'openvpn'
+  'pass'
+  'rclone'
+  'rsync'
+  'rust'
+  'cargo'
+  'signal-desktop'
+  'simple-scan'
+  'torbrowser-launcher'
+  'torsocks'
+  'typst'
+  'wqy-microhei'
+)
+
+package() { :; }

@@ -12,14 +12,19 @@ trap 'rm -rf -- "$fixture"' EXIT
   source "$base"
   KDE_PROFILE=custom
   choose_kde_packages() {
-    SELECTED_KDE_METAPACKAGES=(kmos-browsers)
+    SELECTED_KDE_METAPACKAGES=(kmos-kamilo-productivity)
     EXTRA_KDE_PACKAGES=(firefox)
+  }
+  select_kde_aur() {
+    INSTALL_KDE_AUR=yes AUR_HELPER=paru
+    SELECTED_KDE_AUR_PACKAGES=(onlyoffice-bin)
   }
   pacman() { [[ "$*" == '-Si -- firefox' ]]; }
   ask_yes_no() { return 1; }
   collect_desktop_config <<< '2'
-  [[ "$INSTALL_KDE" == yes && "$INSTALL_KDE_AUR" == no ]]
-  [[ "$kmos_KDE_METAPACKAGES" == kmos-browsers && "$kmos_KDE_EXTRA_PACKAGES" == firefox ]]
+  [[ "$INSTALL_KDE" == yes && "$INSTALL_KDE_AUR" == yes ]]
+  [[ "$kmos_KDE_METAPACKAGES" == kmos-kamilo-productivity && "$kmos_KDE_EXTRA_PACKAGES" == firefox ]]
+  [[ "$kmos_KDE_AUR_PACKAGES" == onlyoffice-bin ]]
   [[ "$WIFI_BACKEND" == networkmanager ]]
 ) > "$fixture/planned" 2>&1
 grep -Fq 'KDE desktop (choose packages)' "$fixture/planned"
@@ -31,6 +36,7 @@ if (
     SELECTED_KDE_METAPACKAGES=(kmos-invalid)
     EXTRA_KDE_PACKAGES=()
   }
+  select_kde_aur() { INSTALL_KDE_AUR=no; SELECTED_KDE_AUR_PACKAGES=(); }
   pacman() { :; }
   collect_desktop_config <<< '2'
 ) > "$fixture/bad-plan" 2>&1; then
@@ -41,13 +47,15 @@ grep -Fq 'Unknown optional group: kmos-invalid' "$fixture/bad-plan"
 (
   source "$kde"
   KDE_PROFILE=custom
-  kmos_KDE_METAPACKAGES=kmos-browsers kmos_KDE_EXTRA_PACKAGES=firefox
+  INSTALL_AUR=yes
+  kmos_KDE_METAPACKAGES=kmos-kamilo-productivity kmos_KDE_EXTRA_PACKAGES=firefox
   select_kde_metapackages
   load_kde_metapackages
-  [[ "$INSTALL_AUR" == no && "$KDE_LOCAL_MANIFESTS_ONLY" == yes ]]
+  [[ "$INSTALL_AUR" == yes && "$KDE_LOCAL_MANIFESTS_ONLY" == yes ]]
   [[ " ${KDE_PACKAGES[*]} " == *' firefox '* ]]
+  [[ " ${KDE_PACKAGES[*]} " == *' kdenlive '* ]]
+  [[ " ${KDE_PACKAGES[*]} " == *' firefox-developer-edition '* ]]
   run_target_pacman_without_packagekit_hook() { printf 'Unexpected pruning.\n' >&2; return 1; }
-  remove_unwanted_packages
   preserve_kwallet_backend
 ) > "$fixture/iso-resolved" 2>&1
 
