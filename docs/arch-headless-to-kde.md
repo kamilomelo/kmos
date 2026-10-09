@@ -39,12 +39,15 @@ it as a field-tested replacement for `main`/`v0.9.0`.**
 - **Always:** shared Arch and terminal packages, KDE base, KDE apps (`ark`,
   `falkon`, `filelight`, `kate`, `kcalc`, `markdownpart`, `okular`,
   `partitionmanager`, `yakuake`, `ffmpegthumbs`, `gwenview`, `haruna`, `kamoso`,
-  `kdenlive`, `kdegraphics-thumbnailers`, `kolourpaint`, `spectacle`), and
+  `kdenlive`, `kdegraphics-thumbnailers`, `kolourpaint`, `spectacle`,
+  `qt6-multimedia-ffmpeg`, `tesseract-data-eng`), and
   desktop productivity (`firefox-developer-edition`). KDE base also resolves
-  Plasma, audio, device integration and filesystem tools.
+  Plasma, audio (including `pipewire-jack`), device integration and filesystem
+  tools. These explicit packages choose the FFmpeg, PipeWire JACK and English
+  OCR providers without an installer prompt.
 - **Kamilo productivity [Y/n]:** `bleachbit`, `filezilla`, `hunspell-en_us`,
   `inkscape`, `networkmanager-openvpn`, `openvpn`, `pass`, `rclone`, `rsync`,
-  `rust`, `cargo`, `signal-desktop`, `simple-scan`, `torbrowser-launcher`,
+  `rust` (which provides Cargo), `signal-desktop`, `simple-scan`, `torbrowser-launcher`,
   `torsocks`, `typst`, `wqy-microhei`.
 - **AUR [Y/n]:** if approved, installs `tododo-bin`; helper defaults to `paru`
   (or choose `yay`). Optional AUR names are `brother-ql1100nwb`,

@@ -1617,7 +1617,7 @@ EOF
   fi
   arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm paru-bin paru-bin-debug >/dev/null 2>&1 || true
 
-  arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm rust cargo
+  arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm rust
   arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "git clone https://aur.archlinux.org/paru.git '$aur_root/paru'" || die "Could not clone paru from AUR."
   if ! arch-chroot "$MOUNT_POINT" runuser -u "$PRIMARY_USER" -- bash -lc "cd '$aur_root/paru' && makepkg -si --noconfirm --needed --clean --cleanbuild"; then
     rm -f "$sudoers_file"
@@ -1625,7 +1625,7 @@ EOF
   fi
 
   rm -f "$sudoers_file"
-  arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm rust cargo >/dev/null 2>&1 || warn "Could not remove temporary Rust build packages."
+  arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm rust >/dev/null 2>&1 || warn "Could not remove temporary Rust build packages."
   success "paru bootstrapped in the base system."
 }
 

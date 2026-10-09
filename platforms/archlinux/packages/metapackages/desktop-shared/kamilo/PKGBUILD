@@ -17,7 +17,6 @@ depends=(
   'rclone'
   'rsync'
   'rust'
-  'cargo'
   'signal-desktop'
   'simple-scan'
   'torbrowser-launcher'

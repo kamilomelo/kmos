@@ -44,19 +44,23 @@ for personal in no yes; do
     else resolve_kde_packages custom; fi
   ) > "$fixture/$personal-live" 2> "$fixture/$personal-live-details"
   cmp "$fixture/$personal-iso" "$fixture/$personal-live"
-  for required in plasma-desktop networkmanager sddm firefox-developer-edition spectacle kdenlive; do
+  for required in plasma-desktop networkmanager sddm firefox-developer-edition spectacle kdenlive \
+    pipewire-jack qt6-multimedia-ffmpeg tesseract-data-eng; do
     grep -Fxq "$required" "$fixture/$personal-iso"
   done
 done
-for personal in typst inkscape simple-scan rust cargo; do
+for personal in typst inkscape simple-scan rust; do
   grep -Fxq "$personal" "$fixture/yes-iso"
 done
-if grep -Eq '^(typst|inkscape|simple-scan|rust|cargo)$' "$fixture/no-iso"; then
+if grep -Fxq cargo "$fixture/yes-iso"; then
+  printf 'Virtual Cargo target reintroduced the rust/rustup provider prompt.\n' >&2; exit 1
+fi
+if grep -Eq '^(typst|inkscape|simple-scan|rust)$' "$fixture/no-iso"; then
   printf 'Optional productivity package was made mandatory.\n' >&2; exit 1
 fi
 
 # Legacy full is an inventory reference: the selected Kamilo layer keeps every
-# previously selected official-repository package and adds three approved ones.
+# previously selected official-repository package and adds approved choices.
 (
   source "$iso"
   KDE_PROFILE=full INSTALL_AUR=no KDE_LOCAL_MANIFESTS_ONLY=yes
@@ -67,7 +71,7 @@ fi
 if comm -23 "$fixture/legacy-full" "$fixture/yes-iso" | grep .; then
   printf 'A legacy full package was lost in the guided profile.\n' >&2; exit 1
 fi
-[[ $(comm -13 "$fixture/legacy-full" "$fixture/yes-iso") == $'cargo\nrust\nsimple-scan' ]]
+[[ $(comm -13 "$fixture/legacy-full" "$fixture/yes-iso") == $'qt6-multimedia-ffmpeg\nrust\nsimple-scan\ntesseract-data-eng' ]]
 
 # Never silently use published main manifests when an experimental source is missing.
 if (

@@ -579,7 +579,7 @@ EOF
   fi
   arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm paru-bin paru-bin-debug >/dev/null 2>&1 || true
 
-  if ! arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm rust cargo; then
+  if ! arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm rust; then
     rm -f "$sudoers_file"
     warn "Could not install temporary Rust build packages for paru."
     return 1
@@ -597,7 +597,7 @@ EOF
 
   rm -f "$sudoers_file"
   if [[ "$KDE_PROFILE" != custom ]]; then
-    arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm rust cargo >/dev/null 2>&1 || warn "Could not remove temporary Rust build packages."
+    arch-chroot "$MOUNT_POINT" pacman -Rns --noconfirm rust >/dev/null 2>&1 || warn "Could not remove temporary Rust build packages."
   fi
   success "paru bootstrapped for KDE install."
 }

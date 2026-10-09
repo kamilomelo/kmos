@@ -23,7 +23,9 @@ depends=(
   'kdenlive'
   'kdegraphics-thumbnailers'
   'kolourpaint'
+  'qt6-multimedia-ffmpeg'
   'spectacle'
+  'tesseract-data-eng'
 )
 
 package() { :; }

@@ -99,8 +99,8 @@ fi
   }
   bootstrap_paru
 ) > "$fixture/paru-output" 2>&1
-grep -Fq 'pacman -S --needed --noconfirm rust cargo' "$fixture/paru-order"
-if grep -Fq 'pacman -Rns --noconfirm rust cargo' "$fixture/paru-order"; then
+grep -Fxq "$fixture/paru-target pacman -S --needed --noconfirm rust" "$fixture/paru-order"
+if grep -Fq 'pacman -Rns --noconfirm rust' "$fixture/paru-order"; then
   printf 'Custom paru bootstrap removed user-selected Rust/Cargo.\n' >&2; exit 1
 fi
 
