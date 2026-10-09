@@ -47,6 +47,14 @@ cmp "$fixture/allowed-aur" "$fixture/repo-aur"
   select_kde_aur
   [[ "$INSTALL_KDE_AUR" == no && ${#SELECTED_KDE_AUR_PACKAGES[@]} == 0 ]]
 ) > "$fixture/declined" 2>&1
+(
+  source "$selector"
+  read_selector_line() { printf -v "$1" '%s' ''; }
+  select_kde_aur
+  [[ "$INSTALL_KDE_AUR" == yes && "$AUR_HELPER" == paru ]]
+  [[ ${#SELECTED_KDE_AUR_PACKAGES[@]} == 0 ]]
+) > "$fixture/default-aur" 2>&1
+grep -Fq 'Install AUR? [Y/n]:' "$fixture/default-aur"
 if (
   source "$selector"
   SELECTED_KDE_AUR_PACKAGES=(unapproved-aur)

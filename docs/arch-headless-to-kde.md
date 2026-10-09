@@ -23,9 +23,9 @@ been checked with offline fixtures, not a new ISO installation.
 On the **experimental x86/next Arch ISO installer**, `./kmos-install.sh` always
 installs the shared Arch CLI tools. Choosing KDE adds mandatory KDE base,
 KDE apps (including Spectacle and Kdenlive), and desktop productivity
-(`firefox-developer-edition`). One yes/no question shows the actual optional
-Kamilo productivity packages. The free-text official-repository package
-prompt remains. AUR is asked separately (yes by default): choose `paru` or
+(`firefox-developer-edition`). Kamilo productivity is asked with **Yes** as the
+default; the full package list is below. The free-text official-repository
+package prompt remains. AUR is asked separately (yes by default): choose `paru` or
 `yay`, then select optional AUR packages by name or with `fzf` when already
 available; `tododo-bin` is included only when AUR is approved. All choices and
 local manifests are validated **before** final disk approval/format. There is
@@ -33,6 +33,31 @@ no Firefox pruning policy; guided installs also skip the old font/package
 cleanup. Explicit `--profile full|noapps` remains for compatibility, not the
 recommended flow. **This reorganization is fixture-tested only; do not treat
 it as a field-tested replacement for `main`/`v0.9.0`.**
+
+### Guided KDE package choices
+
+- **Always:** shared Arch and terminal packages, KDE base, KDE apps (`ark`,
+  `falkon`, `filelight`, `kate`, `kcalc`, `markdownpart`, `okular`,
+  `partitionmanager`, `yakuake`, `ffmpegthumbs`, `gwenview`, `haruna`, `kamoso`,
+  `kdenlive`, `kdegraphics-thumbnailers`, `kolourpaint`, `spectacle`), and
+  desktop productivity (`firefox-developer-edition`). KDE base also resolves
+  Plasma, audio, device integration and filesystem tools.
+- **Kamilo productivity [Y/n]:** `bleachbit`, `filezilla`, `hunspell-en_us`,
+  `inkscape`, `networkmanager-openvpn`, `openvpn`, `pass`, `rclone`, `rsync`,
+  `rust`, `cargo`, `signal-desktop`, `simple-scan`, `torbrowser-launcher`,
+  `torsocks`, `typst`, `wqy-microhei`.
+- **AUR [Y/n]:** if approved, installs `tododo-bin`; helper defaults to `paru`
+  (or choose `yay`). Optional AUR names are `brother-ql1100nwb`,
+  `kchat-appimage`, `kdrive-bin`, `onlyoffice-bin`, `paisa-bin`,
+  `rtl8821au-dkms-git`. These extras are **not** selected automatically;
+  hardware-specific drivers must be chosen explicitly. If `fzf` is already
+  present, it can select extras; otherwise type their names. Enter chooses
+  no extras.
+- **Extra repo packages:** enter additional official-repository package names,
+  or press Enter for none. This is separate from the predefined groups.
+
+No package defaults change the explicit disk/partition choices or the `FORMAT`
+confirmation.
 
 On a **new headless → KDE upgrade**, run the script without arguments to
 choose the optional Kamilo set and extra official-repository packages:
@@ -42,8 +67,8 @@ choose the optional Kamilo set and extra official-repository packages:
 ```
 
 This always includes KDE base, KDE apps and mandatory desktop productivity.
-The optional Kamilo list is displayed before its yes/no question; extra
-repository names are entered separately. This live upgrade does **not** install
+The optional Kamilo choice defaults to Yes (see the package list above);
+extra repository names are entered separately. This live upgrade does **not** install
 `fzf` or AUR packages. The selection is shown before the `INSTALL KDE`
 confirmation and pacman transaction. The revised live-upgrade selector is
 **fixture-tested only**. An already upgraded KDE machine is not a valid target

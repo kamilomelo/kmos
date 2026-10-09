@@ -15,6 +15,17 @@ grep -Fq -- '--install --select' "$fixture/help"
   main
 ) > "$fixture/default-mode"
 [[ $(cat "$fixture/default-mode") == custom ]]
+(
+  source "$script"
+  read_selector_line() { printf -v "$1" '%s' ''; }
+  select_live_packages
+  [[ ${SELECTED_KDE_METAPACKAGES[*]} == kmos-kamilo-productivity ]]
+  [[ ${#EXTRA_KDE_PACKAGES[@]} == 0 ]]
+) > "$fixture/default-selection" 2>&1
+grep -Fq 'Kamilo productivity? [Y/n]:' "$fixture/default-selection"
+if grep -Fq 'Mandatory: shared Arch tools' "$fixture/default-selection"; then
+  printf 'Verbose package explanation remains in the installer prompt.\n' >&2; exit 1
+fi
 
 (
   source "$script"
