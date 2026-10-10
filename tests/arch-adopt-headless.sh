@@ -91,7 +91,7 @@ bash -n "$script"
   preflight() { printf 'preflight\n' >> "$fixture/order"; }
   require_root() { :; }
   ask() { return 0; }
-  input() { case "$1" in AUR*) printf 'yay\n' ;; *) printf 'builder\n' ;; esac; }
+  input() { printf '2\n'; }
   create_accounts() { :; }
   regular_user() { [[ "$1" == builder ]]; }
   is_admin() { [[ "$1" == builder ]]; }
@@ -159,11 +159,21 @@ bash -n "$script"
   yay() { [[ "$1" == --version ]]; }
   input() { printf '\n'; }
   [[ $(select_aur_helper) == paru ]]
-  input() { printf 'yay\n'; }
+  input() { printf '2\n'; }
   [[ $(select_aur_helper) == yay ]]
   yay() { return 1; }
   if select_aur_helper > "$fixture/broken-helper" 2>&1; then exit 1; fi
   grep -Fq 'cannot start' "$fixture/broken-helper"
+  input() {
+    if [[ ! -f "$fixture/helper-retry" ]]; then
+      touch "$fixture/helper-retry"
+      printf '9\n'
+    else
+      printf '1\n'
+    fi
+  }
+  [[ $(select_aur_helper 2> "$fixture/invalid-helper") == paru ]]
+  grep -Fq 'Invalid selection.' "$fixture/invalid-helper"
 )
 
 (

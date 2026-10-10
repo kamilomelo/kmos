@@ -27,7 +27,9 @@ active `sshd`. Wi-Fi tools are skipped when there is no wireless interface;
 `nvtop` is included when an
 NVIDIA PCI device and `nvidia-utils` are present. The script does not install
 graphics drivers, change network-manager services, or alter SSH settings. It
-asks for `paru` (default) or `yay`. Paru is built from AUR **source**, not
+shows the same numbered helper menu as the fresh headless x86 installer:
+`1) paru` (default) or `2) yay`. VPS AUR is required rather than optional.
+Paru is built from AUR **source**, not
 `paru-bin`, to match the system's pacman/libalpm. This installs the official
 `rust` package if missing; Rust remains installed for future paru rebuilds.
 Compiling can take considerable VPS RAM, disk space and time. After showing the

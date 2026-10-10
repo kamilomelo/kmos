@@ -228,10 +228,18 @@ aur_builder() {
 }
 helper_works() { command -v "$1" >/dev/null 2>&1 && "$1" --version >/dev/null 2>&1; }
 select_aur_helper() {
-  local default=paru choice
-  choice=$(input "AUR helper [paru/yay] (default $default): ") || return 1
-  choice=${choice:-$default}
-  [[ "$choice" == paru || "$choice" == yay ]] || { fail 'Choose paru or yay.'; return 1; }
+  local choice
+  note 'AUR is required for VPS adoption; tododo-bin will be installed.'
+  note 'AUR helper options'
+  printf '  1) paru\n  2) yay\n' >&2
+  while true; do
+    choice=$(input 'Select [1-2] (default: 1): ') || return 1
+    case "$choice" in
+      ''|1) choice=paru; break ;;
+      2) choice=yay; break ;;
+      *) note 'Invalid selection.' ;;
+    esac
+  done
   if command -v "$choice" >/dev/null 2>&1 && ! helper_works "$choice"; then
     if [[ "$choice" == paru ]]; then
       note 'Installed paru cannot start; the source build will replace it after explicit approval.'
