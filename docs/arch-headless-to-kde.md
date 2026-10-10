@@ -9,7 +9,8 @@ separate visual finishing pass worked on hardware. A staged next-boot handoff
 to NetworkManager worked after extending the Ethernet DHCP wait: Ethernet,
 NetworkManager-controlled Wi-Fi, and Wi-Fi-only internet with the cable unplugged
 were verified. The **new combined one-command upgrade** has only fixture tests;
-the revised package/AUR choices have not had a fresh ISO field test. Keep
+its all-existing-users visual finishing still needs a field check. The revised
+package/AUR choices have not had a fresh ISO field test. Keep
 `main` and `v0.9.0` untouched until those final tests pass.
 
 From a checkout of `x86/next`, you can inspect the system with the optional
@@ -101,8 +102,10 @@ system upgrade.
 The guided script stages KMOS's panel, wallpaper and color defaults only where
 it does not overwrite personal configurations, enables SDDM for the next boot,
 and calls the reviewable visual finishing pass **during the same invocation**
-for the invoking regular user. Existing settings still need individual approval
-and are backed up before replacement. It does **not** run the ISO's destructive
+for every existing local regular account with a real home under `/home`, as
+well as staging defaults for future users. Existing settings still need
+individual approval and are backed up before replacement; personal panels
+and wallpaper choices are never replaced. It does **not** run the ISO's destructive
 font/package cleanup or install AUR packages. After finishing, it offers the
 guarded **next-boot** NetworkManager handoff if a working wired fallback and
 service state pass the checks. The handoff asks for `STAGE NETWORK` explicitly;
@@ -125,20 +128,22 @@ different panel template is refused rather than replaced.
 
 ## Visual finishing and retries
 
-The guided upgrade offers the reviewable finishing pass automatically. For an
-older upgrade or a retry after interruption, you can preview the KDE
-login/lock-screen look, Kappa/Konsole profile, Yakuake, Kate, Dolphin and other
-desktop defaults for **your own account**:
+The guided upgrade offers the reviewable finishing pass to **all local regular
+users** automatically. For an older upgrade or a retry after interruption, you
+can preview the KDE login/lock-screen look, Kappa/Konsole profile, Yakuake,
+Kate, Dolphin and other desktop defaults for all local regular accounts:
 
 ```bash
-./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan
+./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan --all-users
 ```
 
 The plan lists existing files that differ from the KMOS defaults and their
-sizes. If you want those changes, run `./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --apply`.
-It asks for initial confirmation and then **each existing file** defaults to
+sizes. If you want those changes, run `./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --apply --all-users`.
+The guided upgrade already asks for `INSTALL KDE`, so it skips the redundant
+initial visual confirmation; standalone `--apply --all-users` still asks once.
+**Each existing file** defaults to
 **No**. Only approved replacements are saved under
-`~/.local/share/kmos/backups/kde-<date>/` for user files or
+`~/.local/share/kmos/backups/kde-<date>/` within each affected account for user files or
 `/var/backups/kmos/kde-<date>/` for system files. Missing files are added
 without prompting; no panels, wallpaper choices, networking, packages or
 other accounts' home files are changed. System-wide defaults can affect KDE
@@ -237,7 +242,8 @@ formats selected partitions; verify the disk/EFI target before typing `FORMAT`.
 2. **Fresh headless → KDE:** on a fresh *headless* KMOS install, obtain an
    `x86/next` checkout and run `./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh`
    as a regular user, without `sudo` or profile flags. Confirm **the same run**
-   guides package selection, offers reviewable visual finishing with backups,
+   guides package selection, offers reviewable visual finishing for all local
+   regular users with backups,
    and—only if wired safeguards pass—asks separately to stage NM for next boot.
    It must not stop active SSH/network services or reboot automatically. After
    the deliberate reboot, check KDE visuals without overwriting personal panels,

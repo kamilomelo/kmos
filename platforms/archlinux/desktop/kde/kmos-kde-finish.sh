@@ -7,17 +7,21 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 mode= user= home= backup_stamp= temp= changes=0 skipped=0 backup_bytes=0
 system_backup_root=/var/backups/kmos
 font_dir=/usr/local/share/fonts/kmos
+local_passwd_file=/etc/passwd
 
 usage() {
   cat <<'EOF'
 Usage: ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan
        ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --apply
+       ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan --all-users
+       ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --apply --all-users
 
-For the invoking user on an installed KMOS KDE system. --plan reads settings
-only. --apply prompts before replacing EACH existing file and backs up approved
-replacements. Missing defaults are added; panels, wallpaper choices, networking,
-packages and other users' home files are not changed. System-wide defaults can
-affect other KDE users who have no personal override. No automatic reboot.
+By default, finishes the invoking user's KDE settings. --all-users includes
+every local regular account with a real home under /home (never root or service
+accounts). --plan reads settings only. --apply prompts before replacing EACH
+existing file and backs up approved replacements. Missing defaults are added;
+panels, wallpaper choices, networking and packages are not changed. System-wide
+defaults can affect KDE users with no personal override. No automatic reboot.
 EOF
 }
 
@@ -31,6 +35,22 @@ choose_user() {
   ((uid >= 1000)) || { fail 'Choose a regular account, not root.'; return 1; }
   home=$(getent passwd "$user" | cut -d: -f6)
   [[ "$home" == /home/* && -d "$home" && ! -L "$home" ]] || { fail 'User home must be a real directory under /home.'; return 1; }
+  safe_path "$home" || return 1
+  [[ $(stat -c %u -- "$home") == "$uid" ]] || { fail "User home is not owned by $user: $home"; return 1; }
+}
+
+list_local_users() {
+  local name uid account_home password gid gecos login_shell
+  local -n result="$1"
+  result=()
+  while IFS=: read -r name password uid gid gecos account_home login_shell; do
+    [[ "$uid" =~ ^[0-9]+$ ]] || continue
+    if ((uid >= 1000 && uid < 65534)) && [[ "$account_home" == /home/* ]]; then
+      # Account identity and home are checked before any writes, below.
+      result+=("$name")
+    fi
+  done < "$local_passwd_file"
+  ((${#result[@]} > 0)) || { fail 'No local regular users found.'; return 1; }
 }
 
 check_system() {
@@ -98,6 +118,10 @@ stage_file() {
   if [[ -e "$target" ]]; then
     if ! ask_replace "$target"; then ((skipped+=1)); return 0; fi
     backup_file "$scope" "$target" || return 1
+  fi
+  if [[ "$scope" == user ]]; then
+    # Do not leave a newly created ~/.config or ~/.local tree owned by root.
+    runuser -u "$user" -- mkdir -p -- "${target%/*}" || return 1
   fi
   install -Dm0644 "$sourcefile" "$target" || return 1
   [[ "$scope" != user ]] || chown "$user:" "$target"
@@ -225,49 +249,68 @@ stage_sddm_assets() {
   stage_file system /etc/sddm.conf.d/kmos-theme.conf write_sddm_theme || return 1
 }
 
-stage_defaults() {
-  local account_cfg="$home/.config" account_data="$home/.local/share"
+load_finish_assets() {
   # Source only the ISO's individual config writers, never apply_post_tweaks.
   # shellcheck disable=SC1090,SC1091
   source "$SCRIPT_DIR/kmos-kde-post.sh"
   MOUNT_POINT=/
+}
+
+stage_system_defaults() {
   stage_fonts || return 1
   stage_sddm_assets || return 1
   stage_file system /etc/xdg/ksplashrc write_ksplash_none || return 1
   stage_file system /etc/xdg/kscreenlockerrc write_kscreenlocker_defaults || return 1
   stage_file system /etc/skel/.config/ksplashrc write_ksplash_none || return 1
   stage_file system /etc/skel/.config/kscreenlockerrc write_kscreenlocker_defaults || return 1
-  stage_file user "$account_cfg/ksplashrc" write_ksplash_none || return 1
-  stage_file user "$account_cfg/kscreenlockerrc" write_kscreenlocker_defaults || return 1
   stage_file system /usr/share/konsole/kmos.colorscheme write_kmos_konsole_color || return 1
   stage_file system /etc/skel/.local/share/konsole/kmos.profile write_kmos_konsole_profile || return 1
   stage_file system /etc/skel/.local/share/konsole/kmos-dolphin.profile write_kmos_dolphin_profile || return 1
   stage_file system /etc/skel/.local/share/konsole/Default.profile write_konsole_default_profile || return 1
   stage_file system /etc/skel/.config/konsolerc write_konsole_rc || return 1
   stage_file system /etc/xdg/konsolerc write_konsole_rc || return 1
-  stage_file user "$account_data/konsole/kmos.colorscheme" write_kmos_konsole_color || return 1
-  stage_file user "$account_data/konsole/kmos.profile" write_kmos_konsole_profile || return 1
-  stage_file user "$account_data/konsole/kmos-dolphin.profile" write_kmos_dolphin_profile || return 1
-  stage_file user "$account_data/konsole/Default.profile" write_konsole_default_profile || return 1
-  stage_file user "$account_cfg/konsolerc" write_konsole_rc || return 1
   stage_file system /etc/skel/.config/yakuakerc write_yakuake_rc || return 1
   if command -v yakuake >/dev/null; then
     stage_yakuake_skin || return 1
     stage_file system /etc/xdg/autostart/kmos-yakuake.desktop write_kmos_yakuake_autostart || return 1
   fi
-  stage_file user "$account_cfg/yakuakerc" write_yakuake_rc || return 1
   stage_file system /etc/skel/.config/dolphinrc write_dolphin_rc || return 1
-  stage_file user "$account_cfg/dolphinrc" write_dolphin_rc || return 1
   stage_file system /usr/share/org.kde.syntax-highlighting/themes/kmos-github.theme write_kmos_kate_theme || return 1
   stage_file system /usr/share/org.kde.syntax-highlighting/themes/kmos-ayu.theme write_kmos_ayu_theme || return 1
   stage_file system /etc/skel/.config/katerc write_kate_rc || return 1
-  stage_file user "$account_cfg/katerc" write_kate_rc || return 1
   stage_file system /etc/skel/.config/kwinrc write_virtual_desktops || return 1
+}
+
+stage_user_defaults() {
+  local account_cfg="$home/.config" account_data="$home/.local/share"
+  stage_file user "$account_cfg/ksplashrc" write_ksplash_none || return 1
+  stage_file user "$account_cfg/kscreenlockerrc" write_kscreenlocker_defaults || return 1
+  stage_file user "$account_data/konsole/kmos.colorscheme" write_kmos_konsole_color || return 1
+  stage_file user "$account_data/konsole/kmos.profile" write_kmos_konsole_profile || return 1
+  stage_file user "$account_data/konsole/kmos-dolphin.profile" write_kmos_dolphin_profile || return 1
+  stage_file user "$account_data/konsole/Default.profile" write_konsole_default_profile || return 1
+  stage_file user "$account_cfg/konsolerc" write_konsole_rc || return 1
+  stage_file user "$account_cfg/yakuakerc" write_yakuake_rc || return 1
+  stage_file user "$account_cfg/dolphinrc" write_dolphin_rc || return 1
+  stage_file user "$account_cfg/katerc" write_kate_rc || return 1
   stage_file user "$account_cfg/kwinrc" write_virtual_desktops || return 1
 }
 
+stage_defaults() {
+  load_finish_assets
+  stage_system_defaults || return 1
+  stage_user_defaults
+}
+
+require_root_for_all_user_plan() {
+  ((EUID == 0)) && return 0
+  command -v sudo >/dev/null || { fail 'sudo is required to inspect every user home.'; return 1; }
+  exec sudo -- "$SCRIPT_DIR/kmos-kde-finish.sh" --plan --all-users
+}
+
 main() {
-  local original_user answer
+  local original_user answer all_users=no from_upgrade=no account
+  local -a accounts=()
   original_user="${SUDO_USER:-$(id -un)}"
   mode="${1:-}"
   case "$mode" in
@@ -275,13 +318,28 @@ main() {
     --plan|--apply) ;;
     *) usage >&2; return 2 ;;
   esac
-  if (( $# == 3 )) && [[ "$2" == --user ]]; then original_user="$3"
+  if (( $# == 2 )) && [[ "$2" == --all-users ]]; then all_users=yes
+  elif (( $# == 3 )) && [[ "$mode" == --apply && "$2" == --all-users && "$3" == --from-upgrade ]]; then
+    all_users=yes from_upgrade=yes
+  elif (( $# == 3 )) && [[ "$2" == --user ]]; then original_user="$3"
   elif (( $# != 1 )); then usage >&2; return 2
   fi
-  choose_user "$original_user" || return 1
+  if [[ "$all_users" == yes ]]; then
+    list_local_users accounts || return 1
+    for account in "${accounts[@]}"; do choose_user "$account" || return 1; done
+  else
+    choose_user "$original_user" || return 1
+  fi
   check_system || return 1
+  if [[ "$mode" == --plan && "$all_users" == yes ]]; then require_root_for_all_user_plan || return 1; fi
   if [[ "$mode" == --apply && $EUID -ne 0 ]]; then
     command -v sudo >/dev/null || { fail 'sudo is required for --apply.'; return 1; }
+    if [[ "$all_users" == yes ]]; then
+      if [[ "$from_upgrade" == yes ]]; then
+        exec sudo -- "$SCRIPT_DIR/kmos-kde-finish.sh" --apply --all-users --from-upgrade
+      fi
+      exec sudo -- "$SCRIPT_DIR/kmos-kde-finish.sh" --apply --all-users
+    fi
     exec sudo -- "$SCRIPT_DIR/kmos-kde-finish.sh" --apply --user "$user"
   fi
   [[ "$mode" != --apply ]] || mode=apply
@@ -289,13 +347,27 @@ main() {
   backup_stamp=$(date +%Y%m%d-%H%M%S)
   temp=$(mktemp -d) || return 1
   trap 'rm -rf -- "$temp"' EXIT
-  printf 'KMOS KDE defaults for %s (%s). Existing files require individual approval.\n' "$user" "$mode"
-  if [[ "$mode" == apply ]]; then
+  if [[ "$all_users" == yes ]]; then
+    printf 'KMOS KDE defaults for all local regular users: %s (%s). Existing files require individual approval.\n' "${accounts[*]}" "$mode"
+  else
+    printf 'KMOS KDE defaults for %s (%s). Existing files require individual approval.\n' "$user" "$mode"
+  fi
+  if [[ "$mode" == apply && "$from_upgrade" == no ]]; then
     printf 'Type APPLY KMOS to add missing defaults and review existing files: ' >&2
     read -r answer </dev/tty || return 1
     [[ "$answer" == 'APPLY KMOS' ]] || { fail 'Cancelled without changes.'; return 1; }
   fi
-  stage_defaults || return 1
+  if [[ "$all_users" == yes ]]; then
+    load_finish_assets
+    stage_system_defaults || return 1
+    for account in "${accounts[@]}"; do
+      choose_user "$account" || return 1
+      printf 'User: %s\n' "$user"
+      stage_user_defaults || return 1
+    done
+  else
+    stage_defaults || return 1
+  fi
   if [[ "$mode" == plan ]]; then
     printf 'Maximum existing-config backup payload if you approve every replacement: %s bytes (not packages or home directories).\n' "$backup_bytes"
   fi

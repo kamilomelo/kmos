@@ -4,6 +4,7 @@
 set -euo pipefail
 repo=$(git rev-parse --show-toplevel)
 script="$repo/platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh"
+grep -Fq '"$SCRIPT_DIR/kmos-kde-finish.sh" --apply --all-users --from-upgrade' "$script"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 "$script" --help > "$fixture/help"
@@ -96,7 +97,7 @@ grep -Fq 'Invalid repository package: kmos-unknown' "$fixture/invalid-package"
   service_state() { printf 'active\n'; }
   service_enabled() { printf 'disabled\n'; }
   stage_live_defaults() { :; }
-  apply_visual_finish() { [[ "$1" == fixture-user ]] && printf 'visual-finish\n' >> "$fixture/custom-order"; }
+  apply_visual_finish() { [[ $# == 0 ]] && printf 'visual-finish\n' >> "$fixture/custom-order"; }
   stage_network_for_reboot() { printf 'network-stage\n' >> "$fixture/custom-order"; }
   systemctl() { [[ "$*" == 'enable sddm.service' || "$*" == 'set-default graphical.target' ]]; }
   install() { cat > "$fixture/custom-profile"; }

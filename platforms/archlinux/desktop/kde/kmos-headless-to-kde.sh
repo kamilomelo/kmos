@@ -199,11 +199,12 @@ guided_upgrade_user() {
 }
 
 apply_visual_finish() {
-  local user="$1"
   [[ -x "$SCRIPT_DIR/kmos-kde-finish.sh" ]] || {
     printf 'KDE visual finishing script is missing; run it from a complete checkout.\n' >&2; return 1;
   }
-  "$SCRIPT_DIR/kmos-kde-finish.sh" --apply --user "$user"
+  # INSTALL KDE was already confirmed; keep per-file approvals for existing
+  # settings, but do not ask for a second blanket visual confirmation.
+  "$SCRIPT_DIR/kmos-kde-finish.sh" --apply --all-users --from-upgrade
 }
 
 network_migration_script() { printf '%s\n' "$SCRIPT_DIR/../../tools/kmos-network-migration.sh"; }
@@ -234,7 +235,7 @@ require_root() {
 }
 
 install_layer() {
-  local profile="$1" pkg list before_iwd before_dhcpcd before_nm before_nm_enabled target_user=
+  local profile="$1" pkg list before_iwd before_dhcpcd before_nm before_nm_enabled
   local -a packages=()
   preflight
   if kde_profile_present; then
@@ -261,7 +262,7 @@ install_layer() {
   }
   if [[ "$profile" == custom ]]; then
     require_root --install --select || return 1
-    target_user=$(guided_upgrade_user) || return 1
+    guided_upgrade_user >/dev/null || return 1
     select_live_packages || { printf 'Selection cancelled; nothing installed.\n' >&2; return 1; }
     list=$(resolve_kde_packages "$profile" "${SELECTED_KDE_METAPACKAGES[@]}") || return 1
   else
@@ -297,8 +298,8 @@ install_layer() {
   install -Dm0644 /dev/stdin /usr/share/kmos/kde-profile <<< "$profile" || return 1
   clear_upgrade || return 1
   if [[ "$profile" == custom ]]; then
-    apply_visual_finish "$target_user" || {
-      printf 'KDE is installed, but visual finishing needs review; rerun kmos-kde-finish.sh --apply.\n' >&2
+    apply_visual_finish || {
+      printf 'KDE is installed, but visual finishing needs review; rerun kmos-kde-finish.sh --apply --all-users.\n' >&2
       return 1
     }
     stage_network_for_reboot || return 1
