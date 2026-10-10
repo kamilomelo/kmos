@@ -8,7 +8,7 @@ MARKER=/usr/share/kmos/adopted-headless
 BASHRC=/etc/bash.bashrc
 STARSHIP_PROFILE=/etc/profile.d/10-kmos-starship.sh
 SHARE_KMOS=/usr/share/kmos
-SUDO_RULE=/etc/sudoers.d/20-kmos-adopt-wheel
+SUDO_RULE_DIR=/etc/sudoers.d
 declare -a PACKAGES=() USERS_CREATED=()
 
 usage() {
@@ -23,6 +23,7 @@ sshd. Never formats disks, changes
 network services, or converts an existing KDE desktop. Account deletion is final.
 --preflight reports eligibility without root or changes; --help needs no root.
 --users-only manages accounts without rerunning pacman, AUR, or appearance setup.
+An authorized admin can also grant sudo to existing wheel users in --users-only.
 Have a VPS snapshot or provider console available before a package upgrade.
 EOF
 }
@@ -135,6 +136,7 @@ preflight() {
 require_root() {
   ((EUID == 0)) && return 0
   command -v sudo >/dev/null 2>&1 || { fail 'sudo is required for adoption.'; return 1; }
+  sudo -v || { fail 'This login has no working sudo access. Use another sudo administrator or the provider root console to run --users-only and repair this wheel user; wheel membership alone is not enough.'; return 1; }
   exec sudo -- "$SCRIPT_DIR/kmos-adopt-headless.sh" "$@"
 }
 valid_name() { [[ "$1" =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] && [[ "$1" != root ]]; }
@@ -174,32 +176,51 @@ create_accounts() {
     note "Set a password for $name (handled by passwd, never by KMOS):"
     passwd "$name" || { passwd -l "$name"; fail "Password setup failed; $name is locked until resolved."; return 1; }
     add_key "$name" || return 1
+    if ((${#group[@]})); then
+      ensure_admin_sudo "$name" || { fail "$name was created but does not have verified sudo access; repair it from an authorized admin before relying on it."; return 1; }
+    fi
     note "Created $name. Verify a NEW SSH login before removing an old administrator."
   done
 }
-enable_wheel_sudo() (
-  local builder=$1 rule=$SUDO_RULE tmp
-  sudo -l -U "$builder" >/dev/null 2>&1 && return 0
-  [[ ! -e "$rule" && ! -L "$rule" && ! -L "${rule%/*}" ]] || {
+sudo_allowed() { sudo -l -U "$1" -u root -- /usr/bin/true >/dev/null 2>&1; }
+ensure_admin_sudo() (
+  local name=$1 rule tmp
+  valid_name "$name" && regular_user "$name" && is_admin "$name" || { fail 'Sudo grants require an existing regular wheel user.'; return 1; }
+  sudo_allowed "$name" && return 0
+  rule="$SUDO_RULE_DIR/20-kmos-adopt-$name"
+  [[ ! -e "$rule" && ! -L "$rule" && ! -L "$SUDO_RULE_DIR" ]] || {
     fail "Existing sudo rule or symlink $rule needs manual review."; return 1;
   }
-  note 'The selected wheel user cannot currently use sudo.'
-  note 'The proposed rule grants sudo to ALL wheel users: %wheel ALL=(ALL:ALL) ALL'
-  ask 'Install this KMOS-owned wheel sudo rule?' || { fail 'AUR builds require working sudo.'; return 1; }
+  note "$name is in wheel but is not authorized for sudo as root."
+  note "Proposed rule for $name ONLY: $name ALL=(ALL:ALL) ALL"
+  ask "Grant sudo to $name via $rule?" || { fail "Sudo grant for $name declined; no rule installed."; return 1; }
   command -v visudo >/dev/null || { fail 'visudo is required to validate sudo policy.'; return 1; }
   tmp=$(mktemp) || return 1
   trap 'rm -f -- "$tmp"' EXIT
-  printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$tmp"
+  printf '%s ALL=(ALL:ALL) ALL\n' "$name" > "$tmp"
   chmod 0440 "$tmp"
-  visudo -c -f "$tmp" >/dev/null || { fail 'Invalid wheel sudo policy.'; return 1; }
-  [[ -d "${rule%/*}" ]] || install -d -m 0750 "${rule%/*}"
+  visudo -c -f "$tmp" >/dev/null || { fail 'Invalid sudo policy.'; return 1; }
+  [[ -d "$SUDO_RULE_DIR" ]] || install -d -m 0750 "$SUDO_RULE_DIR"
   install -m 0440 -o root -g root "$tmp" "$rule"
+  sudo_allowed "$name" || { fail "Sudo policy still denies $name; review $rule and the host sudoers policy before relying on this account."; return 1; }
 )
+repair_admin_sudo() {
+  local entry name
+  while IFS= read -r entry; do
+    name=${entry%%:*}
+    is_admin "$name" || continue
+    sudo_allowed "$name" && continue
+    note "$name is in wheel but lacks sudo authorization."
+    if ask "Repair sudo for existing wheel user $name?"; then
+      ensure_admin_sudo "$name" || return 1
+    fi
+  done < <(regular_users)
+}
 choose_builder() {
   local name=$1
   regular_user "$name" && is_admin "$name" || { fail 'AUR builder must be a regular wheel user.'; return 1; }
   command -v runuser >/dev/null && command -v sudo >/dev/null || { fail 'runuser and sudo are required.'; return 1; }
-  enable_wheel_sudo "$name" || return 1
+  ensure_admin_sudo "$name" || return 1
   note "Checking sudo access for $name; sudo may ask for that user's password."
   runuser -u "$name" -- sudo -v || { fail "Cannot use $name for AUR; fix sudo access first."; return 1; }
 }
@@ -448,12 +469,12 @@ guided() {
   note 'Take a VPS snapshot or have provider console access. No automatic configuration backups are retained.'
   ask 'Continue with KMOS adoption?' || { note 'Cancelled without changes.'; return 0; }
   helper=$(select_aur_helper) || return 1
-  create_accounts || return 1
-  builder=$(aur_builder) || return 1
-  note "Using $builder for the AUR build; $helper is installed system-wide for all users."
   note 'Running pacman -Syu --needed; review package replacement prompts.'
   pacman -Syu --needed -- "${PACKAGES[@]}" || return 1
   enable_ssh || return 1
+  create_accounts || return 1
+  builder=$(aur_builder) || return 1
+  note "Using $builder for the AUR build; $helper is installed system-wide for all users."
   choose_builder "$builder" || return 1
   install_aur "$builder" "$helper" || return 1
   install_appearance || return 1
@@ -466,6 +487,7 @@ users_only() {
   preflight || return 1
   note 'Accounts-only mode: no package transactions, AUR builds or SSH/network changes.'
   ask 'Continue to account management?' || { note 'Cancelled without changes.'; return 0; }
+  repair_admin_sudo || return 1
   create_accounts || return 1
   remove_accounts
 }

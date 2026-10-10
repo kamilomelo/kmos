@@ -65,12 +65,17 @@ sudo journalctl -k -b --no-pager | grep -Ei 'out of memory|oom|killed process|me
 You can create regular users, choose wheel admin access, set passwords through
 the system's `passwd` prompt, and paste individual SSH public keys. No password
 is read or saved by KMOS. If there is no existing sudo-capable regular user,
-create one before choosing the AUR builder. Verify a fresh SSH login and sudo
-access for a new administrator. If the selected AUR build user lacks sudo
-access, the script offers a validated, KMOS-owned rule for **all wheel users**;
-declining stops AUR installation. **The script will not remove accounts in the
-same run in which it created one.** Rerun from the replacement wheel account
-with sudo to remove an old administrator, using the accounts-only command:
+create one before choosing the AUR builder. For every newly created wheel
+administrator, the script checks effective sudo policy and offers a validated,
+KMOS-owned **per-user** rule if needed. It also checks the AUR builder. Declining
+the rule stops the run; a newly created account remains, without verified sudo.
+Start `--users-only` from an existing sudo admin or provider root console to
+repair existing wheel users (for example, `itadmin`) with explicit per-user
+approval. An account without sudo cannot authorize itself. Verify sudo from a
+fresh SSH login before relying on a new admin. **The script will not remove
+accounts in the same run in which it created one.** Rerun from the replacement
+wheel account with sudo to remove an old administrator, using the accounts-only
+command:
 
 ```bash
 ./platforms/archlinux/kmos-adopt-headless.sh --users-only

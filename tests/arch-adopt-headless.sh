@@ -92,7 +92,7 @@ bash -n "$script"
   require_root() { :; }
   ask() { return 0; }
   input() { printf '2\n'; }
-  create_accounts() { :; }
+  create_accounts() { printf 'create\n' >> "$fixture/order"; }
   regular_user() { [[ "$1" == builder ]]; }
   is_admin() { [[ "$1" == builder ]]; }
   pacman() { printf 'pacman %s\n' "$*" >> "$fixture/order"; }
@@ -102,7 +102,7 @@ bash -n "$script"
   install_appearance() { printf 'appearance\n' >> "$fixture/order"; }
   remove_accounts() { printf 'remove\n' >> "$fixture/order"; }
   guided
-  [[ $(cat "$fixture/order") == $'preflight\npacman -Syu --needed -- fastfetch starship openssh\nenable sshd\nbuilder builder\naur builder yay\nappearance\nremove' ]]
+  [[ $(cat "$fixture/order") == $'preflight\npacman -Syu --needed -- fastfetch starship openssh\nenable sshd\ncreate\nbuilder builder\naur builder yay\nappearance\nremove' ]]
   [[ -f "$MARKER" ]]
 )
 
@@ -255,22 +255,25 @@ bash -n "$script"
   require_root() { :; }
   preflight() { printf 'preflight\n' >> "$fixture/users-order"; }
   ask() { return 0; }
+  repair_admin_sudo() { printf 'repair\n' >> "$fixture/users-order"; }
   create_accounts() { printf 'create\n' >> "$fixture/users-order"; }
   remove_accounts() { printf 'remove\n' >> "$fixture/users-order"; }
   pacman() { printf 'unexpected pacman\n' >> "$fixture/users-order"; return 1; }
   users_only
-  [[ $(cat "$fixture/users-order") == $'preflight\ncreate\nremove' ]]
+  [[ $(cat "$fixture/users-order") == $'preflight\nrepair\ncreate\nremove' ]]
 )
 
 (
   # shellcheck disable=SC1090
   source "$script"
-  SUDO_RULE="$fixture/sudoers.d/20-kmos-adopt-wheel"
+  SUDO_RULE_DIR="$fixture/sudoers.d"
+  regular_user() { [[ "$1" == builder ]]; }
+  is_admin() { [[ "$1" == builder ]]; }
   sudo() { return 1; }
   ask() { return 1; }
-  if enable_wheel_sudo builder > "$fixture/sudo-declined" 2>&1; then exit 1; fi
-  [[ ! -e "$SUDO_RULE" ]]
-  grep -Fq 'all wheel users' "$fixture/sudo-declined" || grep -Fq 'ALL wheel users' "$fixture/sudo-declined"
+  if ensure_admin_sudo builder > "$fixture/sudo-declined" 2>&1; then exit 1; fi
+  [[ ! -e "$SUDO_RULE_DIR/20-kmos-adopt-builder" ]]
+  grep -Fq 'builder ONLY' "$fixture/sudo-declined"
 )
 
 (
@@ -283,11 +286,60 @@ bash -n "$script"
   useradd() { printf '%s\n' "$*" > "$marker"; }
   passwd() { :; }
   add_key() { :; }
+  ensure_admin_sudo() { printf '%s\n' "$1" > "$fixture/new-admin-sudo"; }
   create_accounts
   [[ $(cat "$marker") == '-m -s /bin/bash -G wheel newadmin' ]]
+  [[ $(cat "$fixture/new-admin-sudo") == newadmin ]]
   [[ " ${USERS_CREATED[*]} " == *' newadmin '* ]]
   remove_accounts > "$fixture/remove-skipped" 2>&1
   grep -Fq 'No accounts will be removed' "$fixture/remove-skipped"
+)
+
+(
+  # Declining a new admin's sudo grant must stop adoption, not claim success.
+  # shellcheck disable=SC1090
+  source "$script"
+  ask() { [[ "$1" == 'Create a local user?' || "$1" == 'Grant '* ]]; }
+  input() { printf 'unverified\n'; }
+  getent() { return 2; }
+  useradd() { :; }
+  passwd() { :; }
+  add_key() { :; }
+  ensure_admin_sudo() { return 1; }
+  if create_accounts > "$fixture/unverified-admin" 2>&1; then exit 1; fi
+  [[ " ${USERS_CREATED[*]} " == *' unverified '* ]]
+  grep -Fq 'does not have verified sudo access' "$fixture/unverified-admin"
+)
+
+(
+  # Source-only sudo repair: no host sudoers or accounts are touched.
+  # shellcheck disable=SC1090
+  source "$script"
+  SUDO_RULE_DIR="$fixture/sudoers.d"
+  regular_user() { [[ "$1" == itadmin || "$1" == arch ]]; }
+  is_admin() { [[ "$1" == itadmin || "$1" == arch ]]; }
+  regular_users() { printf 'itadmin:x:1001:1001::/home/itadmin:/bin/bash\narch:x:1002:1002::/home/arch:/bin/bash\n'; }
+  sudo() {
+    [[ "$*" == *' -U arch '* ]] && return 0
+    [[ "$*" == *' -U itadmin '* && -f "$SUDO_RULE_DIR/20-kmos-adopt-itadmin" && ! -L "$SUDO_RULE_DIR/20-kmos-adopt-itadmin" ]]
+  }
+  ask() { [[ "$1" == *itadmin* ]]; }
+  visudo() { grep -Fxq 'itadmin ALL=(ALL:ALL) ALL' "${@: -1}"; }
+  install() {
+    if [[ "$1" == -m && "$3" == -o ]]; then command install -m "$2" "${@: -2}";
+    else command install "$@"; fi
+  }
+  repair_admin_sudo
+  [[ -f "$SUDO_RULE_DIR/20-kmos-adopt-itadmin" ]]
+  [[ ! -e "$SUDO_RULE_DIR/20-kmos-adopt-arch" ]]
+  [[ $(stat -c %a "$SUDO_RULE_DIR/20-kmos-adopt-itadmin") == 440 ]]
+  repair_admin_sudo
+  [[ $(find "$SUDO_RULE_DIR" -maxdepth 1 -type f | wc -l) == 1 ]]
+  rm -f "$SUDO_RULE_DIR/20-kmos-adopt-itadmin"
+  ln -s /dev/null "$SUDO_RULE_DIR/20-kmos-adopt-itadmin"
+  if ensure_admin_sudo itadmin > "$fixture/sudo-conflict" 2>&1; then exit 1; fi
+  [[ -L "$SUDO_RULE_DIR/20-kmos-adopt-itadmin" ]]
+  grep -Fq 'needs manual review' "$fixture/sudo-conflict"
 )
 
 printf 'Arch VPS/headless adoption package, appearance, and account guards: OK (fixtures only).\n'

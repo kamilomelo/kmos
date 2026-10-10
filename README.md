@@ -74,7 +74,7 @@ inventory before the guided run; the script requests sudo when needed. If you
 already have an older checkout, review local changes and update it to `main`
 instead of cloning over it.
 
-The guided run:
+The guided run (sudo from the current login, or root, is required):
 
 1. Runs `pacman -Syu --needed` for missing base tools (including `openssh`,
    `git`, `sudo`, and `nano`) and the headless CLI set: btop, fastfetch, opencode,
@@ -90,8 +90,10 @@ The guided run:
    Paru is built from source using Rust; yay uses `yay-bin` when not already
    installed. The helper and `tododo-bin` are installed system-wide, but users
    need working sudo rights to install system packages. The current wheel
-   administrator performs AUR builds as a non-root user. If that builder lacks
-   sudo access, a rule for **all wheel users** is offered for separate approval.
+   administrator performs AUR builds as a non-root user. New wheel admins and
+   the builder are checked for sudo authorization; a per-user sudo rule is
+   offered with separate approval if needed. Existing wheel users can be
+   repaired through `--users-only` from an authorized admin or root console.
 4. Offers to create local users with Bash homes and passwords through the
    system `passwd` prompt. An SSH **public** key is optional for each new
    account; never paste a private key. It installs KMOS Starship presets and
