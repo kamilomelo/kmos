@@ -16,9 +16,10 @@ usage() {
 Usage: ./platforms/archlinux/kmos-adopt-headless.sh [--preflight|--users-only|--help]
 
 Guided adoption of an INSTALLED Arch x86_64 headless machine (including a VPS).
-Reviews packages, accounts, and terminal appearance before changes. Installs
-paru (default) or yay and tododo-bin. Enables OpenSSH without rewriting its
-configuration or restarting an active sshd. Never formats disks, changes
+Reviews packages, accounts, and terminal appearance before changes. Builds
+paru (default) from source with Rust, or installs yay, and requires tododo-bin.
+Enables OpenSSH without rewriting its configuration or restarting an active
+sshd. Never formats disks, changes
 network services, or converts an existing KDE desktop. Account deletion is final.
 --preflight reports eligibility without root or changes; --help needs no root.
 --users-only manages accounts without rerunning pacman, AUR, or appearance setup.
@@ -122,7 +123,7 @@ preflight() {
   systemctl --no-pager --plain is-active sshd.service NetworkManager.service systemd-networkd.service iwd.service dhcpcd.service 2>/dev/null | paste -sd ' ' - || :
   printf 'sshd at boot: '
   systemctl is-enabled sshd.service 2>/dev/null || printf 'not enabled / unavailable\n'
-  printf 'AUR: choose paru or yay (working helper preferred); tododo-bin required.\n'
+  printf 'AUR: paru from source (requires Rust) or yay; tododo-bin required.\n'
   for pkg in paru yay; do
     if helper_works "$pkg"; then printf '  %-18s working\n' "$pkg"
     elif command -v "$pkg" >/dev/null 2>&1; then printf '  %-18s installed but cannot start\n' "$pkg"
@@ -228,23 +229,74 @@ aur_builder() {
 helper_works() { command -v "$1" >/dev/null 2>&1 && "$1" --version >/dev/null 2>&1; }
 select_aur_helper() {
   local default=paru choice
-  if ! helper_works paru && helper_works yay; then default=yay; fi
   choice=$(input "AUR helper [paru/yay] (default $default): ") || return 1
   choice=${choice:-$default}
   [[ "$choice" == paru || "$choice" == yay ]] || { fail 'Choose paru or yay.'; return 1; }
   if command -v "$choice" >/dev/null 2>&1 && ! helper_works "$choice"; then
-    fail "Installed $choice cannot start (possibly a libalpm ABI mismatch); choose the working helper instead."
-    return 1
+    if [[ "$choice" == paru ]]; then
+      note 'Installed paru cannot start; the source build will replace it after explicit approval.'
+    else
+      fail 'Installed yay cannot start (possibly a libalpm ABI mismatch); repair it before choosing yay.'
+      return 1
+    fi
   fi
   printf '%s\n' "$choice"
 }
+install_source_paru() (
+  local builder=$1 builddir list archive="" candidate
+  local -a old_packages=()
+  note 'Building paru from AUR source requires Rust and may use substantial VPS RAM/disk space.'
+  pacman -Syu --needed -- rust || { fail 'Could not install Rust for the paru source build.'; return 1; }
+  builddir=$(mktemp -d /tmp/kmos-aur.XXXXXXXX) || return 1
+  trap 'rm -rf -- "$builddir"' EXIT
+  chmod 0700 "$builddir"
+  chown "$builder:$builder" "$builddir"
+  runuser -u "$builder" -- git clone https://aur.archlinux.org/paru.git "$builddir/paru" || {
+    fail 'Could not clone paru from AUR.'; return 1;
+  }
+  [[ -f "$builddir/paru/PKGBUILD" ]] || { fail 'Paru PKGBUILD missing.'; return 1; }
+  cat -- "$builddir/paru/PKGBUILD"
+  ask 'Approve building paru from the AUR source shown above?' || {
+    fail 'Paru source build declined.'; return 1;
+  }
+  runuser -u "$builder" -- bash -c 'cd -- "$1" && makepkg -s' _ "$builddir/paru" || {
+    fail 'Could not build paru from source; installed AUR helpers were preserved.'; return 1;
+  }
+  list=$(runuser -u "$builder" -- bash -c 'cd -- "$1" && makepkg --packagelist' _ "$builddir/paru") || {
+    fail 'Cannot locate the built paru package.'; return 1;
+  }
+  while IFS= read -r candidate; do
+    if [[ "$candidate" == "$builddir/paru/"* && "${candidate##*/}" == paru-[0-9]*.pkg.tar.* && -f "$candidate" ]]; then
+      archive=$candidate
+      break
+    fi
+  done <<< "$list"
+  [[ -n "$archive" ]] || { fail 'Built paru package missing; existing helpers were preserved.'; return 1; }
+  installed paru-bin-debug && old_packages+=(paru-bin-debug)
+  installed paru-bin && old_packages+=(paru-bin)
+  if ((${#old_packages[@]} > 0)); then
+    note "The source package conflicts with installed ${old_packages[*]}."
+    ask "Approve removing ${old_packages[*]} before installing the built paru package?" || {
+      fail 'Existing paru-bin packages preserved; source package was not installed.'; return 1;
+    }
+    # Do not remove any dependencies. Pacman refuses removal if another package needs them.
+    pacman -R -- "${old_packages[@]}" || { fail 'Could not remove conflicting binary packages.'; return 1; }
+  fi
+  pacman -U -- "$archive" || {
+    fail 'Could not install built paru; an approved paru-bin removal may have completed. Rerun to rebuild.'; return 1;
+  }
+)
 install_aur() {
   local builder=$1 helper=$2 builddir repo
-  if ! command -v "$helper" >/dev/null 2>&1; then
+  if [[ "$helper" == paru ]]; then
+    if ! installed paru || installed paru-bin || ! helper_works paru; then
+      install_source_paru "$builder" || return 1
+    fi
+  elif ! command -v "$helper" >/dev/null 2>&1; then
     builddir=$(mktemp -d /tmp/kmos-aur.XXXXXXXX) || return 1
     chmod 0700 "$builddir"
     chown "$builder:$builder" "$builddir"
-    repo="$helper-bin"
+    repo=yay-bin
     if ! runuser -u "$builder" -- git clone "https://aur.archlinux.org/$repo.git" "$builddir/$repo"; then
       rm -rf -- "$builddir"
       fail "Could not clone $repo; retry later."; return 1
@@ -261,7 +313,7 @@ install_aur() {
     fi
     rm -rf -- "$builddir"
   fi
-  helper_works "$helper" || { fail "$helper cannot start; a package upgrade may have changed libalpm. Try the working helper instead."; return 1; }
+  helper_works "$helper" || { fail "$helper cannot start after installation; check its libalpm compatibility."; return 1; }
   runuser -u "$builder" -- "$helper" --version >/dev/null 2>&1 || {
     fail "$helper does not work for the AUR build user $builder."; return 1;
   }

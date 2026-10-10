@@ -68,6 +68,7 @@ It reviews the KMOS CLI packages, enables OpenSSH, requires an AUR helper and
 SSH settings and network configuration are preserved. Prepare provider-console
 access and review the [adoption safety guide](./docs/arch-adopt-headless.md)
 before use.
+Paru is built from source (requires Rust and time/RAM); yay remains an option.
 Existing KDE systems are not supported by this path. The initial VPS trial
 confirmed package installation with yay; account cleanup still needs a field
 test.

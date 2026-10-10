@@ -7,7 +7,7 @@ installed packages with yay, but account cleanup has not been field-tested.
 Have a provider console or VPS snapshot available.
 
 ```bash
-git clone https://github.com/kamilomelo/kmos.git ~/kmos
+git clone --branch vps https://github.com/kamilomelo/kmos.git ~/kmos
 cd ~/kmos
 ./platforms/archlinux/kmos-adopt-headless.sh --preflight
 ./platforms/archlinux/kmos-adopt-headless.sh
@@ -27,9 +27,17 @@ active `sshd`. Wi-Fi tools are skipped when there is no wireless interface;
 `nvtop` is included when an
 NVIDIA PCI device and `nvidia-utils` are present. The script does not install
 graphics drivers, change network-manager services, or alter SSH settings. It
-asks for `paru` (usual default) or `yay`, preferring a working installed helper
-over a broken one. It automatically uses the current wheel admin to perform
-the non-root AUR build, and **requires** `tododo-bin`. The helper is installed
+asks for `paru` (default) or `yay`. Paru is built from AUR **source**, not
+`paru-bin`, to match the system's pacman/libalpm. This installs the official
+`rust` package if missing; Rust remains installed for future paru rebuilds.
+Compiling can take considerable VPS RAM, disk space and time. After showing the
+PKGBUILD and building the package, it asks separately before
+removing conflicting `paru-bin` and `paru-bin-debug` packages. If removal is
+declined or the build fails, the existing packages remain. If installing the
+already-built source package fails *after* approved removal, the broken binary
+packages may be gone; rerun to rebuild. The script
+automatically uses the current wheel admin to perform the non-root AUR build,
+and **requires** `tododo-bin`. The helper is installed
 system-wide, not just for the build user. Installing system-wide packages
 requires sudo access; wheel membership alone may not be sufficient. AUR
 packages are third-party software; review their build files at the prompt.

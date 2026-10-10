@@ -138,7 +138,7 @@ bash -n "$script"
   source "$script"
   # Installed helper, but tododo-bin must still be installed as the build user.
   paru() { :; }
-  installed() { [[ -f "$fixture/tododo" && "$1" == tododo-bin ]]; }
+  installed() { [[ "$1" == paru || -f "$fixture/tododo" && "$1" == tododo-bin ]]; }
   runuser() {
     [[ " $* " == *' --version '* ]] && return 0
     printf '%s\n' "$*" > "$fixture/aur-call"
@@ -158,10 +158,74 @@ bash -n "$script"
   paru() { return 1; }
   yay() { [[ "$1" == --version ]]; }
   input() { printf '\n'; }
+  [[ $(select_aur_helper) == paru ]]
+  input() { printf 'yay\n'; }
   [[ $(select_aur_helper) == yay ]]
-  input() { printf 'paru\n'; }
+  yay() { return 1; }
   if select_aur_helper > "$fixture/broken-helper" 2>&1; then exit 1; fi
   grep -Fq 'cannot start' "$fixture/broken-helper"
+)
+
+(
+  # shellcheck disable=SC1090
+  source "$script"
+  installed() {
+    case "$1" in
+      paru-bin|paru-bin-debug|tododo-bin) return 0 ;;
+      paru) [[ -f "$fixture/source-installed" ]] ;;
+      *) return 1 ;;
+    esac
+  }
+  chown() { :; }
+  ask() { [[ "$1" != 'Approve removing '* || ! -e "$fixture/decline-removal" ]]; }
+  pacman() {
+    printf 'pacman %s\n' "$*" >> "$fixture/source-order"
+    [[ "$1" == -U ]] && touch "$fixture/source-installed"
+    return 0
+  }
+  helper_works() { [[ "$1" == paru && -f "$fixture/source-installed" ]]; }
+  runuser() {
+    case "$*" in
+      *'git clone https://aur.archlinux.org/paru.git '*)
+        printf '%s\n' "${@: -1}" > "$fixture/source-dir"
+        mkdir -p "${@: -1}"
+        printf 'pkgname=paru\n' > "${@: -1}/PKGBUILD" ;;
+      *'makepkg -s'*) touch "$(cat "$fixture/source-dir")/paru-1-1-x86_64.pkg.tar.zst" ;;
+      *'makepkg --packagelist'*) printf '%s/paru-1-1-x86_64.pkg.tar.zst\n' "$(cat "$fixture/source-dir")" ;;
+      *'-- paru --version') : ;;
+      *) printf 'Unexpected runuser: %s\n' "$*" >&2; return 1 ;;
+    esac
+  }
+  install_aur builder paru > "$fixture/source-output"
+  [[ $(cat "$fixture/source-order") == $'pacman -Syu --needed -- rust\npacman -R -- paru-bin-debug paru-bin\npacman -U -- '* ]]
+  [[ ! -d $(cat "$fixture/source-dir") ]]
+  grep -Fq 'pkgname=paru' "$fixture/source-output"
+  rm -f -- "$fixture/source-installed" "$fixture/source-order"
+  touch "$fixture/decline-removal"
+  if install_source_paru builder > "$fixture/source-declined" 2>&1; then exit 1; fi
+  [[ $(cat "$fixture/source-order") == 'pacman -Syu --needed -- rust' ]]
+  grep -Fq 'preserved' "$fixture/source-declined"
+)
+
+(
+  # shellcheck disable=SC1090
+  source "$script"
+  installed() { [[ "$1" == paru-bin ]]; }
+  chown() { :; }
+  ask() { return 0; }
+  pacman() { printf '%s\n' "$*" >> "$fixture/build-failure-order"; }
+  runuser() {
+    case "$*" in
+      *'git clone https://aur.archlinux.org/paru.git '*)
+        mkdir -p "${@: -1}"
+        printf 'pkgname=paru\n' > "${@: -1}/PKGBUILD" ;;
+      *'makepkg -s'*) return 1 ;;
+      *) return 1 ;;
+    esac
+  }
+  if install_source_paru builder > "$fixture/build-failure" 2>&1; then exit 1; fi
+  [[ $(cat "$fixture/build-failure-order") == '-Syu --needed -- rust' ]]
+  grep -Fq 'installed AUR helpers were preserved' "$fixture/build-failure"
 )
 
 (
