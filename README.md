@@ -78,8 +78,8 @@ upgrade on an already-upgraded KDE system.
 - [Windows](./platforms/windows/WINDOWS_SETUP.md): manual guide; no automated
   installer.
 - Adopting **existing Arch installations or VPS servers** is not supported yet.
-  Wi-Fi-only handoff recovery still needs a hardware failure test. No
-  `v1.0.0` release has been published yet.
+  Wi-Fi-only handoff recovery still needs a hardware failure test. See the
+  [v1.0.0 release notes](./docs/releases/v1.0.0.md).
 
 Run `./scripts/check-shell.sh` for local shell checks (requires an already
 installed ShellCheck 0.11.0). KMOS is licensed under the [MIT License](./LICENSE).

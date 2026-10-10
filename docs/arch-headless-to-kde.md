@@ -10,7 +10,7 @@ on hardware. NetworkManager's wired reboot handoff, connected Wi-Fi, and
 Wi-Fi-only internet after unplugging Ethernet were previously verified; the
 new Wi-Fi-SSH handoff was subsequently reported working, without captured
 service diagnostics. The AUR-declined install path and Wi-Fi-only boot-guard
-failure path still lack field tests; `v1.0.0` has not yet been tagged.
+failure path still lack field tests; see the [v1.0.0 release notes](./releases/v1.0.0.md).
 
 From a current checkout, you can inspect the system with the optional
 read-only check (the guided install also runs this check):
@@ -38,7 +38,7 @@ local manifests are validated **before** final disk approval/format. There is
 no Firefox pruning policy; guided installs also skip the old font/package
 cleanup. Explicit `--profile full|noapps` remains for compatibility, not the
 recommended flow. The guided KDE install has a reported successful hardware
-test, but has not yet been tagged as `v1.0.0`.
+test; see the [v1.0.0 release notes](./releases/v1.0.0.md) for remaining limits.
 
 ### Guided KDE package choices
 
@@ -243,7 +243,7 @@ on hardware. The earlier short-timeout rollback did work. The guided Wi-Fi-only
 handoff was subsequently reported successful over Wi-Fi SSH, but detailed
 service logs and a failed-NM Wi-Fi boot-guard test were not provided.
 
-## Field-test and regression checklist (before a release tag)
+## Field-test and regression checklist
 
 Use a **dedicated test machine** and a fresh Arch x86_64 ISO. Keep Ethernet
 and local-console access available; back up data. From a current checkout
@@ -276,4 +276,4 @@ formats selected partitions; verify the disk/EFI target before typing `FORMAT`.
 
 Do not rerun the ISO installer on the installed system or rerun the live KDE
 installer after KDE is marked complete. Capture results and unresolved failures
-before publishing `v1.0.0`.
+when validating later releases.
