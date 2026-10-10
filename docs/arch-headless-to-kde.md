@@ -4,14 +4,13 @@ Use the live upgrade only on an **installed KMOS headless Arch x86_64** system,
 not an Arch ISO or an arbitrary existing Arch/VPS installation. This work is
 on `x86/next`, not `main` or `v0.9.0`.
 
-**Verification snapshot (2026-10-09):** A headless → KDE upgrade and the
-separate visual finishing pass worked on hardware. A staged next-boot handoff
-to NetworkManager worked after extending the Ethernet DHCP wait: Ethernet,
-NetworkManager-controlled Wi-Fi, and Wi-Fi-only internet with the cable unplugged
-were verified. The **new combined one-command upgrade** has only fixture tests;
-its all-existing-users visual finishing still needs a field check. The revised
-package/AUR choices have not had a fresh ISO field test. Keep
-`main` and `v0.9.0` untouched until those final tests pass.
+**Verification snapshot (2026-10-10):** Fresh direct KDE and a headless → KDE
+upgrade with visual defaults for multiple existing users were reported working
+on hardware. NetworkManager's wired reboot handoff, connected Wi-Fi, and
+Wi-Fi-only internet after unplugging Ethernet were previously verified; the
+new Wi-Fi-SSH handoff was subsequently reported working, without captured
+service diagnostics. The AUR-declined install path and Wi-Fi-only boot-guard
+failure path still lack field tests. This remains on `x86/next`, not `main`.
 
 From a checkout of `x86/next`, you can inspect the system with the optional
 read-only check (the guided install also runs this check):
@@ -24,8 +23,8 @@ The legacy explicit `--install --profile full|noapps` options remain available
 without AUR; the `noapps` manifest is also still used by Quartz64. It is **not**
 part of guided x86 package selection. Guided ISO and live upgrades use the same
 mandatory desktop package sets; the live upgrade requires local manifests
-rather than fetching the published `main` manifests. This reorganized selection
-has only been checked with offline fixtures, not a new ISO installation.
+rather than fetching the published `main` manifests. The revised fresh-ISO
+path was reported working on hardware; the AUR-declined path has only fixtures.
 
 On the **experimental x86/next Arch ISO installer**, `./kmos-install.sh` always
 installs the shared Arch CLI tools. Choosing KDE adds mandatory KDE base,
@@ -38,8 +37,8 @@ available; `tododo-bin` is included only when AUR is approved. All choices and
 local manifests are validated **before** final disk approval/format. There is
 no Firefox pruning policy; guided installs also skip the old font/package
 cleanup. Explicit `--profile full|noapps` remains for compatibility, not the
-recommended flow. **This reorganization is fixture-tested only; do not treat
-it as a field-tested replacement for `main`/`v0.9.0`.**
+recommended flow. The guided KDE install has a reported successful hardware
+test, but has not yet been merged into `main` or released as `v1.0.0`.
 
 ### Guided KDE package choices
 
@@ -80,8 +79,9 @@ This always includes KDE base, KDE apps and mandatory desktop productivity.
 The optional Kamilo choice defaults to Yes (see the package list above);
 extra repository names are entered separately. This live upgrade does **not** install
 `fzf` or AUR packages. The selection is shown before the `INSTALL KDE`
-confirmation and pacman transaction. The revised live-upgrade selector is
-**fixture-tested only**. An already upgraded KDE machine is not a valid target
+confirmation and pacman transaction. The revised live-upgrade selector and
+all-user visuals were reported working on hardware. An already upgraded KDE
+machine is not a valid target
 for re-running the installer. `--preflight` remains read-only; explicit
 `--install` modes remain available for tests.
 
@@ -149,7 +149,7 @@ initial visual confirmation; standalone `--apply --all-users` still asks once.
 `~/.local/share/kmos/backups/kde-<date>/` within each affected account for user files or
 `/var/backups/kmos/kde-<date>/` for system files. Missing files are added
 without prompting; no panels, wallpaper choices, networking, packages or
-other accounts' home files are changed. System-wide defaults can affect KDE
+non-selected home files are changed. System-wide defaults can affect KDE
 users without a personal override. It may download Kappa fonts with the existing
 `curl` tool, but does not delete other fonts. Review the resulting KDE session
 before removing any backup. Rerunning skips defaults that already match.
@@ -200,7 +200,8 @@ NM cannot manage that device. A missing Wi-Fi password is **not** considered
 a boot failure. The old iwd profiles remain untouched, but NM does not import
 them. If staging was interrupted after the KDE installer completed, use the
 separate `--stage-reboot-wifi` command below; **do not rerun the installer**.
-This Wi-Fi-only path has fixture tests only and requires field validation.
+This Wi-Fi-only path has a reported successful install; the fallback on device
+failure still has fixture tests only.
 
 ```bash
 ./platforms/archlinux/tools/kmos-network-migration.sh --stage-reboot-wifi
@@ -239,8 +240,8 @@ unplugged, `wlan0` was the sole default route and unbound HTTPS also succeeded.
 The local-only `--apply` path, automatic rollback on a **genuinely failed** NM
 connection with the longer wait, and switching SSIDs in KDE remain unverified
 on hardware. The earlier short-timeout rollback did work. The guided Wi-Fi-only
-staging and NM device guard are new and unverified on
-hardware; test them with a local console and a known Wi-Fi password.
+handoff was subsequently reported successful over Wi-Fi SSH, but detailed
+service logs and a failed-NM Wi-Fi boot-guard test were not provided.
 
 ## Final field-test checklist (before any release merge)
 

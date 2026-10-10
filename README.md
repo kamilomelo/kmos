@@ -1,76 +1,99 @@
 # KMOS
 
-KMOS is a shell-based toolkit for installing **Arch Linux x86_64** as a
-headless system or a KDE desktop. The x86 installer is the tested path; other
-platforms are separate, less mature workflows.
+KMOS installs Arch Linux x86_64 as a headless system or a KDE desktop. The
+current KDE and headless → KDE workflows live on **`x86/next`**; `main` remains
+the previous tested release until this work is merged.
 
-## Install Arch x86_64
+## Fresh Arch install
 
-**Back up your data.** Boot an Arch x86_64 ISO on the target machine. This
-installer **formats the selected root partition and verified Arch EFI
-partition**; it is not for converting an installed system or VPS. Inspect the
-disk plan before typing `FORMAT`. If you use cfdisk, it can save partition
-table edits *before* that confirmation.
+1. Back up your data and boot an Arch x86_64 ISO on the target machine. Connect
+   Ethernet, or use the [live-ISO Wi-Fi helper](#helpers) from a local copy of
+   this repository.
+2. On the live ISO, get the experimental checkout and start the installer:
 
-With Ethernet, run on the live ISO:
+   ```bash
+   git clone --branch x86/next https://github.com/kamilomelo/kmos.git
+   cd kmos
+   ./kmos-install.sh
+   ```
+
+3. Choose **headless** or **KDE**. The guided KDE install includes Plasma,
+   Spectacle, Kdenlive, and Firefox Developer Edition; Kamilo productivity
+   defaults to Yes. You can add repository packages. AUR is optional (Yes by
+   default): `paru` is the default helper, `tododo-bin` is included if you
+   approve AUR, and other AUR packages require explicit selection.
+4. Review the disk and EFI plan before typing **`FORMAT`**. The installer
+   **formats the selected root and Arch EFI partitions**. Partition edits made
+   in `cfdisk` may take effect even before `FORMAT`. Reboot when installation
+   finishes.
+
+**Never run the ISO installer on an installed system or VPS.** It is not an
+existing-Arch conversion tool. See the
+[package choices and safety details](./docs/arch-headless-to-kde.md).
+
+## Upgrade a KMOS headless install to KDE
+
+Only use this path on an **installed KMOS headless Arch x86_64** machine, not
+an arbitrary Arch installation. With internet access, run as a regular user:
 
 ```bash
-git clone https://github.com/kamilomelo/kmos.git
-cd kmos
-./kmos-install.sh
+git clone --branch x86/next https://github.com/kamilomelo/kmos.git ~/kmos-next
+cd ~/kmos-next
+./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
+./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
 ```
 
-Choose **headless (1)** or **KDE (2)** when prompted. AUR is optional. For KDE
-without the extra application groups, run `./kmos-install.sh --profile noapps`
-instead. The installer checks the Arch EFI target and refuses to format a
-detected Windows EFI partition; you must still review every selected device.
+The single guided run installs KDE and applies visual defaults to existing
+local regular users with homes under `/home`; new users inherit defaults too.
+Existing personal panels stay intact; differing files require approval and
+are backed up. The live upgrade does **not** install AUR packages or format disks.
 
-The experimental `x86/next` branch instead offers a single optional Kamilo
-productivity set, free-text repository extras and an explicit AUR choice in
-the normal no-argument KDE install flow. That reorganized ISO path is not
-field-tested yet; use `main` for the tested release. The experimental
-[headless → KDE guide and final-test checklist](./docs/arch-headless-to-kde.md)
-record what has passed on hardware and what still needs testing before a merge.
+It separately offers a **next-boot** NetworkManager handoff. Current SSH and
+networking stay active until you reboot. If staging over Wi-Fi, have a local
+screen and keyboard ready: after reboot, reconnect Wi-Fi in KDE before SSH
+returns. Existing iwd Wi-Fi passwords are not imported. If staging is declined
+or fails its checks, iwd/dhcpcd remain in charge. See the
+[upgrade and recovery guide](./docs/arch-headless-to-kde.md). Do not rerun the
+upgrade on an already-upgraded KDE system.
 
 ## Helpers
 
-- **USB installer:** `./platforms/archlinux/tools/kmos-usb-flasher.sh` writes an
-  Arch ISO to a removable drive. Review its selected device before confirming.
-- **No Ethernet on the live ISO:** start from a local copy of this repository
-  (for example, on USB) and run
-  `./platforms/archlinux/tools/kmos-wifi-connect.sh` before the installer. It
-  hands off the working Wi-Fi connection for first boot.
-- **Headless Wi-Fi after an Ethernet install:** on the installed system, run
-  `cd /opt/kmos/bin && ./kmos-headless-wifi.sh`. Choose Impala or text-based
-  `iwctl`; iwd saves the connected network for later boots.
+- **Prepare an installer USB:** `./platforms/archlinux/tools/kmos-usb-flasher.sh`
+  detects eligible media and confirms the destructive target.
+- **Wi-Fi on the live ISO:** from a local checkout, run
+  `./platforms/archlinux/tools/kmos-wifi-connect.sh` before installing.
+- **Wi-Fi on a headless install:** run
+  `cd /opt/kmos/bin && ./kmos-headless-wifi.sh` to set up iwd with Impala or
+  `iwctl`.
+- **Inspect an existing KDE handoff:**
+  `./platforms/archlinux/tools/kmos-network-migration.sh --plan` is read-only.
+  Follow the [recovery guide](./docs/arch-headless-to-kde.md) before changing
+  network services.
+
+## Other platforms and work in progress
+
+- [Quartz64 Model B](./platforms/archlinuxarm/boards/quartz64b/README.md):
+  board-specific Arch Linux ARM workflow; do not use the x86 installer.
+- [Rocky Linux 10 Minimal](./platforms/rockylinux/kmos-rockylinux-install.sh):
+  separate post-install workflow, not an Arch install.
+- [Windows](./platforms/windows/WINDOWS_SETUP.md): manual guide; no automated
+  installer.
+- Adopting **existing Arch installations or VPS servers** is not supported yet.
+  Wi-Fi-only handoff recovery still needs a hardware failure test. No
+  `v1.0.0` release has been published yet.
+
+Run `./scripts/check-shell.sh` for local shell checks (requires an already
+installed ShellCheck 0.11.0). KMOS is licensed under the [MIT License](./LICENSE).
 
 ## Project structure
 
 ```text
-kmos/
-├── kmos-install.sh                 Platform entry point
-├── platforms/
-│   ├── archlinux/
-│   │   ├── kmos-archlinux-install.sh
-│   │   ├── desktop/kde/            KDE installation and defaults
-│   │   ├── packages/               Package definitions and AUR list
-│   │   ├── assets/                 Themes, wallpapers and profiles
-│   │   └── tools/                  USB flasher and live-ISO Wi-Fi helper
-│   ├── archlinuxarm/boards/        Board-specific workflows
-│   ├── rockylinux/                Minimal post-install workflow
-│   └── windows/                   Manual guide
-├── docs/releases/                 Milestone notes
-├── scripts/                       Shell validation
-└── tests/                         Non-destructive tests
+kmos-install.sh              Arch/Rocky entry point
+platforms/archlinux/         x86 installer, KDE, package manifests, assets, helpers
+platforms/archlinuxarm/      Board-specific ARM workflows
+platforms/rockylinux/       Rocky Linux post-install workflow
+platforms/windows/          Windows manual guide
+docs/                        Upgrade guide and milestone notes
+scripts/                     Shell checks
+tests/                       Non-destructive fixtures
 ```
-
-The tested shell-only x86 milestone and its limits are in the
-[release notes](./docs/releases/x86-2026-10-08-shell-only.md). The old milestone
-tag remains in history. For local validation, run `./scripts/check-shell.sh`
-(requires ShellCheck 0.11.0). Licensed under the [MIT License](./LICENSE).
-
-## Other platforms
-
-- **Quartz64 Model B:** use its [board-specific guide](./platforms/archlinuxarm/boards/quartz64b/README.md), not the x86 installer.
-- **Rocky Linux 10 Minimal:** after its own installation, use `./platforms/rockylinux/kmos-rockylinux-install.sh`; Wi-Fi helper: `./platforms/rockylinux/tools/kmos-rockylinux-wifi-connect.sh`.
-- **Windows:** [manual guide](./platforms/windows/WINDOWS_SETUP.md); no automatic installer.
