@@ -19,6 +19,13 @@ It uses `pacman -Syu --needed`: an Arch upgrade can upgrade existing packages,
 run hooks, and require a later reboot even though KMOS does not deliberately
 restart SSH, networking, or the VPS. Do not use a partial upgrade.
 
+The guided run displays the current hostname and asks whether to change it.
+Declining leaves it intact. A new lowercase hostname (or dot-separated DNS
+name) is validated and shown for a second confirmation before `hostnamectl`
+sets it. This does not edit `/etc/hosts`, provider DNS, SSH settings, or network
+services; check any old hostname references yourself. `--users-only` does not
+offer or change the hostname.
+
 The package list includes the headless KMOS CLI set (including fastfetch), plus
 the base tools needed for adoption. `openssh` is installed if missing; the
 script generates missing SSH host keys, validates the existing SSH configuration,

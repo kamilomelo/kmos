@@ -19,8 +19,9 @@ Guided adoption of an INSTALLED Arch x86_64 headless machine (including a VPS).
 Reviews packages, accounts, and terminal appearance before changes. Builds
 paru (default) from source with Rust, or installs yay, and requires tododo-bin.
 Enables OpenSSH without rewriting its configuration or restarting an active
-sshd. Never formats disks, changes
-network services, or converts an existing KDE desktop. Account deletion is final.
+sshd. Optionally changes the hostname with confirmation, without changing
+network services. Never formats disks or converts an existing KDE desktop.
+Account deletion is final.
 --preflight reports eligibility without root or changes; --help needs no root.
 --users-only manages accounts without rerunning pacman, AUR, or appearance setup.
 An authorized admin can also grant sudo to existing wheel users in --users-only.
@@ -111,6 +112,7 @@ preflight() {
   eligible || return 1
   packages_for_host || return 1
   printf 'Arch headless x86_64: eligible\nPackages (pacman upgrade + --needed):\n'
+  printf 'Current hostname: %s (optional change in guided mode)\n' "$(hostname)"
   for pkg in "${PACKAGES[@]}"; do
     if installed "$pkg"; then printf '  %-18s installed\n' "$pkg"; else printf '  %-18s to install\n' "$pkg"; fi
   done
@@ -131,7 +133,7 @@ preflight() {
     else printf '  %-18s absent\n' "$pkg"; fi
   done
   printf 'Appearance: KMOS Starship presets and managed Bash integration; conflicting configuration is skipped.\n'
-  printf 'No changes made. Guided mode enables/starts sshd without changing its config; network, bootloader and disk settings stay intact.\n'
+  printf 'No changes made. Guided mode offers an optional hostname change and enables/starts sshd without changing its config; network services, bootloader and disk settings stay intact.\n'
 }
 require_root() {
   ((EUID == 0)) && return 0
@@ -140,6 +142,32 @@ require_root() {
   exec sudo -- "$SCRIPT_DIR/kmos-adopt-headless.sh" "$@"
 }
 valid_name() { [[ "$1" =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] && [[ "$1" != root ]]; }
+valid_hostname() {
+  local name=$1 label
+  local -a labels
+  # Linux limits the active hostname to 64 bytes (ASCII names here).
+  ((${#name} > 0 && ${#name} <= 64)) && [[ "$name" != .* && "$name" != *. && "$name" != *..* ]] || return 1
+  IFS=. read -r -a labels <<< "$name"
+  for label in "${labels[@]}"; do
+    ((${#label} <= 63)) && [[ "$label" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || return 1
+  done
+}
+offer_hostname() {
+  local current name
+  current=$(hostname) || { fail 'Cannot read current hostname.'; return 1; }
+  ask "Change hostname (currently $current)?" || return 0
+  while true; do
+    name=$(input 'New hostname (lowercase DNS name; blank to cancel): ') || return 1
+    [[ -n "$name" ]] || { note 'Hostname unchanged.'; return 0; }
+    valid_hostname "$name" && break
+    note 'Invalid hostname: use up to 64 lowercase letters, digits, dots and internal hyphens.'
+  done
+  [[ "$name" != "$current" ]] || { note 'Hostname unchanged.'; return 0; }
+  note "This changes the system hostname from $current to $name. It does not edit /etc/hosts or network services."
+  ask "Confirm hostname $name?" || { note 'Hostname unchanged.'; return 0; }
+  hostnamectl set-hostname "$name" || { fail 'Could not set the hostname; check hostnamectl and host permissions.'; return 1; }
+  note "Hostname set to $name. Check /etc/hosts or provider DNS separately if they refer to the old name."
+}
 
 add_key() (
   local name=$1 home key file tmp
@@ -472,6 +500,7 @@ guided() {
   note 'Running pacman -Syu --needed; review package replacement prompts.'
   pacman -Syu --needed -- "${PACKAGES[@]}" || return 1
   enable_ssh || return 1
+  offer_hostname || return 1
   create_accounts || return 1
   builder=$(aur_builder) || return 1
   note "Using $builder for the AUR build; $helper is installed system-wide for all users."

@@ -69,11 +69,12 @@ cd ~/kmos-adopt
 
 `--preflight` is read-only. The guided run requires a working sudo login or
 root; **wheel membership alone does not grant sudo**. It upgrades Arch, sets up
-headless tools and OpenSSH without restarting active SSH, offers account and
-terminal setup, and requires an AUR helper and `tododo-bin`. It asks before
-granting sudo to a new admin, using a per-user rule when needed. Existing
-settings are preserved where possible, but package upgrades can affect running
-services and there is no automatic rollback.
+headless tools and OpenSSH without restarting active SSH, optionally changes
+the hostname with confirmation, offers account and terminal setup, and requires
+an AUR helper and `tododo-bin`. It asks before granting sudo to a new admin,
+using a per-user rule when needed. Existing settings are preserved where
+possible, but package upgrades can affect running services and there is no
+automatic rollback.
 
 Choose **paru** (source build) or **yay**. A paru build was killed by SIGKILL on
 one small VPS; OOM has **not** been confirmed. Yay worked on the tested VPS.

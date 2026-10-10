@@ -98,12 +98,51 @@ bash -n "$script"
   pacman() { printf 'pacman %s\n' "$*" >> "$fixture/order"; }
   choose_builder() { printf 'builder %s\n' "$1" >> "$fixture/order"; }
   enable_ssh() { printf 'enable sshd\n' >> "$fixture/order"; }
+  offer_hostname() { printf 'hostname\n' >> "$fixture/order"; }
   install_aur() { printf 'aur %s\n' "$*" >> "$fixture/order"; }
   install_appearance() { printf 'appearance\n' >> "$fixture/order"; }
   remove_accounts() { printf 'remove\n' >> "$fixture/order"; }
   guided
-  [[ $(cat "$fixture/order") == $'preflight\npacman -Syu --needed -- fastfetch starship openssh\nenable sshd\ncreate\nbuilder builder\naur builder yay\nappearance\nremove' ]]
+  [[ $(cat "$fixture/order") == $'preflight\npacman -Syu --needed -- fastfetch starship openssh\nenable sshd\nhostname\ncreate\nbuilder builder\naur builder yay\nappearance\nremove' ]]
   [[ -f "$MARKER" ]]
+)
+
+(
+  # Source-only hostname fixture: no real host or network settings are changed.
+  # shellcheck disable=SC1090
+  source "$script"
+  for name in vps-01 vps-01.example.org a 7; do valid_hostname "$name"; done
+  for name in '' '-vps' 'vps-' 'vps..example' 'vps.' 'vps_name' 'vps name' 'UPPER' "$(printf '%064d' 0)"; do
+    if valid_hostname "$name"; then printf 'Accepted invalid hostname: %s\n' "$name" >&2; exit 1; fi
+  done
+  hostname() { printf 'old-vps\n'; }
+  hostnamectl() { printf '%s\n' "$*" >> "$fixture/hostname-changes"; }
+  ask() { return 1; }
+  offer_hostname
+  [[ ! -e "$fixture/hostname-changes" ]]
+  ask() { return 0; }
+  input() { printf 'new-vps.example.org\n'; }
+  offer_hostname
+  [[ $(cat "$fixture/hostname-changes") == 'set-hostname new-vps.example.org' ]]
+  : > "$fixture/hostname-changes"
+  ask() { [[ "$1" == 'Change hostname'* ]]; }
+  offer_hostname
+  [[ ! -s "$fixture/hostname-changes" ]]
+  ask() { return 0; }
+  input() { printf '\n'; }
+  offer_hostname
+  [[ ! -s "$fixture/hostname-changes" ]]
+  input() {
+    if [[ ! -e "$fixture/hostname-retry" ]]; then
+      touch "$fixture/hostname-retry"
+      printf 'bad_name\n'
+    else
+      printf 'fixed-vps\n'
+    fi
+  }
+  offer_hostname 2> "$fixture/hostname-warning"
+  grep -Fq 'Invalid hostname' "$fixture/hostname-warning"
+  [[ $(cat "$fixture/hostname-changes") == 'set-hostname fixed-vps' ]]
 )
 
 (
