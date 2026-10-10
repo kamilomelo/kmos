@@ -17,7 +17,8 @@ Usage: ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
 
 --preflight is read-only and needs no root. Guided installation adds KDE and
   reviewable visual defaults, then offers a guarded NEXT-BOOT NetworkManager
-  handoff when verified Ethernet is available. It never formats disks or stops
+  handoff over verified Ethernet or Wi-Fi. Wi-Fi-only staging needs a local
+  screen/keyboard for reconnection after reboot. It never formats disks or stops
   active SSH/network services. AUR is not installed. Pacman may offer package
   replacements and upgrades; review those prompts. No automatic reboot.
   Running without arguments guides package selection and confirmation.
@@ -216,16 +217,23 @@ stage_network_for_reboot() {
     printf 'NetworkManager not staged: migration tool missing. Keep iwd/dhcpcd running.\n' >&2
     return 0
   fi
-  if ! "$network_script" --can-stage >/dev/null 2>&1; then
-    printf 'NetworkManager not staged: a verified wired fallback is unavailable or service state differs.\n' >&2
-    printf 'Keep iwd/dhcpcd running; use the migration tool --plan when Ethernet is ready.\n' >&2
-    return 0
+  if "$network_script" --can-stage >/dev/null 2>&1; then
+    printf 'Ethernet is eligible for a next-boot NetworkManager handoff.\n' >&2
+    "$network_script" --stage-reboot || {
+      printf 'NetworkManager staging did not complete; review --plan before reboot.\n' >&2
+      return 1
+    }
+  elif "$network_script" --can-stage-wifi >/dev/null 2>&1; then
+    printf 'Wi-Fi-only next-boot NetworkManager handoff is available.\n' >&2
+    printf 'You will need a local screen and keyboard to reconnect Wi-Fi after reboot.\n' >&2
+    "$network_script" --stage-reboot-wifi || {
+      printf 'NetworkManager Wi-Fi staging did not complete; review --plan before reboot.\n' >&2
+      return 1
+    }
+  else
+    printf 'NetworkManager not staged: neither wired nor Wi-Fi-only handoff passed the safety checks.\n' >&2
+    printf 'Keep iwd/dhcpcd running; use the migration tool --plan for service details.\n' >&2
   fi
-  printf 'Ethernet is eligible for a next-boot NetworkManager handoff.\n' >&2
-  "$network_script" --stage-reboot || {
-    printf 'NetworkManager staging did not complete; review --plan before reboot.\n' >&2
-    return 1
-  }
 }
 
 require_root() {

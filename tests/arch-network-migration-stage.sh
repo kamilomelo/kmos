@@ -43,7 +43,86 @@ printf '1\n' > "$fixture/interfaces/enp1s0/carrier"
   if select_interfaces live; then
     printf 'Live handoff accepted unconnected Wi-Fi.\n' >&2; exit 1
   fi
+  ipv4_present() { [[ "$1" == wlan0 ]]; }
+  select_interfaces wifi-stage
+  [[ -z "$WIRED_IFACE" && "$WIFI_IFACE" == wlan0 ]]
 ) > "$fixture/interface-check" 2>&1
+
+mkdir -p "$fixture/syswifi/wlan0/wireless"
+touch "$fixture/syswifi/wlan0/device"
+(
+  # shellcheck disable=SC1091
+  source "$script"
+  NM_CONF="$fixture/wifi-nm.conf" STAGED_MARKER="$fixture/wifi-staged"
+  MIGRATION_MARKER="$fixture/wifi-live" MIGRATION_DONE="$fixture/wifi-done"
+  BOOT_SCRIPT="$fixture/wifi-script" BOOT_UNIT="$fixture/wifi-boot.service"
+  ready_for_handoff() { [[ "$1" == wifi-stage ]] || return 1; WIFI_IFACE=wlan0 WIRED_IFACE=; }
+  check_internet_on() { [[ "$1" == wlan0 ]]; }
+  confirm_staging() { [[ "$1" == wifi ]]; }
+  require_root() { :; }
+  state() { [[ "$2" == NetworkManager.service ]] && printf 'inactive\n' || printf 'active\n'; }
+  systemctl() { printf '%s\n' "$*" >> "$fixture/wifi-stage-order"; }
+  SSH_CONNECTION='192.0.2.9 1234 192.0.2.10 22'
+  can_stage_wifi
+  stage_reboot wifi
+  [[ $(cat "$STAGED_MARKER") == wifi:wlan0 ]]
+  [[ -f "$BOOT_SCRIPT" && -f "$BOOT_UNIT" && -f "$NM_CONF" ]]
+) > "$fixture/wifi-stage-output"
+if grep -Eq '^(stop|start) ' "$fixture/wifi-stage-order"; then
+  printf 'Wi-Fi staging interrupted the current SSH connection.\n' >&2; exit 1
+fi
+(
+  # shellcheck disable=SC1091
+  source "$script"
+  NM_CONF="$fixture/wifi-nm.conf" STAGED_MARKER="$fixture/wifi-staged"
+  MIGRATION_MARKER="$fixture/wifi-live" MIGRATION_DONE="$fixture/wifi-done"
+  BOOT_SCRIPT="$fixture/wifi-script" BOOT_UNIT="$fixture/wifi-boot.service"
+  SYS_NET_ROOT="$fixture/syswifi"
+  interface_kind() { printf 'Wi-Fi\n'; }
+  nm_wifi_available() { [[ "$1" == wlan0 ]]; }
+  require_boot_root() { :; }
+  systemctl() { printf '%s\n' "$*" >> "$fixture/wifi-boot-order"; }
+  boot_check
+  [[ -f "$MIGRATION_DONE" && ! -e "$STAGED_MARKER" && ! -e "$BOOT_UNIT" ]]
+  grep -Fq 'connect manually in KDE' "$MIGRATION_DONE"
+) > "$fixture/wifi-boot-output"
+if grep -Fq 'stop NetworkManager.service' "$fixture/wifi-boot-order"; then
+  printf 'Disconnected NM Wi-Fi was rolled back before manual KDE connection.\n' >&2; exit 1
+fi
+(
+  # shellcheck disable=SC1091
+  source "$script"
+  state() { [[ "$2" == NetworkManager.service ]] && printf 'active\n' || printf 'inactive\n'; }
+  nmcli() { printf '30 (disconnected)\n'; }
+  nm_wifi_available wlan0
+  nmcli() { printf '20 (unavailable)\n'; }
+  if nm_wifi_available wlan0; then
+    printf 'Unavailable Wi-Fi was accepted as a usable NM device.\n' >&2; exit 1
+  fi
+) > "$fixture/wifi-device-status"
+(
+  # shellcheck disable=SC1091
+  source "$script"
+  NM_CONF="$fixture/failed-wifi-nm.conf" STAGED_MARKER="$fixture/failed-wifi-stage"
+  MIGRATION_MARKER="$fixture/failed-wifi-live" MIGRATION_DONE="$fixture/failed-wifi-done"
+  BOOT_SCRIPT="$fixture/failed-wifi-script" BOOT_UNIT="$fixture/failed-wifi-boot.service"
+  SYS_NET_ROOT="$fixture/syswifi"
+  printf 'wifi:wlan0\n' > "$STAGED_MARKER"
+  write_backend_config
+  install -Dm0755 "$script" "$BOOT_SCRIPT"
+  write_boot_unit
+  interface_kind() { printf 'Wi-Fi\n'; }
+  nm_wifi_available() { return 1; }
+  require_boot_root() { :; }
+  sleep() { SECONDS=$((SECONDS+$1)); }
+  state() { printf 'active\n'; }
+  systemctl() { printf '%s\n' "$*" >> "$fixture/failed-wifi-order"; }
+  if boot_check; then
+    printf 'An unavailable NM Wi-Fi device was accepted.\n' >&2; exit 1
+  fi
+  [[ ! -e "$STAGED_MARKER" && ! -e "$NM_CONF" && ! -e "$BOOT_UNIT" ]]
+) > "$fixture/failed-wifi-boot" 2>&1
+grep -Fxq 'start iwd.service dhcpcd.service' "$fixture/failed-wifi-order"
 
 (
   # shellcheck disable=SC1091

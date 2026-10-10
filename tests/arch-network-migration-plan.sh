@@ -74,6 +74,26 @@ grep -Fq -- '--stage-reboot can use disconnected Wi-Fi' "$fixture/wired-only-pla
 (
   # shellcheck disable=SC1091
   source "$script"
+  SYS_NET_ROOT="$fixture/net" IWD_CONF="$fixture/iwd.conf"
+  STAGED_MARKER="$fixture/no-stage" MIGRATION_DONE="$fixture/no-done"
+  os_id() { printf 'arch\n'; }
+  uname() { printf 'x86_64\n'; }
+  kde_ready() { :; }
+  nmcli() { :; }
+  state() { printf 'inactive\n'; }
+  ip() {
+    case "$*" in
+      '-o -4 addr show dev wlan0 scope global') printf 'fixture-IPv4\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  unset SSH_CONNECTION SSH_CLIENT SSH_TTY
+  plan
+) > "$fixture/wifi-only-plan"
+grep -Fq -- '--stage-reboot-wifi rechecks service state and Wi-Fi internet' "$fixture/wifi-only-plan"
+(
+  # shellcheck disable=SC1091
+  source "$script"
   SYS_NET_ROOT="$fixture/net"
   IWD_CONF="$fixture/iwd.conf"
   STAGED_MARKER="$fixture/no-stage" MIGRATION_DONE="$fixture/no-done"

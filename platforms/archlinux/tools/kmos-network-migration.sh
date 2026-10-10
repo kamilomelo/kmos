@@ -24,7 +24,8 @@ kde_ready() { [[ -r /usr/share/kmos/kde-profile ]]; }
 usage() {
   cat <<'EOF'
 Usage: ./platforms/archlinux/tools/kmos-network-migration.sh --plan
-       ./platforms/archlinux/tools/kmos-network-migration.sh --stage-reboot
+        ./platforms/archlinux/tools/kmos-network-migration.sh --stage-reboot
+        ./platforms/archlinux/tools/kmos-network-migration.sh --stage-reboot-wifi
        ./platforms/archlinux/tools/kmos-network-migration.sh --cancel-stage
        ./platforms/archlinux/tools/kmos-network-migration.sh --apply
        ./platforms/archlinux/tools/kmos-network-migration.sh --rollback
@@ -42,6 +43,10 @@ does NOT interrupt current connections. Reboot manually; a one-time boot check
 restores iwd/dhcpcd if NetworkManager cannot bring Ethernet online. Wi-Fi can
 then be added manually in KDE. --cancel-stage undoes staging before reboot.
 --can-stage is a read-only readiness check for the guided KDE upgrade.
+--stage-reboot-wifi stages a Wi-Fi-only NEXT-BOOT handoff without migrating
+passwords. SSH over Wi-Fi will be lost after reboot until you connect via KDE.
+Requires local keyboard/screen access after reboot; the boot guard restores
+iwd/dhcpcd only if NM cannot manage the Wi-Fi device, not if it lacks a password.
 EOF
 }
 
@@ -130,8 +135,10 @@ plan() {
   done
   ssh_dev=$(ssh_interface || true)
   if [[ -n "$ssh_dev" ]]; then printf 'Current SSH route interface: %s\n' "$ssh_dev"; fi
-  if ((wifi == 0 || wired == 0)); then
-    printf 'No Wi-Fi or wired fallback detected; do not attempt a remote handoff.\n'
+  if ((wifi == 0)); then
+    printf 'No physical Wi-Fi device detected; do not attempt a handoff.\n'
+  elif ((wired == 0)); then
+    printf 'No wired fallback detected; Wi-Fi-only staging requires local-console access after reboot.\n'
   else
     printf 'Check wired connectivity separately before any handoff; carrier/IP alone do not prove internet access.\n'
   fi
@@ -141,12 +148,16 @@ plan() {
     printf 'Plan complete: nothing changed. Reboot when ready; do not run --apply.\n'
   else
     printf 'Plan complete: nothing changed. This inventory does not test wired internet or service eligibility.\n'
-    if ((wired_ready != 1 || wifi != 1)); then
-      printf 'Handoff not ready: requires one wired interface with carrier, IPv4 and a default route, plus one physical Wi-Fi interface.\n'
+    if ((wifi == 0)); then
+      printf 'Handoff not ready: a physical Wi-Fi interface is required.\n'
+    elif ((wired_ready != 1 && wifi_ready == 1)); then
+      printf 'No verified wired fallback: Wi-Fi-only next-boot staging requires working Wi-Fi and a local KDE console to reconnect after reboot. --stage-reboot-wifi rechecks service state and Wi-Fi internet.\n'
+    elif ((wired_ready != 1)); then
+      printf 'Handoff not ready: requires verified wired internet or currently connected Wi-Fi.\n'
     elif ((wifi_ready == 0)); then
       printf 'Wi-Fi has no IPv4: --apply requires active Wi-Fi and will refuse. --stage-reboot can use disconnected Wi-Fi, but rechecks wired internet, services and SSH route before confirmation.\n'
     else
-      printf 'For an eligible handoff, use --stage-reboot for next boot or --apply at the local console; both recheck prerequisites.\n'
+      printf 'For an eligible handoff, use --stage-reboot over wired SSH or --stage-reboot-wifi over Wi-Fi SSH (local console required after reboot); both recheck prerequisites. --apply requires a local console.\n'
     fi
   fi
 }
@@ -185,6 +196,7 @@ select_interfaces() {
       WIFI_IFACE="$iface"
     fi
   done
+  if [[ "$mode" == wifi-stage && -n "$WIFI_IFACE" ]]; then return 0; fi
   [[ -n "$WIRED_IFACE" && -n "$WIFI_IFACE" ]] || {
     printf 'Need one working wired interface and one physical Wi-Fi interface.\n' >&2; return 1;
   }
@@ -222,13 +234,16 @@ ready_for_handoff() {
   done
   select_interfaces "$mode" || return 1
   local unit
-  for unit in "dhcpcd@$WIFI_IFACE.service" "dhcpcd@$WIRED_IFACE.service" \
-    "wpa_supplicant@$WIFI_IFACE.service"; do
+  for unit in "dhcpcd@$WIFI_IFACE.service" "wpa_supplicant@$WIFI_IFACE.service"; do
     if [[ $(state is-active "$unit") == active ]]; then
       printf 'Additional network manager %s is active; review before migrating.\n' "$unit" >&2
       return 1
     fi
   done
+  if [[ -n "$WIRED_IFACE" && $(state is-active "dhcpcd@$WIRED_IFACE.service") == active ]]; then
+    printf 'Additional wired network manager is active; review before migrating.\n' >&2
+    return 1
+  fi
 }
 
 check_internet_on() {
@@ -253,6 +268,23 @@ wait_for_wired() {
   return 1
 }
 
+nm_wifi_available() {
+  local connection
+  [[ $(state is-active NetworkManager.service) == active ]] || return 1
+  connection=$(nmcli -g GENERAL.STATE device show "$1" 2>/dev/null) || return 1
+  [[ "$connection" =~ ^(30|40|50|60|70|80|90|100)[[:space:]] ]]
+}
+
+wait_for_wifi_device() {
+  local iface="$1" deadline=$((SECONDS + 120))
+  while ((SECONDS < deadline)); do
+    if nm_wifi_available "$iface"; then return 0; fi
+    sleep 3
+  done
+  printf 'NetworkManager did not make Wi-Fi available.\n' >&2
+  return 1
+}
+
 write_backend_config() {
   install -Dm0644 /dev/stdin "$NM_CONF" <<'EOF'
 [device]
@@ -267,7 +299,7 @@ config_is_ours() {
 
 rollback() {
   [[ "$ROLLBACK_ARMED" == yes || -f "$MIGRATION_MARKER" || -f "$MIGRATION_DONE" || -f "$STAGED_MARKER" ]] || return 0
-  printf 'Restoring the prior network services. Keep the cable attached.\n' >&2
+  printf 'Restoring the prior network services. Use the local console if remote access does not return.\n' >&2
   local failed=0
   systemctl stop NetworkManager.service || failed=1
   systemctl disable NetworkManager.service || failed=1
@@ -290,7 +322,7 @@ rollback() {
 write_boot_unit() {
   install -Dm0644 /dev/stdin "$BOOT_UNIT" <<'EOF'
 [Unit]
-Description=KMOS one-time NetworkManager Ethernet check and fallback
+Description=KMOS one-time NetworkManager interface check and fallback
 After=NetworkManager.service
 Wants=NetworkManager.service
 
@@ -319,7 +351,15 @@ cleanup_boot_guard() {
 }
 
 confirm_staging() {
-  local answer
+  local answer mode="${1:-wired}"
+  if [[ "$mode" == wifi ]]; then
+    printf 'Stage NetworkManager for the NEXT boot? Current SSH/networking stays active.\n' >&2
+    printf 'After reboot, SSH over Wi-Fi will be offline until you reconnect in KDE.\n' >&2
+    printf 'Have a local keyboard and screen ready. Type STAGE WIFI: ' >&2
+    read -r answer </dev/tty || return 1
+    [[ "$answer" == 'STAGE WIFI' ]]
+    return
+  fi
   printf 'Stage NetworkManager for the NEXT boot? Current SSH/networking stays active.\n' >&2
   printf 'Ethernet %s must be available after reboot. Type STAGE NETWORK: ' "$WIRED_IFACE" >&2
   read -r answer </dev/tty || return 1
@@ -338,16 +378,32 @@ can_stage() {
   }
 }
 
+can_stage_wifi() {
+  ready_for_handoff wifi-stage || return 1
+  check_internet_on "$WIFI_IFACE" || {
+    printf 'Wi-Fi internet unavailable; boot migration not staged.\n' >&2; return 1;
+  }
+}
+
 stage_reboot() {
-  can_stage || return 1
-  require_root --stage-reboot || return 1
-  can_stage || return 1
+  local mode="${1:-wired}" staged_iface
+  if [[ "$mode" == wifi ]]; then
+    can_stage_wifi || return 1
+    require_root --stage-reboot-wifi || return 1
+    can_stage_wifi || return 1
+    staged_iface="wifi:$WIFI_IFACE"
+  else
+    can_stage || return 1
+    require_root --stage-reboot || return 1
+    can_stage || return 1
+    staged_iface="$WIRED_IFACE"
+  fi
   [[ ! -e "$BOOT_UNIT" && ! -L "$BOOT_UNIT" && ! -e "$BOOT_SCRIPT" && ! -L "$BOOT_SCRIPT" &&
      ! -L "${BOOT_SCRIPT%/*}" && ! -L "${BOOT_UNIT%/*}" && ! -L "${STAGED_MARKER%/*}" ]] || {
     printf 'A boot-check unit/script already exists; review it before staging.\n' >&2; return 1;
   }
-  confirm_staging || { printf 'Cancelled without changes.\n' >&2; return 1; }
-  install -Dm0600 /dev/stdin "$STAGED_MARKER" <<< "$WIRED_IFACE" || return 1
+  confirm_staging "$mode" || { printf 'Cancelled without changes.\n' >&2; return 1; }
+  install -Dm0600 /dev/stdin "$STAGED_MARKER" <<< "$staged_iface" || return 1
   ROLLBACK_ARMED=yes
   trap 'rollback' EXIT
   trap 'exit 130' INT TERM
@@ -365,16 +421,46 @@ stage_reboot() {
   ROLLBACK_ARMED=no
   trap - EXIT INT TERM
   printf 'Staged for reboot. Current SSH and iwd/dhcpcd connections were not stopped.\n'
-  printf 'After reboot, SSH via Ethernet should return under NetworkManager.\n'
-  printf 'If wired NetworkManager cannot connect, the boot check restores iwd/dhcpcd.\n'
+  if [[ "$mode" == wifi ]]; then
+    printf 'After reboot, connect Wi-Fi in KDE at the local console; SSH will not return until then.\n'
+    printf 'If NetworkManager cannot manage Wi-Fi, the boot check restores iwd/dhcpcd.\n'
+  else
+    printf 'After reboot, SSH via Ethernet should return under NetworkManager.\n'
+    printf 'If wired NetworkManager cannot connect, the boot check restores iwd/dhcpcd.\n'
+  fi
   printf 'Connect Wi-Fi in KDE manually after reboot; old iwd profiles were preserved.\n'
 }
 
 boot_check() {
-  local wired
+  local wired wifi
   require_boot_root || return 1
   [[ -f "$STAGED_MARKER" && ! -L "$STAGED_MARKER" ]] || return 0
   wired=$(cat "$STAGED_MARKER") || return 1
+  if [[ "$wired" == wifi:* ]]; then
+    wifi="${wired#wifi:}"
+    if [[ ! "$wifi" =~ ^[a-zA-Z0-9_.:-]+$ || ! -e "$SYS_NET_ROOT/$wifi/device" ]] ||
+        [[ $(interface_kind "$wifi") != Wi-Fi ]]; then
+      printf 'Invalid staged Wi-Fi interface; restoring prior services.\n' >&2
+      rollback
+      return 1
+    fi
+    if wait_for_wifi_device "$wifi"; then
+      if ! install -Dm0600 /dev/stdin "$MIGRATION_DONE" <<'EOF'
+KMOS NetworkManager Wi-Fi reboot handoff; connect manually in KDE.
+EOF
+      then
+        rollback
+        return 1
+      fi
+      if ! cleanup_boot_guard; then rollback; return 1; fi
+      rm -f -- "$STAGED_MARKER" || return 1
+      printf 'NetworkManager Wi-Fi is available. Connect in KDE; SSH is offline until then.\n'
+      return 0
+    fi
+    printf 'NetworkManager Wi-Fi unavailable; restoring iwd/dhcpcd.\n' >&2
+    rollback
+    return 1
+  fi
   [[ "$wired" =~ ^[a-zA-Z0-9_.:-]+$ && -e "$SYS_NET_ROOT/$wired/device" &&
      $(interface_kind "$wired") == Ethernet ]] || {
     printf 'Invalid staged Ethernet interface; restoring prior services.\n' >&2
@@ -493,7 +579,9 @@ main() {
     --help|-h) (($# == 1)) || { usage >&2; return 2; }; usage ;;
     --plan) (($# == 1)) || { usage >&2; return 2; }; plan ;;
     --can-stage) (($# == 1)) || { usage >&2; return 2; }; can_stage ;;
+    --can-stage-wifi) (($# == 1)) || { usage >&2; return 2; }; can_stage_wifi ;;
     --stage-reboot) (($# == 1)) || { usage >&2; return 2; }; stage_reboot ;;
+    --stage-reboot-wifi) (($# == 1)) || { usage >&2; return 2; }; stage_reboot wifi ;;
     --cancel-stage) (($# == 1)) || { usage >&2; return 2; }; cancel_stage ;;
     --boot-check) (($# == 1)) || return 2; boot_check ;;
     --apply) (($# == 1)) || { usage >&2; return 2; }; apply_handoff ;;

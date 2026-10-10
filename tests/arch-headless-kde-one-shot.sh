@@ -10,7 +10,9 @@ cat > "$fixture/network" <<'NETWORK_MOCK'
 #!/usr/bin/env bash
 case "$1" in
   --can-stage) [[ "${WIRED_READY:-no}" == yes ]] ;;
+  --can-stage-wifi) [[ "${WIFI_READY:-no}" == yes ]] ;;
   --stage-reboot) printf '%s\n' stage >> "$NETWORK_ORDER" ;;
+  --stage-reboot-wifi) printf '%s\n' wifi-stage >> "$NETWORK_ORDER" ;;
   *) exit 1 ;;
 esac
 NETWORK_MOCK
@@ -19,13 +21,21 @@ chmod +x "$fixture/network"
 (
   source "$script"
   network_migration_script() { printf '%s\n' "$fixture/network"; }
-  NETWORK_ORDER="$fixture/no-wired-order" WIRED_READY=no
-  export NETWORK_ORDER WIRED_READY
+  NETWORK_ORDER="$fixture/no-wired-order" WIRED_READY=no WIFI_READY=no
+  export NETWORK_ORDER WIRED_READY WIFI_READY
   stage_network_for_reboot
   [[ ! -e "$NETWORK_ORDER" ]]
 ) > "$fixture/no-wired" 2>&1
 grep -Fq 'NetworkManager not staged' "$fixture/no-wired"
 
+(
+  source "$script"
+  network_migration_script() { printf '%s\n' "$fixture/network"; }
+  NETWORK_ORDER="$fixture/wifi-order" WIRED_READY=no WIFI_READY=yes
+  export NETWORK_ORDER WIRED_READY WIFI_READY
+  stage_network_for_reboot
+) > "$fixture/wifi" 2>&1
+[[ $(cat "$fixture/wifi-order") == wifi-stage ]]
 (
   source "$script"
   network_migration_script() { printf '%s\n' "$fixture/network"; }
@@ -35,4 +45,4 @@ grep -Fq 'NetworkManager not staged' "$fixture/no-wired"
 ) > "$fixture/wired" 2>&1
 [[ $(cat "$fixture/wired-order") == stage ]]
 
-printf 'Guided KDE visual/network ordering and wired staging gate: OK (mocked only).\n'
+printf 'Guided KDE visual/network ordering and wired/Wi-Fi staging gates: OK (mocked only).\n'

@@ -107,12 +107,15 @@ well as staging defaults for future users. Existing settings still need
 individual approval and are backed up before replacement; personal panels
 and wallpaper choices are never replaced. It does **not** run the ISO's destructive
 font/package cleanup or install AUR packages. After finishing, it offers the
-guarded **next-boot** NetworkManager handoff if a working wired fallback and
-service state pass the checks. The handoff asks for `STAGE NETWORK` explicitly;
-it only changes next-boot services, never interrupts the active SSH/network
-connection, and does not reboot automatically. Without eligible Ethernet, it
-skips the handoff; KDE and visuals can still be installed, but NetworkManager
-will not manage connections until you stage a separate handoff.
+guarded **next-boot** NetworkManager handoff. Verified wired Ethernet uses the
+wired handoff; when the wired safeguard cannot be used but Wi-Fi is working,
+the guided flow instead offers a
+Wi-Fi-only handoff with an explicit `STAGE WIFI` confirmation. Both paths change
+only next-boot services, leave the active SSH connection alone, and do not
+reboot automatically. The Wi-Fi-only path deliberately loses remote SSH after
+reboot until you connect Wi-Fi again in KDE using a local screen and keyboard;
+it does not read or migrate the old iwd password. If neither path is eligible,
+networking stays under iwd/dhcpcd.
 For a new panel, the Application Dashboard icon uses the SVG data from
 `platforms/archlinux/assets/icons/kmos.ico`, installed as the uniquely named `kmos-dashboard` icon
 in hicolor. It does not overwrite Breeze icons or change existing personal
@@ -154,8 +157,8 @@ before removing any backup. Rerunning skips defaults that already match.
 ## NetworkManager handoff (x86/next experiment)
 
 The KDE upgrade deliberately retains the headless `iwd`/`dhcpcd` connection
-until a reboot following an approved handoff. The guided path offers staging
-after the visual finish if its Ethernet safety check passes. On an already
+until a reboot following an approved handoff. The guided path offers wired or
+Wi-Fi-only staging after the visual finish when its checks pass. On an already
 upgraded machine, use the commands below without rerunning the KDE installer.
 The goal is to let **NetworkManager control networking in KDE** instead of
 managing connections directly with `iwctl` and `dhcpcd`. This is not just a
@@ -187,6 +190,21 @@ NetworkManager controls the connections and IP addresses; iwd is retained only
 as its Wi-Fi radio backend. Old iwd profiles remain on disk, and KMOS neither
 reads nor exports their passwords. Test Wi-Fi with the cable unplugged only
 after KDE shows an active NetworkManager Wi-Fi connection.
+
+For **Wi-Fi-only SSH upgrades with local console access after reboot**, the
+guided upgrade uses the same next-boot staging mechanism but does **not** need
+a wired interface. Its explicit `STAGE WIFI` confirmation warns that SSH will
+be lost on reboot. The boot guard accepts an available, disconnected NM Wi-Fi
+device so you can enter the password in KDE; it restores iwd/dhcpcd only if
+NM cannot manage that device. A missing Wi-Fi password is **not** considered
+a boot failure. The old iwd profiles remain untouched, but NM does not import
+them. If staging was interrupted after the KDE installer completed, use the
+separate `--stage-reboot-wifi` command below; **do not rerun the installer**.
+This Wi-Fi-only path has fixture tests only and requires field validation.
+
+```bash
+./platforms/archlinux/tools/kmos-network-migration.sh --stage-reboot-wifi
+```
 
 Alternatively, a **local-console-only live handoff** remains available. The
 separate `--apply` command stops dhcpcd and the existing direct iwd Wi-Fi
@@ -220,7 +238,9 @@ connected in KDE; an HTTPS request bound to `wlan0` succeeded. With Ethernet
 unplugged, `wlan0` was the sole default route and unbound HTTPS also succeeded.
 The local-only `--apply` path, automatic rollback on a **genuinely failed** NM
 connection with the longer wait, and switching SSIDs in KDE remain unverified
-on hardware. The earlier short-timeout rollback did work.
+on hardware. The earlier short-timeout rollback did work. The guided Wi-Fi-only
+staging and NM device guard are new and unverified on
+hardware; test them with a local console and a known Wi-Fi password.
 
 ## Final field-test checklist (before any release merge)
 
@@ -243,8 +263,10 @@ formats selected partitions; verify the disk/EFI target before typing `FORMAT`.
    `x86/next` checkout and run `./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh`
    as a regular user, without `sudo` or profile flags. Confirm **the same run**
    guides package selection, offers reviewable visual finishing for all local
-   regular users with backups,
-   and—only if wired safeguards pass—asks separately to stage NM for next boot.
+   regular users with backups, and asks separately to stage NM for next boot.
+   Verified wired internet uses the wired guard; a working Wi-Fi connection
+   without a suitable wired/SSH fallback offers the Wi-Fi-only guard, which
+   requires reconnecting in KDE after reboot and local-console access.
    It must not stop active SSH/network services or reboot automatically. After
    the deliberate reboot, check KDE visuals without overwriting personal panels,
    NM Ethernet, Wi-Fi connected through KDE, and Wi-Fi-only internet at the
