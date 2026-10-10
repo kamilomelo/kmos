@@ -82,7 +82,7 @@ grep -Fq 'Only installed Arch Linux x86_64 is supported' "$fixture/wrong-os"
 ) > "$fixture/install-report"
 [[ $(cat "$fixture/order") == $'preflight\nroot-check\nconfirm\nmark-upgrade\npackages\ndefaults\nenable sddm.service\nset-default graphical.target\nrecord-profile\nclear-upgrade' ]]
 [[ $(cat "$fixture/profile") == noapps ]]
-grep -Fq 'NetworkManager may be installed' "$fixture/install-report"
+grep -Fq 'Active networking stays unchanged; guided mode may offer next-boot NetworkManager staging.' "$fixture/install-report"
 
 (
   # shellcheck disable=SC1091

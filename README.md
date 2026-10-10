@@ -1,18 +1,17 @@
 # KMOS
 
-KMOS installs Arch Linux x86_64 as a headless system or a KDE desktop. The
-current KDE and headless → KDE workflows live on **`x86/next`**; `main` remains
-the previous tested release until this work is merged.
+KMOS installs Arch Linux x86_64 as a headless system or a KDE desktop. Fresh
+KDE installs and headless → KDE upgrades are available on `main`.
 
 ## Fresh Arch install
 
 1. Back up your data and boot an Arch x86_64 ISO on the target machine. Connect
    Ethernet, or use the [live-ISO Wi-Fi helper](#helpers) from a local copy of
    this repository.
-2. On the live ISO, get the experimental checkout and start the installer:
+2. On the live ISO, get the checkout and start the installer:
 
    ```bash
-   git clone --branch x86/next https://github.com/kamilomelo/kmos.git
+   git clone https://github.com/kamilomelo/kmos.git
    cd kmos
    ./kmos-install.sh
    ```
@@ -37,8 +36,8 @@ Only use this path on an **installed KMOS headless Arch x86_64** machine, not
 an arbitrary Arch installation. With internet access, run as a regular user:
 
 ```bash
-git clone --branch x86/next https://github.com/kamilomelo/kmos.git ~/kmos-next
-cd ~/kmos-next
+git clone https://github.com/kamilomelo/kmos.git ~/kmos
+cd ~/kmos
 ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
 ./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
 ```

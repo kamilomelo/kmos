@@ -1,8 +1,8 @@
-# Experimental headless → KDE (x86/next)
+# Arch headless → KDE
 
 Use the live upgrade only on an **installed KMOS headless Arch x86_64** system,
-not an Arch ISO or an arbitrary existing Arch/VPS installation. This work is
-on `x86/next`, not `main` or `v0.9.0`.
+not an Arch ISO or an arbitrary existing Arch/VPS installation. This workflow
+is on `main`; the older `v0.9.0` tag predates it.
 
 **Verification snapshot (2026-10-10):** Fresh direct KDE and a headless → KDE
 upgrade with visual defaults for multiple existing users were reported working
@@ -10,9 +10,9 @@ on hardware. NetworkManager's wired reboot handoff, connected Wi-Fi, and
 Wi-Fi-only internet after unplugging Ethernet were previously verified; the
 new Wi-Fi-SSH handoff was subsequently reported working, without captured
 service diagnostics. The AUR-declined install path and Wi-Fi-only boot-guard
-failure path still lack field tests. This remains on `x86/next`, not `main`.
+failure path still lack field tests; `v1.0.0` has not yet been tagged.
 
-From a checkout of `x86/next`, you can inspect the system with the optional
+From a current checkout, you can inspect the system with the optional
 read-only check (the guided install also runs this check):
 
 ```bash
@@ -23,10 +23,10 @@ The legacy explicit `--install --profile full|noapps` options remain available
 without AUR; the `noapps` manifest is also still used by Quartz64. It is **not**
 part of guided x86 package selection. Guided ISO and live upgrades use the same
 mandatory desktop package sets; the live upgrade requires local manifests
-rather than fetching the published `main` manifests. The revised fresh-ISO
+rather than fetching remote manifests. The revised fresh-ISO
 path was reported working on hardware; the AUR-declined path has only fixtures.
 
-On the **experimental x86/next Arch ISO installer**, `./kmos-install.sh` always
+On the **Arch ISO installer**, `./kmos-install.sh` always
 installs the shared Arch CLI tools. Choosing KDE adds mandatory KDE base,
 KDE apps (including Spectacle and Kdenlive), and desktop productivity
 (`firefox-developer-edition`). Kamilo productivity is asked with **Yes** as the
@@ -38,7 +38,7 @@ local manifests are validated **before** final disk approval/format. There is
 no Firefox pruning policy; guided installs also skip the old font/package
 cleanup. Explicit `--profile full|noapps` remains for compatibility, not the
 recommended flow. The guided KDE install has a reported successful hardware
-test, but has not yet been merged into `main` or released as `v1.0.0`.
+test, but has not yet been tagged as `v1.0.0`.
 
 ### Guided KDE package choices
 
@@ -154,7 +154,7 @@ users without a personal override. It may download Kappa fonts with the existing
 `curl` tool, but does not delete other fonts. Review the resulting KDE session
 before removing any backup. Rerunning skips defaults that already match.
 
-## NetworkManager handoff (x86/next experiment)
+## NetworkManager handoff
 
 The KDE upgrade deliberately retains the headless `iwd`/`dhcpcd` connection
 until a reboot following an approved handoff. The guided path offers wired or
@@ -243,10 +243,10 @@ on hardware. The earlier short-timeout rollback did work. The guided Wi-Fi-only
 handoff was subsequently reported successful over Wi-Fi SSH, but detailed
 service logs and a failed-NM Wi-Fi boot-guard test were not provided.
 
-## Final field-test checklist (before any release merge)
+## Field-test and regression checklist (before a release tag)
 
 Use a **dedicated test machine** and a fresh Arch x86_64 ISO. Keep Ethernet
-and local-console access available; back up data. From an `x86/next` checkout
+and local-console access available; back up data. From a current checkout
 on the live ISO, run `./kmos-install.sh` without profile flags. The ISO installer
 formats selected partitions; verify the disk/EFI target before typing `FORMAT`.
 
@@ -260,8 +260,8 @@ formats selected partitions; verify the disk/EFI target before typing `FORMAT`.
    On first boot, check Spectacle, Kdenlive, Firefox Developer Edition, chosen
    productivity packages, the new-panel Dashboard icon, and networking. Confirm
    pacman does not ask for rust/rustup, JACK, Qt multimedia or tessdata providers.
-2. **Fresh headless → KDE:** on a fresh *headless* KMOS install, obtain an
-   `x86/next` checkout and run `./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh`
+2. **Fresh headless → KDE:** on a fresh *headless* KMOS install, obtain a
+   current checkout and run `./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh`
    as a regular user, without `sudo` or profile flags. Confirm **the same run**
    guides package selection, offers reviewable visual finishing for all local
    regular users with backups, and asks separately to stage NM for next boot.
@@ -276,4 +276,4 @@ formats selected partitions; verify the disk/EFI target before typing `FORMAT`.
 
 Do not rerun the ISO installer on the installed system or rerun the live KDE
 installer after KDE is marked complete. Capture results and unresolved failures
-before deciding whether to merge `x86/next` into `main`.
+before publishing `v1.0.0`.

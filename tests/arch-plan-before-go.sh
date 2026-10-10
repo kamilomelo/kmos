@@ -12,6 +12,8 @@ mock_setup() {
   require_root() { :; }
   require_tools() { :; }
   pacman() { [[ "$1" == -Si && "$2" == impala ]]; }
+  choose_kde_packages() { SELECTED_KDE_METAPACKAGES=(); EXTRA_KDE_PACKAGES=(); }
+  select_kde_aur() { INSTALL_KDE_AUR=no; SELECTED_KDE_AUR_PACKAGES=(); }
   verify_boot_mode() { :; }
   select_disk() { TARGET_DISK=/dev/testdisk; }
   lsblk() {
@@ -59,7 +61,7 @@ mock_setup() {
   main <<< $'2\nFORMAT'
 ) > "$fixture/existing-output" 2>&1
 [[ $(cat "$fixture/order") == $'partitions\nchoices\npreflight\nformat' ]]
-grep -q 'KDE full' "$fixture/existing-output"
+grep -q 'KDE desktop (choose packages)' "$fixture/existing-output"
 grep -q 'Choose system type \[1/2\] (required, no default)' "$fixture/existing-output"
 grep -q 'press Ctrl+C and restart before FORMAT' "$fixture/existing-output"
 (
@@ -102,6 +104,7 @@ grep -q 'Enter alone does not select KDE' "$fixture/noapps-output"
   offer_kde_desktop
 )
 [[ $(cat "$fixture/desktop-execution") == kde ]]
+: > "$fixture/desktop-execution"
 (
   mock_setup
   INSTALL_HEADLESS_AUR=yes
@@ -255,6 +258,7 @@ grep -q 'Formatting requires the explicit FORMAT' "$fixture/no-format-token"
 (
   INSTALL_KDE=no
   ENABLE_WIFI_AFTER_BOOT=no
+  MOUNT_POINT="$fixture/wired-target"
   arch-chroot() { printf '%s\n' "$*" >> "$fixture/wired-services"; }
   configure_wired_network_after_boot
   grep -q 'systemctl enable iwd.service' "$fixture/wired-services"
