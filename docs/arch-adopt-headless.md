@@ -7,7 +7,7 @@ installed packages with yay, but account cleanup has not been field-tested.
 Have a provider console or VPS snapshot available.
 
 ```bash
-git clone --branch vps https://github.com/kamilomelo/kmos.git ~/kmos
+git clone https://github.com/kamilomelo/kmos.git ~/kmos
 cd ~/kmos
 ./platforms/archlinux/kmos-adopt-headless.sh --preflight
 ./platforms/archlinux/kmos-adopt-headless.sh

@@ -54,24 +54,24 @@ upgrade on an already-upgraded KDE system.
 
 ## Adopt an existing headless Arch system (VPS)
 
-The **experimental `vps` branch** provisions an *installed, headless Arch Linux
-x86_64* machine (VPS or local) without formatting it. It does **not** convert
-existing KDE,
-turn a VPS into a graphical desktop, or replace the ISO installer. Never run
+The **experimental adoption workflow on `main`** provisions an *installed,
+headless Arch Linux x86_64* machine (VPS or local) without formatting it. It
+does **not** convert existing KDE, add a graphical desktop to a VPS, or replace
+the ISO installer. Never run
 `./kmos-install.sh` on an installed system. Take a VPS snapshot, arrange
 provider-console access, and keep your working SSH session open for the first
 run.
 
 ```bash
-git clone --branch vps https://github.com/kamilomelo/kmos.git ~/kmos-vps
-cd ~/kmos-vps
+git clone https://github.com/kamilomelo/kmos.git ~/kmos-adopt
+cd ~/kmos-adopt
 ./platforms/archlinux/kmos-adopt-headless.sh --preflight
 ./platforms/archlinux/kmos-adopt-headless.sh
 ```
 
 `--preflight` is read-only and needs no root. Review its package and account
 inventory before the guided run; the script requests sudo when needed. If you
-already have a `vps` checkout, update it with `git pull --ff-only origin vps`
+already have an older checkout, review local changes and update it to `main`
 instead of cloning over it.
 
 The guided run:
@@ -128,6 +128,8 @@ removed. Account removal and **permanent home deletion** require separate
 explicit confirmations; an account created during a run cannot be removed in
 that same run. There is no automatic configuration backup or rollback. VPS
 adoption remains experimental; account cleanup has not yet been field-tested.
+See the [v1.1.0 release notes](./docs/releases/v1.1.0.md) for field results
+and remaining limits.
 
 ## Helpers
 
