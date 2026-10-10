@@ -13,7 +13,7 @@ declare -a PACKAGES=() USERS_CREATED=()
 
 usage() {
   cat <<'EOF'
-Usage: ./platforms/archlinux/kmos-adopt-headless.sh [--preflight|--help]
+Usage: ./platforms/archlinux/kmos-adopt-headless.sh [--preflight|--users-only|--help]
 
 Guided adoption of an INSTALLED Arch x86_64 headless machine (including a VPS).
 Reviews packages, accounts, and terminal appearance before changes. Installs
@@ -21,6 +21,7 @@ paru (default) or yay and tododo-bin. Enables OpenSSH without rewriting its
 configuration or restarting an active sshd. Never formats disks, changes
 network services, or converts an existing KDE desktop. Account deletion is final.
 --preflight reports eligibility without root or changes; --help needs no root.
+--users-only manages accounts without rerunning pacman, AUR, or appearance setup.
 Have a VPS snapshot or provider console available before a package upgrade.
 EOF
 }
@@ -121,7 +122,12 @@ preflight() {
   systemctl --no-pager --plain is-active sshd.service NetworkManager.service systemd-networkd.service iwd.service dhcpcd.service 2>/dev/null | paste -sd ' ' - || :
   printf 'sshd at boot: '
   systemctl is-enabled sshd.service 2>/dev/null || printf 'not enabled / unavailable\n'
-  printf 'AUR: choose paru (default) or yay; tododo-bin required.\n'
+  printf 'AUR: choose paru or yay (working helper preferred); tododo-bin required.\n'
+  for pkg in paru yay; do
+    if helper_works "$pkg"; then printf '  %-18s working\n' "$pkg"
+    elif command -v "$pkg" >/dev/null 2>&1; then printf '  %-18s installed but cannot start\n' "$pkg"
+    else printf '  %-18s absent\n' "$pkg"; fi
+  done
   printf 'Appearance: KMOS Starship presets and managed Bash integration; conflicting configuration is skipped.\n'
   printf 'No changes made. Guided mode enables/starts sshd without changing its config; network, bootloader and disk settings stay intact.\n'
 }
@@ -196,6 +202,42 @@ choose_builder() {
   note "Checking sudo access for $name; sudo may ask for that user's password."
   runuser -u "$name" -- sudo -v || { fail "Cannot use $name for AUR; fix sudo access first."; return 1; }
 }
+aur_builder() {
+  local name entry count=0 chosen=""
+  name=${SUDO_USER:-}
+  if [[ -n "$name" && "$name" != root ]] && regular_user "$name" && is_admin "$name"; then
+    printf '%s\n' "$name"
+    return 0
+  fi
+  for name in "${USERS_CREATED[@]}"; do
+    if regular_user "$name" && is_admin "$name"; then
+      printf '%s\n' "$name"
+      return 0
+    fi
+  done
+  while IFS= read -r entry; do
+    name=${entry%%:*}
+    if is_admin "$name"; then
+      chosen=$name
+      ((count += 1))
+    fi
+  done < <(regular_users)
+  if ((count == 1)); then printf '%s\n' "$chosen"; return 0; fi
+  fail 'Run adoption from a regular wheel account with sudo; root cannot safely choose among multiple admins.'
+}
+helper_works() { command -v "$1" >/dev/null 2>&1 && "$1" --version >/dev/null 2>&1; }
+select_aur_helper() {
+  local default=paru choice
+  if ! helper_works paru && helper_works yay; then default=yay; fi
+  choice=$(input "AUR helper [paru/yay] (default $default): ") || return 1
+  choice=${choice:-$default}
+  [[ "$choice" == paru || "$choice" == yay ]] || { fail 'Choose paru or yay.'; return 1; }
+  if command -v "$choice" >/dev/null 2>&1 && ! helper_works "$choice"; then
+    fail "Installed $choice cannot start (possibly a libalpm ABI mismatch); choose the working helper instead."
+    return 1
+  fi
+  printf '%s\n' "$choice"
+}
 install_aur() {
   local builder=$1 helper=$2 builddir repo
   if ! command -v "$helper" >/dev/null 2>&1; then
@@ -219,7 +261,10 @@ install_aur() {
     fi
     rm -rf -- "$builddir"
   fi
-  command -v "$helper" >/dev/null 2>&1 || { fail "$helper is not runnable."; return 1; }
+  helper_works "$helper" || { fail "$helper cannot start; a package upgrade may have changed libalpm. Try the working helper instead."; return 1; }
+  runuser -u "$builder" -- "$helper" --version >/dev/null 2>&1 || {
+    fail "$helper does not work for the AUR build user $builder."; return 1;
+  }
   if ! installed tododo-bin; then runuser -u "$builder" -- "$helper" -S --needed tododo-bin || return 1; fi
   installed tododo-bin || { fail 'tododo-bin is mandatory and was not installed.'; return 1; }
 }
@@ -342,12 +387,10 @@ guided() {
   note 'Review the package transaction; Arch upgrades and pacman hooks may affect running services.'
   note 'Take a VPS snapshot or have provider console access. No automatic configuration backups are retained.'
   ask 'Continue with KMOS adoption?' || { note 'Cancelled without changes.'; return 0; }
-  helper=$(input 'AUR helper [paru/yay] (default paru): ') || return 1
-  helper=${helper:-paru}
-  [[ "$helper" == paru || "$helper" == yay ]] || { fail 'Choose paru or yay.'; return 1; }
+  helper=$(select_aur_helper) || return 1
   create_accounts || return 1
-  builder=$(input 'Existing/new wheel username for AUR builds: ') || return 1
-  regular_user "$builder" && is_admin "$builder" || { fail 'Choose a regular wheel user for AUR.'; return 1; }
+  builder=$(aur_builder) || return 1
+  note "Using $builder for the AUR build; $helper is installed system-wide for all users."
   note 'Running pacman -Syu --needed; review package replacement prompts.'
   pacman -Syu --needed -- "${PACKAGES[@]}" || return 1
   enable_ssh || return 1
@@ -358,11 +401,20 @@ guided() {
   remove_accounts || return 1
   note 'KMOS headless adoption completed; sshd is enabled and active, and network services were not reconfigured.'
 }
+users_only() {
+  require_root --users-only || return 1
+  preflight || return 1
+  note 'Accounts-only mode: no package transactions, AUR builds or SSH/network changes.'
+  ask 'Continue to account management?' || { note 'Cancelled without changes.'; return 0; }
+  create_accounts || return 1
+  remove_accounts
+}
 
 main() {
   case "${1:---guided}" in
     --help|-h) (($# <= 1)) || { usage >&2; return 2; }; usage ;;
     --preflight) (($# == 1)) || { usage >&2; return 2; }; preflight ;;
+    --users-only) (($# == 1)) || { usage >&2; return 2; }; users_only ;;
     --guided) (($# == 0)) || { usage >&2; return 2; }; guided ;;
     *) usage >&2; return 2 ;;
   esac

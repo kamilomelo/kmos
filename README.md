@@ -68,8 +68,14 @@ It reviews the KMOS CLI packages, enables OpenSSH, requires an AUR helper and
 SSH settings and network configuration are preserved. Prepare provider-console
 access and review the [adoption safety guide](./docs/arch-adopt-headless.md)
 before use.
-Existing KDE systems are not supported by this path. This provisioner has
-offline fixture tests, but still needs a disposable VPS field test.
+Existing KDE systems are not supported by this path. The initial VPS trial
+confirmed package installation with yay; account cleanup still needs a field
+test.
+
+After verifying a replacement admin's SSH login, use
+`./platforms/archlinux/kmos-adopt-headless.sh --users-only` to manage accounts
+without rerunning the package installation. The current login cannot remove
+itself.
 
 ## Helpers
 

@@ -87,6 +87,7 @@ bash -n "$script"
   MARKER="$fixture/adopted"
   PACKAGES=(fastfetch starship openssh)
   USERS_CREATED=()
+  SUDO_USER=builder
   preflight() { printf 'preflight\n' >> "$fixture/order"; }
   require_root() { :; }
   ask() { return 0; }
@@ -138,13 +139,53 @@ bash -n "$script"
   # Installed helper, but tododo-bin must still be installed as the build user.
   paru() { :; }
   installed() { [[ -f "$fixture/tododo" && "$1" == tododo-bin ]]; }
-  runuser() { printf '%s\n' "$*" > "$fixture/aur-call"; touch "$fixture/tododo"; }
+  runuser() {
+    [[ " $* " == *' --version '* ]] && return 0
+    printf '%s\n' "$*" > "$fixture/aur-call"
+    touch "$fixture/tododo"
+  }
   install_aur builder paru
   [[ $(cat "$fixture/aur-call") == '-u builder -- paru -S --needed tododo-bin' ]]
   rm -f -- "$fixture/tododo"
   runuser() { :; }
   if install_aur builder paru > "$fixture/missing-aur" 2>&1; then exit 1; fi
   grep -Fq 'tododo-bin is mandatory' "$fixture/missing-aur"
+)
+
+(
+  # shellcheck disable=SC1090
+  source "$script"
+  paru() { return 1; }
+  yay() { [[ "$1" == --version ]]; }
+  input() { printf '\n'; }
+  [[ $(select_aur_helper) == yay ]]
+  input() { printf 'paru\n'; }
+  if select_aur_helper > "$fixture/broken-helper" 2>&1; then exit 1; fi
+  grep -Fq 'cannot start' "$fixture/broken-helper"
+)
+
+(
+  # shellcheck disable=SC1090
+  source "$script"
+  regular_user() { [[ "$1" == kko || "$1" == fresh ]]; }
+  is_admin() { [[ "$1" == kko || "$1" == fresh ]]; }
+  SUDO_USER=kko
+  [[ $(aur_builder) == kko ]]
+  SUDO_USER=root USERS_CREATED=(fresh)
+  [[ $(aur_builder) == fresh ]]
+)
+
+(
+  # shellcheck disable=SC1090
+  source "$script"
+  require_root() { :; }
+  preflight() { printf 'preflight\n' >> "$fixture/users-order"; }
+  ask() { return 0; }
+  create_accounts() { printf 'create\n' >> "$fixture/users-order"; }
+  remove_accounts() { printf 'remove\n' >> "$fixture/users-order"; }
+  pacman() { printf 'unexpected pacman\n' >> "$fixture/users-order"; return 1; }
+  users_only
+  [[ $(cat "$fixture/users-order") == $'preflight\ncreate\nremove' ]]
 )
 
 (
