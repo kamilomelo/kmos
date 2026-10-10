@@ -45,12 +45,29 @@ requires sudo access; wheel membership alone may not be sufficient. AUR
 packages are third-party software; review their build files at the prompt.
 AUR failure leaves adoption incomplete and can be retried.
 
+**Field result:** `paru-bin` failed to launch against a newer libalpm. The
+source-built `paru` reached its final Rust compile on one VPS but `rustc`
+received SIGKILL. That suggests a resource limit, possibly RAM; it is **not**
+proof of OOM. Do not symlink libalpm versions. On a small VPS, choose `2) yay`
+if paru cannot be built. Check memory, disk space, and the boot's kernel journal
+before attributing a failure to OOM. A failed source build happens before any
+approved removal of existing `paru-bin`
+packages; the Rust package remains installed for future builds.
+
+For read-only checks after SIGKILL on the same boot:
+
+```bash
+free -h
+df -h /tmp
+sudo journalctl -k -b --no-pager | grep -Ei 'out of memory|oom|killed process|memory cgroup' | tail -n 30
+```
+
 You can create regular users, choose wheel admin access, set passwords through
 the system's `passwd` prompt, and paste individual SSH public keys. No password
 is read or saved by KMOS. If there is no existing sudo-capable regular user,
 create one before choosing the AUR builder. Verify a fresh SSH login and sudo
-access for a new administrator. If wheel does not already have sudo access,
-the script offers a validated, KMOS-owned sudoers rule for **all wheel users**;
+access for a new administrator. If the selected AUR build user lacks sudo
+access, the script offers a validated, KMOS-owned rule for **all wheel users**;
 declining stops AUR installation. **The script will not remove accounts in the
 same run in which it created one.** Rerun from the replacement wheel account
 with sudo to remove an old administrator, using the accounts-only command:

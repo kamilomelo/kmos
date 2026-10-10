@@ -52,31 +52,82 @@ or fails its checks, iwd/dhcpcd remain in charge. See the
 [upgrade and recovery guide](./docs/arch-headless-to-kde.md). Do not rerun the
 upgrade on an already-upgraded KDE system.
 
-## Adopt an existing headless Arch system
+## Adopt an existing headless Arch system (VPS)
 
-For an installed Arch x86_64 headless machine (including a VPS), the
-**experimental, non-formatting** adoption script is separate from
-`./kmos-install.sh`:
+The **experimental `vps` branch** provisions an *installed, headless Arch Linux
+x86_64* machine (VPS or local) without formatting it. It does **not** convert
+existing KDE,
+turn a VPS into a graphical desktop, or replace the ISO installer. Never run
+`./kmos-install.sh` on an installed system. Take a VPS snapshot, arrange
+provider-console access, and keep your working SSH session open for the first
+run.
 
 ```bash
+git clone --branch vps https://github.com/kamilomelo/kmos.git ~/kmos-vps
+cd ~/kmos-vps
 ./platforms/archlinux/kmos-adopt-headless.sh --preflight
 ./platforms/archlinux/kmos-adopt-headless.sh
 ```
 
-It reviews the KMOS CLI packages, enables OpenSSH, requires an AUR helper and
-`tododo-bin`, and offers user creation/removal and terminal defaults. Existing
-SSH settings and network configuration are preserved. Prepare provider-console
-access and review the [adoption safety guide](./docs/arch-adopt-headless.md)
-before use.
-Paru is built from source (requires Rust and time/RAM); yay remains an option.
-Existing KDE systems are not supported by this path. The initial VPS trial
-confirmed package installation with yay; account cleanup still needs a field
-test.
+`--preflight` is read-only and needs no root. Review its package and account
+inventory before the guided run; the script requests sudo when needed. If you
+already have a `vps` checkout, update it with `git pull --ff-only origin vps`
+instead of cloning over it.
 
-After verifying a replacement admin's SSH login, use
-`./platforms/archlinux/kmos-adopt-headless.sh --users-only` to manage accounts
-without rerunning the package installation. The current login cannot remove
-itself.
+The guided run:
+
+1. Runs `pacman -Syu --needed` for missing base tools (including `openssh`,
+   `git`, `sudo`, and `nano`) and the headless CLI set: btop, fastfetch, opencode,
+   ripgrep, Starship, Syncthing, tree, and zoxide. It includes iwd/Impala only
+   when a wireless interface is present, and `nvtop` only when NVIDIA PCI
+   hardware **and** `nvidia-utils` are detected. Arch upgrades and package
+   hooks may affect running software; there is no automatic reboot.
+2. Generates missing SSH *server host keys*, validates the existing sshd
+   configuration, and enables sshd at boot. It starts sshd only if inactive;
+   it does not restart an active SSH service or change network-manager or SSH
+   settings.
+3. Requires an AUR helper (`1) paru` by default, or `2) yay`) and `tododo-bin`.
+   Paru is built from source using Rust; yay uses `yay-bin` when not already
+   installed. The helper and `tododo-bin` are installed system-wide, but users
+   need working sudo rights to install system packages. The current wheel
+   administrator performs AUR builds as a non-root user. If that builder lacks
+   sudo access, a rule for **all wheel users** is offered for separate approval.
+4. Offers to create local users with Bash homes and passwords through the
+   system `passwd` prompt. An SSH **public** key is optional for each new
+   account; never paste a private key. It installs KMOS Starship presets and
+   global interactive-Bash integration, skipping conflicting settings rather
+   than replacing personal dotfiles. It never installs KDE here.
+
+**Paru on small VPSs:** An earlier `paru-bin` could not load `libalpm.so.15`
+against a newer pacman/libalpm. The current script builds `paru` from source
+and asks before removing any conflicting `paru-bin` packages, *after* a
+successful build. On one VPS the Rust compiler instead received **SIGKILL**
+near the end of the build; an out-of-memory kill is plausible but **not yet
+confirmed**. Building paru can need substantial RAM, disk space, and time;
+select **yay** if your VPS cannot build it. Do not work around a libalpm
+mismatch with a library symlink.
+If the build fails, existing AUR helpers are preserved; earlier pacman, SSH,
+or user changes are **not** automatically rolled back. See the
+[adoption guide](./docs/arch-adopt-headless.md) for checks and recovery.
+
+After a successful run, check `pacman -Q openssh tododo-bin`,
+`systemctl is-enabled sshd.service`, `systemctl is-active sshd.service`, and
+`paru --version` or `yay --version` (whichever helper you selected).
+
+**Removing an old user:** First verify a *new* SSH login and sudo from a
+different wheel administrator, then close the old user's sessions. From the
+replacement administrator's own checkout, run:
+
+```bash
+./platforms/archlinux/kmos-adopt-headless.sh --users-only
+```
+
+This avoids repeating the package/AUR setup. The current login, last regular
+administrator, logged-in users, and users with running processes cannot be
+removed. Account removal and **permanent home deletion** require separate
+explicit confirmations; an account created during a run cannot be removed in
+that same run. There is no automatic configuration backup or rollback. VPS
+adoption remains experimental; account cleanup has not yet been field-tested.
 
 ## Helpers
 
@@ -112,7 +163,7 @@ kmos/
 │   ├── archlinuxarm/         Board-specific ARM workflows
 │   ├── rockylinux/          Rocky Linux post-install workflow
 │   └── windows/             Windows manual guide
-├── docs/                    Upgrade guide and release notes
+├── docs/                    Upgrade/adoption guides and release notes
 ├── scripts/                 Shell checks
 └── tests/                   Non-destructive fixtures
 ```
