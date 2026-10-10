@@ -54,13 +54,11 @@ upgrade on an already-upgraded KDE system.
 
 ## Adopt an existing headless Arch system (VPS)
 
-The **experimental adoption workflow on `main`** provisions an *installed,
-headless Arch Linux x86_64* machine (VPS or local) without formatting it. It
-does **not** convert existing KDE, add a graphical desktop to a VPS, or replace
-the ISO installer. Never run
-`./kmos-install.sh` on an installed system. Take a VPS snapshot, arrange
-provider-console access, and keep your working SSH session open for the first
-run.
+The **experimental** adoption workflow on `main` sets up an *installed,
+headless Arch Linux x86_64* system, including a VPS, without formatting disks
+or reconfiguring networking. It is not for an Arch ISO or an existing KDE
+desktop. **Never run `./kmos-install.sh` on an installed system.** Keep your
+SSH session open and have a VPS snapshot or provider console available.
 
 ```bash
 git clone https://github.com/kamilomelo/kmos.git ~/kmos-adopt
@@ -69,69 +67,31 @@ cd ~/kmos-adopt
 ./platforms/archlinux/kmos-adopt-headless.sh
 ```
 
-`--preflight` is read-only and needs no root. Review its package and account
-inventory before the guided run; the script requests sudo when needed. If you
-already have an older checkout, review local changes and update it to `main`
-instead of cloning over it.
+`--preflight` is read-only. The guided run requires a working sudo login or
+root; **wheel membership alone does not grant sudo**. It upgrades Arch, sets up
+headless tools and OpenSSH without restarting active SSH, offers account and
+terminal setup, and requires an AUR helper and `tododo-bin`. It asks before
+granting sudo to a new admin, using a per-user rule when needed. Existing
+settings are preserved where possible, but package upgrades can affect running
+services and there is no automatic rollback.
 
-The guided run (sudo from the current login, or root, is required):
+Choose **paru** (source build) or **yay**. A paru build was killed by SIGKILL on
+one small VPS; OOM has **not** been confirmed. Yay worked on the tested VPS.
+See the [adoption guide](./docs/arch-adopt-headless.md) for package choices,
+checks, paru diagnostics, and safeguards.
 
-1. Runs `pacman -Syu --needed` for missing base tools (including `openssh`,
-   `git`, `sudo`, and `nano`) and the headless CLI set: btop, fastfetch, opencode,
-   ripgrep, Starship, Syncthing, tree, and zoxide. It includes iwd/Impala only
-   when a wireless interface is present, and `nvtop` only when NVIDIA PCI
-   hardware **and** `nvidia-utils` are detected. Arch upgrades and package
-   hooks may affect running software; there is no automatic reboot.
-2. Generates missing SSH *server host keys*, validates the existing sshd
-   configuration, and enables sshd at boot. It starts sshd only if inactive;
-   it does not restart an active SSH service or change network-manager or SSH
-   settings.
-3. Requires an AUR helper (`1) paru` by default, or `2) yay`) and `tododo-bin`.
-   Paru is built from source using Rust; yay uses `yay-bin` when not already
-   installed. The helper and `tododo-bin` are installed system-wide, but users
-   need working sudo rights to install system packages. The current wheel
-   administrator performs AUR builds as a non-root user. New wheel admins and
-   the builder are checked for sudo authorization; a per-user sudo rule is
-   offered with separate approval if needed. Existing wheel users can be
-   repaired through `--users-only` from an authorized admin or root console.
-4. Offers to create local users with Bash homes and passwords through the
-   system `passwd` prompt. An SSH **public** key is optional for each new
-   account; never paste a private key. It installs KMOS Starship presets and
-   global interactive-Bash integration, skipping conflicting settings rather
-   than replacing personal dotfiles. It never installs KDE here.
-
-**Paru on small VPSs:** An earlier `paru-bin` could not load `libalpm.so.15`
-against a newer pacman/libalpm. The current script builds `paru` from source
-and asks before removing any conflicting `paru-bin` packages, *after* a
-successful build. On one VPS the Rust compiler instead received **SIGKILL**
-near the end of the build; an out-of-memory kill is plausible but **not yet
-confirmed**. Building paru can need substantial RAM, disk space, and time;
-select **yay** if your VPS cannot build it. Do not work around a libalpm
-mismatch with a library symlink.
-If the build fails, existing AUR helpers are preserved; earlier pacman, SSH,
-or user changes are **not** automatically rolled back. See the
-[adoption guide](./docs/arch-adopt-headless.md) for checks and recovery.
-
-After a successful run, check `pacman -Q openssh tododo-bin`,
-`systemctl is-enabled sshd.service`, `systemctl is-active sshd.service`, and
-`paru --version` or `yay --version` (whichever helper you selected).
-
-**Removing an old user:** First verify a *new* SSH login and sudo from a
-different wheel administrator, then close the old user's sessions. From the
-replacement administrator's own checkout, run:
+To manage users later without reinstalling packages, run from an authorized
+admin account (or provider root console):
 
 ```bash
 ./platforms/archlinux/kmos-adopt-headless.sh --users-only
 ```
 
-This avoids repeating the package/AUR setup. The current login, last regular
-administrator, logged-in users, and users with running processes cannot be
-removed. Account removal and **permanent home deletion** require separate
-explicit confirmations; an account created during a run cannot be removed in
-that same run. There is no automatic configuration backup or rollback. VPS
-adoption remains experimental; account cleanup has not yet been field-tested.
-See the [v1.1.0 release notes](./docs/releases/v1.1.0.md) for field results
-and remaining limits.
+This can also offer a per-user sudo repair for existing wheel users. Verify a
+replacement admin's **new SSH login and sudo access** before removing an old
+account; home deletion needs separate approval. Account removal remains
+experimental and has not been field-tested. See the
+[v1.1.1 release notes](./docs/releases/v1.1.1.md) for the latest fix.
 
 ## Helpers
 
