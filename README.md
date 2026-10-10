@@ -16,11 +16,8 @@ KDE installs and headless → KDE upgrades are available on `main`.
    ./kmos-install.sh
    ```
 
-3. Choose **headless** or **KDE**. The guided KDE install includes Plasma,
-   Spectacle, Kdenlive, and Firefox Developer Edition; Kamilo productivity
-   defaults to Yes. You can add repository packages. AUR is optional (Yes by
-   default): `paru` is the default helper, `tododo-bin` is included if you
-   approve AUR, and other AUR packages require explicit selection.
+3. Choose **headless** or **KDE**, then review the optional package and AUR
+   choices. The installer shows your selections before disk approval.
 4. Review the disk and EFI plan before typing **`FORMAT`**. The installer
    **formats the selected root and Arch EFI partitions**. Partition edits made
    in `cfdisk` may take effect even before `FORMAT`. Reboot when installation
@@ -64,10 +61,6 @@ upgrade on an already-upgraded KDE system.
 - **Wi-Fi on a headless install:** run
   `cd /opt/kmos/bin && ./kmos-headless-wifi.sh` to set up iwd with Impala or
   `iwctl`.
-- **Inspect an existing KDE handoff:**
-  `./platforms/archlinux/tools/kmos-network-migration.sh --plan` is read-only.
-  Follow the [recovery guide](./docs/arch-headless-to-kde.md) before changing
-  network services.
 
 ## Other platforms and work in progress
 
@@ -87,12 +80,14 @@ installed ShellCheck 0.11.0). KMOS is licensed under the [MIT License](./LICENSE
 ## Project structure
 
 ```text
-kmos-install.sh              Arch/Rocky entry point
-platforms/archlinux/         x86 installer, KDE, package manifests, assets, helpers
-platforms/archlinuxarm/      Board-specific ARM workflows
-platforms/rockylinux/       Rocky Linux post-install workflow
-platforms/windows/          Windows manual guide
-docs/                        Upgrade guide and milestone notes
-scripts/                     Shell checks
-tests/                       Non-destructive fixtures
+kmos/
+├── kmos-install.sh           Platform entry point
+├── platforms/
+│   ├── archlinux/            x86 installer, KDE, packages, assets, tools
+│   ├── archlinuxarm/         Board-specific ARM workflows
+│   ├── rockylinux/          Rocky Linux post-install workflow
+│   └── windows/             Windows manual guide
+├── docs/                    Upgrade guide and release notes
+├── scripts/                 Shell checks
+└── tests/                   Non-destructive fixtures
 ```
