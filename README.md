@@ -52,6 +52,25 @@ or fails its checks, iwd/dhcpcd remain in charge. See the
 [upgrade and recovery guide](./docs/arch-headless-to-kde.md). Do not rerun the
 upgrade on an already-upgraded KDE system.
 
+## Adopt an existing headless Arch system
+
+For an installed Arch x86_64 headless machine (including a VPS), the
+**experimental, non-formatting** adoption script is separate from
+`./kmos-install.sh`:
+
+```bash
+./platforms/archlinux/kmos-adopt-headless.sh --preflight
+./platforms/archlinux/kmos-adopt-headless.sh
+```
+
+It reviews the KMOS CLI packages, enables OpenSSH, requires an AUR helper and
+`tododo-bin`, and offers user creation/removal and terminal defaults. Existing
+SSH settings and network configuration are preserved. Prepare provider-console
+access and review the [adoption safety guide](./docs/arch-adopt-headless.md)
+before use.
+Existing KDE systems are not supported by this path. This provisioner has
+offline fixture tests, but still needs a disposable VPS field test.
+
 ## Helpers
 
 - **Prepare an installer USB:** `./platforms/archlinux/tools/kmos-usb-flasher.sh`
@@ -70,8 +89,7 @@ upgrade on an already-upgraded KDE system.
   separate post-install workflow, not an Arch install.
 - [Windows](./platforms/windows/WINDOWS_SETUP.md): manual guide; no automated
   installer.
-- Adopting **existing Arch installations or VPS servers** is not supported yet.
-  Wi-Fi-only handoff recovery still needs a hardware failure test. See the
+- Wi-Fi-only KDE handoff recovery still needs a hardware failure test. See the
   [v1.0.0 release notes](./docs/releases/v1.0.0.md).
 
 Run `./scripts/check-shell.sh` for local shell checks (requires an already

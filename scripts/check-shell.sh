@@ -22,6 +22,7 @@ fi
 scripts+=(
   platforms/archlinux/desktop/kde/kmos-kde-finish.sh
   platforms/archlinux/tools/kmos-network-migration.sh
+  platforms/archlinux/kmos-adopt-headless.sh
   platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
   platforms/archlinux/desktop/kde/kmos-kde-package-select.sh
   platforms/archlinuxarm/boards/quartz64b/prepare-quartz64b-sd.sh
@@ -32,6 +33,7 @@ scripts+=(
   tests/archarm-dispatch.sh
   tests/arch-partition-safety.sh
   tests/arch-headless-aur.sh
+  tests/arch-adopt-headless.sh
   tests/arch-headless-kde-boundary.sh
   tests/arch-kde-package-parity.sh
   tests/arch-kde-package-selector.sh
@@ -92,6 +94,7 @@ printf 'Bash syntax and ShellCheck passed for %d scoped scripts (%d known diagno
 
 bash tests/arch-partition-safety.sh
 bash tests/arch-headless-aur.sh
+bash tests/arch-adopt-headless.sh
 bash tests/arch-headless-kde-boundary.sh
 bash tests/arch-kde-package-parity.sh
 bash tests/arch-kde-package-selector.sh
