@@ -248,7 +248,14 @@ service logs and a failed-NM Wi-Fi boot-guard test were not provided.
 Use a **dedicated test machine** and a fresh Arch x86_64 ISO. Keep Ethernet
 and local-console access available; back up data. From a current checkout
 on the live ISO, run `./kmos-install.sh` without profile flags. The ISO installer
-formats selected partitions; verify the disk/EFI target before typing `FORMAT`.
+always formats the selected root partition. An existing FAT EFI defaults to
+reuse without formatting if it has enough free space; formatting it instead
+requires an explicit EFI choice, typing `ERASE /dev/<selected-partition>` for
+that exact device, and the final `FORMAT` approval. This option also works for
+EFI partitions with unrecognized boot files; detected Windows boot files or a
+Windows firmware record pointing to the target still prohibit formatting.
+Check the disk/EFI plan before typing `FORMAT`. Reuse can add or update KMOS
+boot files but does not remove other EFI files.
 
 1. **Fresh KDE:** inspect the concise package questions before `FORMAT`. Check
    Kamilo productivity defaults to Yes, free-text repository extras persist,

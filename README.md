@@ -19,9 +19,12 @@ KDE installs and headless → KDE upgrades are available on `main`.
 3. Choose **headless** or **KDE**, then review the optional package and AUR
    choices. The installer shows your selections before disk approval.
 4. Review the disk and EFI plan before typing **`FORMAT`**. The installer
-   **formats the selected root and Arch EFI partitions**. Partition edits made
-   in `cfdisk` may take effect even before `FORMAT`. Reboot when installation
-   finishes.
+   **formats the selected root partition**; an existing FAT EFI partition can
+   be **reused without formatting** or separately approved for formatting.
+   Formatting an existing EFI requires typing `ERASE` plus its exact device
+   path first; detected Windows boot files or firmware entries block it.
+   Partition edits made in `cfdisk` may take effect even before `FORMAT`.
+   Reboot when installation finishes.
 
 **Never run the ISO installer on an installed system or VPS.** It is not an
 existing-Arch conversion tool. See the

@@ -33,6 +33,8 @@ TARGET_DISK=""
 ROOT_PARTITION=""
 BOOT_PARTITION=""
 BOOT_PARTITION_ACTION=""
+EFI_FORMAT_PARTUUID=""
+EFI_FORMAT_DEVICE_ID=""
 FORMAT_APPROVED=0
 CONFIRMED_DISK_ID=""
 CONFIRMED_DISK_SIZE=""
@@ -731,12 +733,54 @@ partition_on_target_disk() {
 }
 
 choose_boot_partition_action() {
-  local fstype=""
+  local fstype="" identity="" action="" confirm=""
 
   fstype="$(partition_fstype "$BOOT_PARTITION")"
+  BOOT_PARTITION_ACTION=""
+  EFI_FORMAT_PARTUUID=""
+  EFI_FORMAT_DEVICE_ID=""
   if [[ "$fstype" == "vfat" ]]; then
-    BOOT_PARTITION_ACTION="format"
-    info "Existing FAT EFI partition $BOOT_PARTITION is selected for formatting. Arch identity and Windows EFI separation will be verified before FORMAT."
+    identity=$(selected_efi_identity) || die "Could not inspect $BOOT_PARTITION read-only. No EFI action selected."
+    info "Existing FAT EFI partition $BOOT_PARTITION contains: $identity."
+    while true; do
+      action=$(prompt_choice "EFI action for $BOOT_PARTITION (root will still be formatted)" reuse reuse format cancel)
+      case "$action" in
+        reuse)
+          if ! check_reused_efi_space; then
+            warn "Cannot reuse $BOOT_PARTITION: less than 512 MiB free or read-only inspection failed. Choose format or cancel."
+            continue
+          fi
+          if [[ "$identity" == windows ]]; then
+            warn "This is a Windows EFI partition. Reuse adds KMOS boot files without formatting it."
+            if ! ask_yes_no "Reuse the Windows EFI filesystem at $BOOT_PARTITION?" no; then
+              warn 'Windows EFI reuse declined; choose another EFI action or cancel.'
+              continue
+            fi
+          fi
+          BOOT_PARTITION_ACTION=reuse
+          info "The existing EFI filesystem on $BOOT_PARTITION will be preserved."
+          break
+          ;;
+        format)
+          if [[ "$identity" == windows ]]; then
+            warn "Windows Boot Manager exists on $BOOT_PARTITION; it cannot be formatted. Choose reuse or cancel."
+            continue
+          fi
+          EFI_FORMAT_DEVICE_ID=$(lsblk -dnro MAJ:MIN "$BOOT_PARTITION") || die 'Could not identify selected EFI device.'
+          EFI_FORMAT_PARTUUID=$(lsblk -dnro PARTUUID "$BOOT_PARTITION" | tr '[:upper:]' '[:lower:]') || die 'Could not identify selected EFI GUID.'
+          [[ "$EFI_FORMAT_DEVICE_ID" =~ ^[0-9]+:[0-9]+$ && "$EFI_FORMAT_PARTUUID" =~ ^[[:xdigit:]-]{36}$ ]] \
+            || die 'Selected EFI identity is incomplete; use reuse instead of formatting.'
+          warn "Formatting will erase ALL files on $BOOT_PARTITION ($identity). This includes any unrecognized bootloader."
+          warn 'KMOS will recheck Windows EFI files and firmware records before any filesystem is formatted.'
+          read -r -p "Type ERASE $BOOT_PARTITION to allow this EFI format, or anything else to cancel: " confirm \
+            || die 'Input closed before EFI format approval; no filesystem was formatted.'
+          [[ "$confirm" == "ERASE $BOOT_PARTITION" ]] || die 'EFI format not approved; no filesystem was formatted.'
+          BOOT_PARTITION_ACTION=format
+          break
+          ;;
+        cancel) die 'EFI action cancelled; no filesystem was formatted.' ;;
+      esac
+    done
   elif [[ -z "$fstype" ]]; then
     BOOT_PARTITION_ACTION="format"
     info "Unformatted EFI partition $BOOT_PARTITION will be formatted as FAT32."
@@ -1172,13 +1216,16 @@ preflight_partitions() {
     [[ "$fstype" == "vfat" ]] || die "EFI partition $BOOT_PARTITION is no longer FAT. Nothing was formatted."
     check_reused_efi_space || die "Existing EFI partition has insufficient free space or cannot be mounted read-only. Nothing was formatted."
   else
+    if [[ -n "$EFI_FORMAT_DEVICE_ID" && "$fstype" != vfat ]]; then
+      die 'Previously approved FAT EFI filesystem changed; no filesystems were formatted.'
+    fi
     [[ -z "$fstype" || "$fstype" == "vfat" ]] || die "EFI partition $BOOT_PARTITION has an unexpected filesystem ($fstype). Nothing was formatted."
     size="$(lsblk -bdnro SIZE "$BOOT_PARTITION")"
     [[ "$size" =~ ^[0-9]+$ ]] || die "Could not read EFI partition size. Nothing was formatted."
     ((size >= 536870912)) || die "EFI partition must be at least 512 MiB. Nothing was formatted."
     if [[ "$fstype" == vfat ]]; then
-      verify_existing_efi_is_not_windows \
-        || die 'Could not prove the selected existing EFI partition is separate from Windows. No filesystems were formatted.'
+      verify_approved_efi_format \
+        || die 'Selected EFI cannot be safely formatted. No filesystems were formatted; choose reuse or another partition.'
     fi
   fi
 }
@@ -1199,44 +1246,49 @@ selected_efi_identity() (
   fi
 )
 
-verify_existing_efi_is_not_windows() {
+verify_approved_efi_format() {
   local selected_id windows_id windows_partition windows_uuid scan_output firmware selected_partuuid line identity
   local -a windows_loaders=()
 
+  [[ -n "$EFI_FORMAT_DEVICE_ID" && -n "$EFI_FORMAT_PARTUUID" ]] \
+    || { warn 'Formatting an existing FAT EFI partition requires explicit device approval.'; return 1; }
+  selected_id=$(lsblk -dnro MAJ:MIN "$BOOT_PARTITION") || return 1
+  selected_partuuid=$(lsblk -dnro PARTUUID "$BOOT_PARTITION" 2>/dev/null | tr '[:upper:]' '[:lower:]') || return 1
+  [[ "$selected_id" == "$EFI_FORMAT_DEVICE_ID" && "$selected_partuuid" == "$EFI_FORMAT_PARTUUID" ]] \
+    || { warn 'EFI device identity changed since approval.'; return 1; }
   identity=$(selected_efi_identity) || { warn "Could not inspect $BOOT_PARTITION read-only; refusing to format it."; return 1; }
   case "$identity" in
-    arch|empty) ;;
     windows) warn "Windows Boot Manager exists on $BOOT_PARTITION. It will not be formatted."; return 1 ;;
-    *) warn "The selected EFI partition is not recognizable as Arch or empty: $BOOT_PARTITION. Refusing to format it."; return 1 ;;
+    arch|empty|unknown) ;;
+    *) warn 'Unexpected EFI inspection result; refusing to format.'; return 1 ;;
   esac
-  scan_output=$(scan_windows_efi_loaders) || { warn 'Could not inspect Windows EFI partitions read-only.'; return 1; }
-  [[ -n "$scan_output" ]] || { warn 'A separate Windows EFI partition was not found.'; return 1; }
-  mapfile -t windows_loaders <<< "$scan_output"
-  ((${#windows_loaders[@]} == 1)) || { warn 'Multiple Windows EFI partitions found; refusing to guess.'; return 1; }
-  IFS='|' read -r windows_partition windows_uuid windows_id <<< "${windows_loaders[0]}"
-  [[ "$windows_uuid" =~ ^[[:xdigit:]-]{4,40}$ && "$windows_id" =~ ^[0-9]+:[0-9]+$ ]] \
-    || { warn 'The Windows EFI identity is incomplete.'; return 1; }
-  selected_id=$(lsblk -dnro MAJ:MIN "$BOOT_PARTITION") || return 1
-  [[ "$selected_id" =~ ^[0-9]+:[0-9]+$ && "$selected_id" != "$windows_id" ]] \
-    || { warn 'The selected EFI partition appears to be the Windows EFI partition.'; return 1; }
-
-  # Cross-check the firmware record as well as the EFI files; never erase an
-  # ESP that firmware still identifies as Windows, even if its loader is gone.
-  selected_partuuid=$(lsblk -dnro PARTUUID "$BOOT_PARTITION" 2>/dev/null | tr '[:upper:]' '[:lower:]')
-  [[ "$selected_partuuid" =~ ^[[:xdigit:]-]{36}$ ]] \
-    || { warn 'Could not verify the selected EFI partition GUID.'; return 1; }
-  firmware=$(efibootmgr -v 2>/dev/null) \
-    || { warn 'Could not verify the firmware Windows Boot Manager location.'; return 1; }
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^Boot[[:xdigit:]]{4}\*?[[:space:]]+Windows[[:space:]]Boot[[:space:]]Manager([[:space:]]|$) \
-      && "$line" =~ HD\([0-9]+,GPT,([[:xdigit:]-]{36}), ]]; then
-      if [[ "${BASH_REMATCH[1],,}" == "$selected_partuuid" ]]; then
-        warn "Firmware's Windows Boot Manager points to $BOOT_PARTITION; refusing to format it."
-        return 1
-      fi
+  if scan_output=$(scan_windows_efi_loaders); then
+    if [[ -n "$scan_output" ]]; then
+      mapfile -t windows_loaders <<< "$scan_output"
+      for line in "${windows_loaders[@]}"; do
+        IFS='|' read -r windows_partition windows_uuid windows_id <<< "$line"
+        [[ "$windows_id" != "$selected_id" ]] \
+          || { warn "Windows EFI loader found on $BOOT_PARTITION; refusing to format."; return 1; }
+      done
     fi
-  done <<< "$firmware"
-  info "Verified separate Windows EFI at $windows_partition; only $BOOT_PARTITION will be formatted."
+  else
+    warn 'Could not inspect every Windows EFI partition; checking the selected EFI and firmware instead.'
+  fi
+
+  if firmware=$(efibootmgr -v 2>/dev/null); then
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^Boot[[:xdigit:]]{4}\*?[[:space:]]+Windows[[:space:]]Boot[[:space:]]Manager([[:space:]]|$) \
+        && "$line" =~ HD\([0-9]+,GPT,([[:xdigit:]-]{36}), ]]; then
+        if [[ "${BASH_REMATCH[1],,}" == "$selected_partuuid" ]]; then
+          warn "Firmware's Windows Boot Manager points to $BOOT_PARTITION; refusing to format it."
+          return 1
+        fi
+      fi
+    done <<< "$firmware"
+  else
+    warn 'Firmware Windows Boot Manager location unavailable; continuing only because this EFI format was explicitly approved.'
+  fi
+  info "Approved EFI format rechecked: $BOOT_PARTITION ($identity); no detected Windows loader or firmware entry points to it."
 }
 
 check_reused_efi_space() (
