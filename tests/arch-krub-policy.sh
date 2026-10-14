@@ -100,6 +100,11 @@ if command -v grub-script-check >/dev/null 2>&1; then
   grub-script-check "$fixture/with-windows"
 fi
 [[ $(grep -c '^[[:space:]]*menuentry ' "$fixture/with-windows") == 5 ]]
+BOOT_PARTITION=/dev/winesp
+BOOT_PARTITION_ACTION=format
+collect_krub_config <<< 'y'  # Formatting this EFI erases its Windows loader.
+[[ "$INCLUDE_WINDOWS" == no && -z "$WINDOWS_BOOT_PARTITION" && -z "$WINDOWS_BOOT_UUID" ]]
+BOOT_PARTITION_ACTION=""
 cat "$fixture/with-windows" "$fixture/flood" > "$fixture/extra"
 if (verify_krub_menu_policy "$fixture/extra") > "$fixture/extra-log" 2>&1; then
   printf 'Unexpected firmware entries were accepted.\n' >&2; exit 1

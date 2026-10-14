@@ -250,10 +250,14 @@ and local-console access available; back up data. From a current checkout
 on the live ISO, run `./kmos-install.sh` without profile flags. The ISO installer
 always formats the selected root partition. An existing FAT EFI defaults to
 reuse without formatting if it has enough free space; formatting it instead
-requires an explicit EFI choice, typing `ERASE /dev/<selected-partition>` for
-that exact device, and the final `FORMAT` approval. This option also works for
-EFI partitions with unrecognized boot files; detected Windows boot files or a
-Windows firmware record pointing to the target still prohibit formatting.
+requires an explicit EFI choice, typing **`EREASE`** (no device path), and the
+final `FORMAT` approval. This forced format works even if the EFI contains
+unrecognized files or Windows boot files: **all files on that EFI partition
+will be erased and Windows may stop booting**. The installer still displays
+the selected device and rechecks its disk, partition type, identity, size and
+mount status before formatting. EFI contents and firmware boot records do not
+veto an approved force format. If the Windows loader selected for the krub menu
+is on the EFI being formatted, that menu entry is skipped.
 Check the disk/EFI plan before typing `FORMAT`. Reuse can add or update KMOS
 boot files but does not remove other EFI files.
 

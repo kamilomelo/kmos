@@ -21,8 +21,9 @@ KDE installs and headless → KDE upgrades are available on `main`.
 4. Review the disk and EFI plan before typing **`FORMAT`**. The installer
    **formats the selected root partition**; an existing FAT EFI partition can
    be **reused without formatting** or separately approved for formatting.
-   Formatting an existing EFI requires typing `ERASE` plus its exact device
-   path first; detected Windows boot files or firmware entries block it.
+   Formatting an existing EFI requires typing **`EREASE`**, then the final
+   `FORMAT`. This forcibly erases all boot files there, **including Windows**;
+   verify the selected EFI device in the plan before approving it.
    Partition edits made in `cfdisk` may take effect even before `FORMAT`.
    Reboot when installation finishes.
 

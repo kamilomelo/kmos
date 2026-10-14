@@ -25,12 +25,8 @@ boot_size=1073741824
 mounted_partition=""
 answer=yes
 selected_efi_contents=arch
-windows_separate=yes
-firmware_windows_uuid=11111111-1111-1111-1111-111111111111
 selected_uuid=22222222-2222-2222-2222-222222222222
 selected_device_id=8:1
-firmware_readable=yes
-windows_on_selected=no
 efi_choice=reuse
 reuse_space=yes
 
@@ -59,10 +55,7 @@ lsblk() {
 }
 ask_yes_no() { [[ "$answer" == yes ]]; }
 prompt_choice() {
-  if [[ "$efi_choice" == format && "$selected_efi_contents" == windows ]]; then
-    if [[ -e "$fixture/windows-format-attempt" ]]; then printf 'cancel\n'
-    else touch "$fixture/windows-format-attempt"; printf 'format\n'; fi
-  elif [[ "$efi_choice" == reuse && "$selected_efi_contents" == windows && "$answer" == no ]]; then
+  if [[ "$efi_choice" == reuse && "$selected_efi_contents" == windows && "$answer" == no ]]; then
     if [[ -e "$fixture/windows-reuse-attempt" ]]; then printf 'cancel\n'
     else touch "$fixture/windows-reuse-attempt"; printf 'reuse\n'; fi
   elif [[ "$efi_choice" == reuse && "$reuse_space" == no ]]; then
@@ -70,16 +63,8 @@ prompt_choice() {
     else touch "$fixture/reuse-attempt"; printf 'reuse\n'; fi
   else printf '%s\n' "$efi_choice"; fi
 }
-selected_efi_identity() { printf '%s\n' "$selected_efi_contents"; }
+selected_efi_identity() { [[ "$selected_efi_contents" != uninspected ]] || return 2; printf '%s\n' "$selected_efi_contents"; }
 check_reused_efi_space() { [[ "$reuse_space" == yes ]]; }
-scan_windows_efi_loaders() {
-  if [[ "$windows_on_selected" == yes ]]; then printf '%s|ABCD-1234|8:1\n' "$BOOT_PARTITION"
-  elif [[ "$windows_separate" == yes ]]; then printf '%s|ABCD-1234|8:2\n' "$other_partition"; fi
-}
-efibootmgr() {
-  [[ "$firmware_readable" == yes ]] || return 1
-  printf 'Boot0009* Windows Boot Manager HD(1,GPT,%s,0x800,0x10000)/File(\\EFI\\Microsoft\\Boot\\bootmgfw.efi)\n' "$firmware_windows_uuid"
-}
 
 expect_rejected() {
   if ("$@") >/dev/null 2>&1; then
@@ -126,31 +111,19 @@ answer=yes
 choose_boot_partition_action
 preflight_partitions  # Windows EFI files are preserved when reusing.
 efi_choice=format
-expect_rejected choose_boot_partition_action <<< "ERASE $BOOT_PARTITION"  # Never format detected Windows EFI.
-selected_efi_contents=unknown
-expect_rejected choose_boot_partition_action <<< 'FORMAT'  # Exact device-specific approval required.
-choose_boot_partition_action <<< "ERASE $BOOT_PARTITION"
+expect_rejected choose_boot_partition_action <<< 'ERASE'  # The exact requested token is EREASE.
+expect_rejected choose_boot_partition_action <<< "EREASE $BOOT_PARTITION"  # No device path in the token.
+choose_boot_partition_action <<< 'EREASE'  # Explicitly approved Windows EFI format is allowed.
 [[ "$BOOT_PARTITION_ACTION" == format ]]
-preflight_partitions  # Unknown EFI can now be formatted with explicit approval.
-windows_on_selected=yes
-expect_rejected preflight_partitions  # A second scan also catches Windows on the target.
-windows_on_selected=no
-selected_efi_contents=windows
-expect_rejected preflight_partitions  # Windows loader appeared after approval.
-selected_efi_contents=arch
-firmware_readable=no
-preflight_partitions  # Missing firmware information does not strand an approved format.
-firmware_readable=yes
-windows_separate=no
-preflight_partitions  # Windows loader need not exist on another partition.
-windows_separate=yes
-firmware_windows_uuid="$selected_uuid"
-expect_rejected preflight_partitions  # NVRAM Windows record points here.
-firmware_windows_uuid=11111111-1111-1111-1111-111111111111
-selected_efi_contents=empty
-preflight_partitions  # A verified empty ESP is also safe to format.
+preflight_partitions  # Windows contents do not veto an approved force format.
+selected_efi_contents=unknown
+preflight_partitions  # Unknown contents are also allowed.
+selected_efi_contents=uninspected
+preflight_partitions  # Read-only mount failures do not veto an approved force format.
+choose_boot_partition_action <<< 'EREASE'
+preflight_partitions  # Inspection failure before approval also permits a forced format.
 selected_uuid=33333333-3333-3333-3333-333333333333
-expect_rejected preflight_partitions  # EFI partition changed since typed approval.
+expect_rejected preflight_partitions  # EFI partition changed since approval.
 selected_uuid=22222222-2222-2222-2222-222222222222
 selected_device_id=8:9
 expect_rejected preflight_partitions  # Same path now points to another device.
