@@ -243,6 +243,32 @@ on hardware. The earlier short-timeout rollback did work. The guided Wi-Fi-only
 handoff was subsequently reported successful over Wi-Fi SSH, but detailed
 service logs and a failed-NM Wi-Fi boot-guard test were not provided.
 
+## Resume a failed ISO KDE stage
+
+If the installer already installed the base system and krub but stopped while
+installing KDE packages, **do not rerun the fresh ISO installer**: that would
+select and format partitions again. From the Arch live ISO, update your KMOS
+checkout to `main`, then verify the existing target mounts:
+
+```bash
+cd ~/kmos
+git pull --ff-only origin main
+findmnt /mnt
+findmnt /mnt/boot
+./kmos-install.sh resume-kde
+```
+
+If either mount is missing, first mount the correct existing root and EFI
+partitions; the recovery command will refuse to proceed rather than guess.
+It checks for the installed KMOS base and GRUB configuration, asks again for
+the optional KDE and AUR choices (the earlier choices are not saved), and runs
+only the KDE stage. It does not format, reinstall the base system or GRUB, or
+reconfigure live networking. Pacman checks the selected packages before the
+KDE transaction; missing required packages stop with names instead of retrying
+the same deterministic error. `kwin-x11` is no longer required; `kwin` remains
+in the KDE set. This recovery path requires a complete local checkout and a
+mounted target; it has offline fixture coverage but is not field-verified.
+
 ## Field-test and regression checklist
 
 Use a **dedicated test machine** and a fresh Arch x86_64 ISO. Keep Ethernet

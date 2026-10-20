@@ -12,6 +12,7 @@ mock_setup() {
   require_root() { :; }
   require_tools() { :; }
   pacman() { [[ "$1" == -Si && "$2" == impala ]]; }
+  verify_kde_repository_packages() { :; } # Checked separately by the KDE package fixtures.
   choose_kde_packages() { SELECTED_KDE_METAPACKAGES=(); EXTRA_KDE_PACKAGES=(); }
   select_kde_aur() { INSTALL_KDE_AUR=no; SELECTED_KDE_AUR_PACKAGES=(); }
   verify_boot_mode() { :; }

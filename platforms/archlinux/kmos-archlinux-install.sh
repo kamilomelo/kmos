@@ -8,6 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 MOUNT_POINT="/mnt"
 WIFI_HANDOFF_DIR="/run/kmos/wifi"
+ARCHISO_DIR="/run/archiso"
 NODESKTOP_METAPACKAGE_DIR="$SCRIPT_DIR/packages/metapackages/nodesktop"
 KDE_INSTALLER_URL="https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/archlinux/desktop/kde/kmos-kde-install.sh"
 STARSHIP_PRESET_DIR="$SCRIPT_DIR/assets/starship-presets"
@@ -299,12 +300,15 @@ parse_args() {
 usage() {
   cat <<'EOF'
 Usage: ./kmos-install.sh [--profile full|noapps]
+       ./kmos-install.sh resume-kde
        ./kmos-install.sh inspect-krub
        ./kmos-install.sh repair-panel
 
 No argument starts the interactive x86 installation. inspect-krub reports
 GRUB and firmware menu entries without changing them. repair-panel disables
 only recognized old KMOS panel hooks; it preserves the personal panel layout.
+resume-kde resumes KDE on a verified, mounted KMOS target at /mnt. It never
+selects partitions or formats filesystems. Keep /mnt and /mnt/boot mounted.
 EOF
 }
 
@@ -1057,12 +1061,6 @@ collect_desktop_config() {
       done
       kmos_KDE_METAPACKAGES="${SELECTED_KDE_METAPACKAGES[*]}"
       kmos_KDE_EXTRA_PACKAGES="${EXTRA_KDE_PACKAGES[*]}"
-      # Check every local metapackage dependency before disk approval.
-      ( source "$kde_dir/kmos-kde-install.sh"
-        KDE_PROFILE=custom KDE_LOCAL_MANIFESTS_ONLY=yes INSTALL_AUR="$INSTALL_KDE_AUR"
-        select_kde_metapackages
-        load_kde_metapackages
-      ) || die 'Cannot resolve selected KDE packages before formatting.'
       detail 'KDE groups' "kmos-kde-base kmos-kde-apps kmos-desktop-productivity ${SELECTED_KDE_METAPACKAGES[*]}"
       detail 'Extra packages' "${EXTRA_KDE_PACKAGES[*]:-none}"
       if [[ "$INSTALL_KDE_AUR" == yes ]]; then
@@ -1102,6 +1100,52 @@ collect_desktop_config() {
       fi
     fi
   fi
+  if [[ "$INSTALL_KDE" == yes ]]; then
+    verify_kde_repository_packages
+  fi
+}
+
+verify_kde_repository_packages() (
+  local kde_installer="$SCRIPT_DIR/desktop/kde/kmos-kde-install.sh" package selected_profile=$KDE_PROFILE
+  local -a missing=()
+  [[ -r "$kde_installer" ]] || die 'Complete local KDE sources are required to verify packages before formatting.'
+  # Sourcing in a subshell keeps the ISO installer's globals intact.
+  # shellcheck disable=SC1090
+  source "$kde_installer"
+  KDE_PROFILE=$selected_profile
+  KDE_LOCAL_MANIFESTS_ONLY=yes
+  select_kde_metapackages
+  load_kde_metapackages
+  for package in "${KDE_PACKAGES[@]}"; do
+    pacman -Si -- "$package" >/dev/null 2>&1 || missing+=("$package")
+  done
+  ((${#missing[@]} == 0)) || die "KDE packages unavailable in live-ISO repositories: ${missing[*]}. No filesystem was formatted; refresh the ISO databases or update the KMOS checkout."
+)
+
+resume_kde() {
+  local kde_dir="$SCRIPT_DIR/desktop/kde"
+  require_root resume-kde
+  [[ -d "$ARCHISO_DIR" ]] || die 'KDE resume is only available from the Arch live ISO.'
+  findmnt -rn --mountpoint "$MOUNT_POINT" >/dev/null 2>&1 || die 'Mount the existing KMOS root at /mnt before resuming; no disk changes were made.'
+  findmnt -rn --mountpoint "$MOUNT_POINT/boot" >/dev/null 2>&1 || die 'Mount its EFI partition at /mnt/boot before resuming; no disk changes were made.'
+  [[ -f "$MOUNT_POINT/etc/arch-release" && -f "$MOUNT_POINT/etc/fstab" && -f "$MOUNT_POINT/boot/grub/grub.cfg" \
+    && -f "$MOUNT_POINT/usr/share/kmos/metapackages/nodesktop/PKGBUILD" ]] \
+    || die 'Mounted target is not a completed KMOS base install; refusing KDE resume.'
+  [[ -r "$kde_dir/kmos-kde-install.sh" && -r "$kde_dir/kmos-kde-package-select.sh" ]] \
+    || die 'A complete local KDE checkout is required for resume.'
+  info 'KDE-only recovery: no disk selection, formatting, base install or bootloader changes.'
+  choose_kde_packages || die 'KDE package selection cancelled; target unchanged.'
+  select_kde_aur || die 'AUR selection cancelled; target unchanged.'
+  kmos_KDE_METAPACKAGES="${SELECTED_KDE_METAPACKAGES[*]}"
+  kmos_KDE_EXTRA_PACKAGES="${EXTRA_KDE_PACKAGES[*]}"
+  kmos_KDE_AUR_PACKAGES="${SELECTED_KDE_AUR_PACKAGES[*]}"
+  KDE_PROFILE=custom
+  INSTALL_KDE_AUR=${INSTALL_KDE_AUR:-no}
+  detail 'KDE profile' "$KDE_PROFILE"
+  detail 'AUR' "$INSTALL_KDE_AUR"
+  ask_yes_no 'Install KDE on the mounted /mnt system without formatting?' no \
+    || die 'KDE resume cancelled; target unchanged.'
+  run_kde_installer
 }
 
 confirm_install_plan() {
@@ -2403,6 +2447,11 @@ main() {
     (($# == 1)) || die 'repair-panel does not accept additional arguments.'
     require_root "$@"
     bash "$SCRIPT_DIR/desktop/kde/kmos-kde-post.sh" --target / --disable-panel-hooks
+    return
+  fi
+  if [[ "${1:-}" == resume-kde ]]; then
+    (($# == 1)) || die 'resume-kde does not accept additional arguments.'
+    resume_kde
     return
   fi
   parse_args "$@"

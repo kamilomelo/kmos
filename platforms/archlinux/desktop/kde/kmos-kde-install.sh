@@ -259,6 +259,13 @@ load_kde_metapackages() {
   detail "Packages" "${#KDE_PACKAGES[@]}"
 }
 
+missing_kde_packages() {
+  local package
+  for package in "${KDE_PACKAGES[@]}"; do
+    arch-chroot "$MOUNT_POINT" pacman -Si -- "$package" >/dev/null 2>&1 || printf '%s\n' "$package"
+  done
+}
+
 append_unique() {
   local -n values_ref="$1"
   local value="$2"
@@ -368,7 +375,15 @@ run_target_pacman_without_packagekit_hook() {
 }
 
 install_kde_packages() {
-  run_with_retry "$PACMAN_RETRIES" run_target_pacman_without_packagekit_hook "-S --needed --noconfirm ${KDE_PACKAGES[*]}" || die "KDE package install failed after ${PACMAN_RETRIES} attempts."
+  local missing
+  missing=$(missing_kde_packages)
+  [[ -z "$missing" ]] || die "KDE packages unavailable in target repositories: ${missing//$'\n'/ }. No package transaction attempted."
+  if ! run_target_pacman_without_packagekit_hook "-S --needed --noconfirm ${KDE_PACKAGES[*]}"; then
+    missing=$(missing_kde_packages)
+    [[ -z "$missing" ]] || die "KDE packages unavailable in target repositories: ${missing//$'\n'/ }. Retrying will not help."
+    run_with_retry "$((PACMAN_RETRIES - 1))" run_target_pacman_without_packagekit_hook "-S --needed --noconfirm ${KDE_PACKAGES[*]}" \
+      || die "KDE package install failed after ${PACMAN_RETRIES} attempts."
+  fi
   success "KDE packages installed."
 }
 

@@ -26,7 +26,6 @@ depends=(
   'ksystemstats'
   'kwayland'
   'kwin'
-  'kwin-x11'
   'layer-shell-qt'
   'libkscreen'
   'libksysguard'

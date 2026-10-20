@@ -27,6 +27,13 @@ KDE installs and headless → KDE upgrades are available on `main`.
    Partition edits made in `cfdisk` may take effect even before `FORMAT`.
    Reboot when installation finishes.
 
+If KDE package installation fails **after** the base system and bootloader
+were installed, do not rerun the ISO installer. From the live ISO, update your
+checkout, confirm that the same target is still mounted at `/mnt` and its EFI
+at `/mnt/boot`, then run `./kmos-install.sh resume-kde`. It asks for KDE choices
+again and never selects or formats partitions. See the
+[KDE recovery details](./docs/arch-headless-to-kde.md#resume-a-failed-iso-kde-stage).
+
 **Never run the ISO installer on an installed system or VPS.** It is not an
 existing-Arch conversion tool. See the
 [package choices and safety details](./docs/arch-headless-to-kde.md).
