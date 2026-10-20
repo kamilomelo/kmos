@@ -2,7 +2,7 @@
 
 Use the live upgrade only on an **installed KMOS headless Arch x86_64** system,
 not an Arch ISO or an arbitrary existing Arch/VPS installation. This workflow
-is on `main`; the older `v0.9.0` tag predates it.
+is on `main`; use a current checkout.
 
 **Verification snapshot (2026-10-10):** Fresh direct KDE and a headless → KDE
 upgrade with visual defaults for multiple existing users were reported working

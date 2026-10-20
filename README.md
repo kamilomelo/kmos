@@ -103,7 +103,7 @@ This can also offer a per-user sudo repair for existing wheel users. Verify a
 replacement admin's **new SSH login and sudo access** before removing an old
 account; home deletion needs separate approval. Account removal remains
 experimental and has not been field-tested. See the
-[v1.1.1 release notes](./docs/releases/v1.1.1.md) for the latest fix.
+[v1.0.0 release notes](./docs/releases/v1.0.0.md) for field results and limits.
 
 ## Helpers
 
