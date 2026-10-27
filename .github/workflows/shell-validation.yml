@@ -29,3 +29,4 @@ jobs:
           ./tests/kartouche-update-check.sh
           ./tests/arch-usb-kartouche.sh
           ./tests/arch-wifi-kartouche.sh
+          ./tests/arch-headless-kde-kartouche.sh

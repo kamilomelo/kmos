@@ -7,6 +7,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/kmos-kde-package-select.sh"
+# The live upgrade needs the complete local checkout for KDE manifests/assets.
+# Reuse its pinned Kartouche renderer; do not fetch or alter the template.
+# shellcheck disable=SC1090,SC1091
+source "$SCRIPT_DIR/../../tools/kartouche.sh"
+KT_NAME='kmos Headless to KDE'
+KT_DESCRIPTION='Arch Linux desktop upgrade; no disk formatting.'
+KT_ACCENT='38;5;244'
+[[ ${TERM:-} == linux ]] && KT_ACCENT=37
+
+kde_upgrade_banner() {
+  kt_banner "$1"
+}
 
 usage() {
   cat <<'EOF'
@@ -83,7 +95,7 @@ clear_upgrade() {
 }
 
 preflight() {
-  local id iface transport pkg service
+  local id iface transport pkg service kde_status=ok route_status=ok
   [[ -r /etc/os-release ]] || { printf 'Cannot identify this operating system.\n' >&2; return 1; }
   id=$(os_id)
   [[ "$id" == arch ]] || { printf 'Only installed Arch Linux x86_64 is supported (found %s).\n' "$id" >&2; return 1; }
@@ -96,6 +108,7 @@ preflight() {
   printf 'KMOS headless base: present\n'
   if package_installed plasma-desktop || package_installed sddm || kde_profile_present; then
     printf 'KDE/SDDM already present: yes (upgrade path must not overwrite it)\n'
+    kde_status=failed
   else
     printf 'KDE/SDDM already present: no\n'
   fi
@@ -104,6 +117,7 @@ preflight() {
   iface=$(ip -o -4 route show default 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "dev") {print $(i+1); exit}}') || :
   if [[ -z "$iface" ]]; then
     printf 'not detected\n'
+    route_status=skipped
   else
     transport=Ethernet-or-other
     [[ -d "/sys/class/net/$iface/wireless" ]] && transport=Wi-Fi
@@ -127,6 +141,7 @@ preflight() {
     printf 'This shell is over SSH: no / not detected\n'
   fi
   printf 'Preflight complete: nothing was changed.\n'
+  kt_summary rail 'KMOS headless base' ok 'KDE / SDDM absent' "$kde_status" 'Default route detected' "$route_status"
 }
 
 resolve_kde_packages() (
@@ -317,9 +332,9 @@ install_layer() {
 
 main() {
   case "${1:---guided}" in
-    --guided) (( $# == 0 )) || { usage >&2; return 2; }; install_layer custom ;;
+    --guided) (( $# == 0 )) || { usage >&2; return 2; }; kde_upgrade_banner 'Guided desktop upgrade'; install_layer custom ;;
     --help|-h) (( $# <= 1 )) || { usage >&2; return 2; }; usage ;;
-    --preflight) (( $# == 1 )) || { usage >&2; return 2; }; preflight ;;
+    --preflight) (( $# == 1 )) || { usage >&2; return 2; }; kde_upgrade_banner 'Read-only preflight'; preflight ;;
     --install)
       local profile=full
       if (( $# == 2 )) && [[ "$2" == --select ]]; then profile=custom
@@ -327,6 +342,7 @@ main() {
       elif (( $# != 1 )); then usage >&2; return 2
       fi
       [[ "$profile" == full || "$profile" == noapps || "$profile" == custom ]] || { usage >&2; return 2; }
+      kde_upgrade_banner 'Desktop upgrade'
       install_layer "$profile"
       ;;
     *) usage >&2; return 2 ;;
