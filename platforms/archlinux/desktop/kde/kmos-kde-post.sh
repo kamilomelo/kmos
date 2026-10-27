@@ -499,31 +499,46 @@ apply_splash_defaults() {
 
 apply_sddm_defaults() {
   local source_theme_dir="$MOUNT_POINT/usr/share/sddm/themes/breeze"
-  local target_theme_name="breeze-kmos"
-  local target_theme_dir="$MOUNT_POINT/usr/share/sddm/themes/$target_theme_name"
+  local theme_settings="$source_theme_dir/theme.conf.user"
+  local theme_choice="$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf"
+  local config
 
   [[ -r "$ASSET_WALLPAPER" ]] || die "Missing wallpaper asset: $ASSET_WALLPAPER"
-  [[ -d "$source_theme_dir" ]] || die "Missing SDDM Breeze theme in target system: $source_theme_dir"
+  [[ -d "$source_theme_dir" && ! -L "$source_theme_dir" && -r "$source_theme_dir/Main.qml" ]] \
+    || die "Missing packaged SDDM Breeze theme in target system: $source_theme_dir"
 
   install -Dm0644 "$ASSET_WALLPAPER" "$MOUNT_POINT$TARGET_WALLPAPER"
-  rm -rf "$target_theme_dir"
-  cp -a "$source_theme_dir" "$target_theme_dir"
-  sed -i 's/fillMode: Image.PreserveAspectCrop/fillMode: Image.PreserveAspectFit/' "$target_theme_dir/Background.qml"
-  sed -i '0,/visible: false/s//visible: true/' "$target_theme_dir/Background.qml"
-
-  install -Dm0644 /dev/stdin "$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf" <<'EOF'
-[Theme]
-Current=breeze-kmos
-EOF
-
-  install -Dm0644 /dev/stdin "$target_theme_dir/theme.conf.user" <<EOF
+  [[ ! -L "$theme_choice" ]] || die 'SDDM theme choice is a symlink; refusing to replace it.'
+  if [[ -e "$theme_choice" ]]; then
+    [[ -f "$theme_choice" ]] || die 'Existing KMOS SDDM choice is not a regular file.'
+    warn "Existing SDDM theme choice preserved: $theme_choice"
+    return 0
+  fi
+  for config in "$MOUNT_POINT/etc/sddm.conf" "$MOUNT_POINT/etc/sddm.conf.d/"*.conf; do
+    [[ -f "$config" ]] || continue
+    if grep -Eq '^[[:space:]]*Current[[:space:]]*=' "$config"; then
+      warn "Existing SDDM theme choice preserved: $config"
+      return 0
+    fi
+  done
+  [[ ! -L "$theme_settings" ]] || die 'Breeze theme settings are a symlink; refusing to replace them.'
+  if [[ ! -e "$theme_settings" ]]; then
+    install -Dm0644 /dev/stdin "$theme_settings" <<EOF
 [General]
 type=image
 background=$TARGET_WALLPAPER
 color=#000000
 EOF
+  else
+    [[ -f "$theme_settings" ]] || die 'Existing Breeze theme settings are not a regular file.'
+    warn "Existing Breeze theme settings preserved: $theme_settings"
+  fi
+  install -Dm0644 /dev/stdin "$theme_choice" <<'EOF'
+[Theme]
+Current=breeze
+EOF
 
-  success "SDDM Breeze theme configured with black background and preserved proportions."
+  success 'SDDM uses package-maintained Breeze with the KMOS wallpaper; no theme QML was copied.'
 }
 
 write_kscreenlocker_defaults() {

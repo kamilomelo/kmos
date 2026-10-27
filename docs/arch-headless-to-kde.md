@@ -68,6 +68,29 @@ test; see the [v1.0.0 release notes](./releases/v1.0.0.md) for remaining limits.
 No package defaults change the explicit disk/partition choices or the `FORMAT`
 confirmation.
 
+### Recover an old SDDM login theme
+
+Older KMOS installations copied Breeze's QML to `breeze-kmos`. Plasma updates
+replace the package-maintained Breeze files but not this copy: a removed QML
+type such as `VirtualKeyboardLoader` can make the login theme fail. This does
+**not** by itself delete personal KDE settings. On an installed KDE machine,
+from a current checkout run:
+
+```bash
+./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --repair-sddm
+```
+
+The targeted repair requests sudo only for this operation. It changes only an
+exact KMOS-managed `breeze-kmos` choice to the packaged `breeze` theme (or
+accepts an already-repaired `breeze` choice), adds KMOS wallpaper settings only
+if none exist, and preserves unrelated or custom SDDM configurations. It leaves
+the old theme copy, user files, other desktop settings and running sessions
+untouched. Changes take effect the next time the greeter starts; do not restart
+SDDM during an unsaved desktop session.
+Future KMOS installs and upgrades use packaged Breeze directly rather than
+copying its QML. Breeze's upstream image scaling may differ from the old KMOS
+copy; preserving an updatable login screen takes priority over that tweak.
+
 On a **new headless → KDE upgrade**, run the script without arguments to
 choose the optional Kamilo set and extra official-repository packages:
 

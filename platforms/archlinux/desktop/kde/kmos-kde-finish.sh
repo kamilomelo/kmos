@@ -8,6 +8,11 @@ mode= user= home= backup_stamp= temp= changes=0 skipped=0 backup_bytes=0
 system_backup_root=/var/backups/kmos
 font_dir=/usr/local/share/fonts/kmos
 local_passwd_file=/etc/passwd
+sddm_breeze_dir=/usr/share/sddm/themes/breeze
+sddm_config_dir=/etc/sddm.conf.d
+sddm_main_config=/etc/sddm.conf
+sddm_choice_file=$sddm_config_dir/kmos-theme.conf
+sddm_wallpaper=/opt/kmos/assets/wallpapers/kmos-wallpaper.png
 
 usage() {
   cat <<'EOF'
@@ -15,6 +20,7 @@ Usage: ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan
        ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --apply
        ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan --all-users
        ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --apply --all-users
+       ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --repair-sddm
 
 By default, finishes the invoking user's KDE settings. --all-users includes
 every local regular account with a real home under /home (never root or service
@@ -22,6 +28,8 @@ accounts). --plan reads settings only. --apply prompts before replacing EACH
 existing file and backs up approved replacements. Missing defaults are added;
 panels, wallpaper choices, networking and packages are not changed. System-wide
 defaults can affect KDE users with no personal override. No automatic reboot.
+--repair-sddm changes only KMOS's managed login-theme choice and adds KMOS
+wallpaper settings when absent. It does not restart SDDM or change user settings.
 EOF
 }
 
@@ -130,15 +138,15 @@ stage_file() {
 write_sddm_theme() {
   cat > "$1" <<'EOF'
 [Theme]
-Current=breeze-kmos
+Current=breeze
 EOF
 }
 
 write_sddm_background() {
-  cat > "$1" <<'EOF'
+  cat > "$1" <<EOF
 [General]
 type=image
-background=/opt/kmos/assets/wallpapers/kmos-wallpaper.png
+background=$sddm_wallpaper
 color=#000000
 EOF
 }
@@ -225,29 +233,62 @@ stage_fonts() {
 }
 
 stage_sddm_assets() {
-  local source=/usr/share/sddm/themes/breeze target=/usr/share/sddm/themes/breeze-kmos config
+  local source=$sddm_breeze_dir config
   [[ -d "$source" && ! -L "$source" ]] || { fail 'SDDM Breeze theme is missing.'; return 1; }
-  safe_path "$target" || return 1
-  if [[ ! -e "$target" ]]; then
-    printf 'missing: %s (KMOS copy of Breeze)\n' "$target"
-    if [[ "$mode" == apply ]]; then
-      cp -a -- "$source" "$target" || return 1
-      sed -i 's/fillMode: Image.PreserveAspectCrop/fillMode: Image.PreserveAspectFit/' "$target/Background.qml" || return 1
-      sed -i '0,/visible: false/s//visible: true/' "$target/Background.qml" || return 1
-    fi
-  else
-    [[ -d "$target" && ! -L "$target" ]] || { fail 'Existing SDDM theme is not a regular directory.'; return 1; }
-  fi
-  stage_file system "$target/theme.conf.user" write_sddm_background || return 1
-  for config in /etc/sddm.conf /etc/sddm.conf.d/*.conf; do
-    [[ -f "$config" && "$config" != /etc/sddm.conf.d/kmos-theme.conf ]] || continue
+  [[ -r "$source/Main.qml" ]] || { fail 'Packaged Breeze QML is missing.'; return 1; }
+  for config in "$sddm_main_config" "$sddm_config_dir"/*.conf; do
+    [[ -f "$config" && "$config" != "$sddm_choice_file" ]] || continue
     if grep -Eq '^[[:space:]]*Current[[:space:]]*=' "$config"; then
       printf 'Existing SDDM theme choice in %s: leaving it untouched; KMOS theme not selected.\n' "$config"
       return 0
     fi
   done
-  stage_file system /etc/sddm.conf.d/kmos-theme.conf write_sddm_theme || return 1
+  stage_file system "$source/theme.conf.user" write_sddm_background || return 1
+  stage_file system "$sddm_choice_file" write_sddm_theme || return 1
 }
+
+repair_sddm() (
+  local config existing_settings directory
+  config=$sddm_choice_file
+  existing_settings=$sddm_breeze_dir/theme.conf.user
+  [[ -r "$sddm_breeze_dir/Main.qml" && -r "$sddm_breeze_dir/theme.conf" && ! -L "$sddm_breeze_dir" ]] \
+    || { fail 'Packaged Breeze SDDM theme is unavailable; no changes made.'; return 1; }
+  [[ -f "$config" && ! -L "$config" ]] \
+    || { fail "No regular KMOS-owned SDDM choice at $config; no changes made."; return 1; }
+  if ! grep -Fxq 'Current=breeze-kmos' "$config" && ! grep -Fxq 'Current=breeze' "$config"; then
+    fail "SDDM theme choice is not KMOS-managed: $config; no changes made."
+    return 1
+  fi
+  directory=$(mktemp -d) || return 1
+  trap 'rm -rf -- "$directory"' EXIT
+  write_sddm_theme "$directory/kmos-choice"
+  printf '[Theme]\nCurrent=breeze-kmos\n' > "$directory/old-choice"
+  if ! cmp -s -- "$config" "$directory/old-choice" && ! cmp -s -- "$config" "$directory/kmos-choice"; then
+    fail "SDDM theme choice contains custom settings: $config; no changes made."
+    return 1
+  fi
+  for config in "$sddm_main_config" "$sddm_config_dir"/*.conf; do
+    [[ "$config" != "$sddm_choice_file" && -f "$config" ]] || continue
+    if grep -Eq '^[[:space:]]*Current[[:space:]]*=' "$config"; then
+      fail "Another SDDM theme choice exists in $config; no changes made."
+      return 1
+    fi
+  done
+  safe_path "$existing_settings" && safe_path "$sddm_choice_file" || return 1
+  if [[ -e "$existing_settings" ]]; then
+    [[ -f "$existing_settings" ]] || { fail 'Breeze theme settings are not a regular file.'; return 1; }
+    printf 'Existing Breeze theme settings preserved: %s\n' "$existing_settings"
+  elif [[ -r "$sddm_wallpaper" ]]; then
+    write_sddm_background "$directory/background"
+    install -Dm0644 "$directory/background" "$existing_settings" || return 1
+  else
+    printf 'KMOS wallpaper missing; leaving packaged Breeze background unchanged.\n'
+  fi
+  if ! cmp -s -- "$sddm_choice_file" "$directory/kmos-choice"; then
+    install -m 0644 "$directory/kmos-choice" "$sddm_choice_file" || return 1
+  fi
+  printf 'SDDM now uses packaged Breeze. Changes take effect when the login screen next starts; no sessions were restarted.\n'
+)
 
 load_finish_assets() {
   # Source only the ISO's individual config writers, never apply_post_tweaks.
@@ -315,6 +356,15 @@ main() {
   mode="${1:-}"
   case "$mode" in
     --help|-h) (( $# == 1 )) || { usage >&2; return 2; }; usage; return ;;
+    --repair-sddm)
+      (( $# == 1 )) || { usage >&2; return 2; }
+      if ((EUID != 0)); then
+        command -v sudo >/dev/null || { fail 'sudo is required for SDDM repair.'; return 1; }
+        exec sudo -- "$SCRIPT_DIR/kmos-kde-finish.sh" --repair-sddm
+      fi
+      repair_sddm
+      return
+      ;;
     --plan|--apply) ;;
     *) usage >&2; return 2 ;;
   esac

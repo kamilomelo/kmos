@@ -63,6 +63,15 @@ or fails its checks, iwd/dhcpcd remain in charge. See the
 [upgrade and recovery guide](./docs/arch-headless-to-kde.md). Do not rerun the
 upgrade on an already-upgraded KDE system.
 
+**Broken KMOS login theme after a Plasma update?** The old `breeze-kmos`
+copy can become incompatible with upgraded Breeze. From a current checkout on
+the installed KDE machine, run
+`./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --repair-sddm`.
+It switches only KMOS's exact old SDDM theme choice to package-maintained
+Breeze and adds KMOS wallpaper settings when safe; it leaves personal KDE
+settings and the old theme files alone. The login screen picks this up on its
+next start; it is **not** restarted automatically.
+
 ## Adopt an existing headless Arch system (VPS)
 
 The **experimental** adoption workflow on `main` sets up an *installed,

@@ -7,9 +7,96 @@ repo=$(git rev-parse --show-toplevel)
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 script="$repo/platforms/archlinux/desktop/kde/kmos-kde-finish.sh"
+post="$repo/platforms/archlinux/desktop/kde/kmos-kde-post.sh"
 "$script" --help > "$fixture/help"
 grep -Fq -- '--plan' "$fixture/help"
 grep -Fq -- '--apply --all-users' "$fixture/help"
+grep -Fq -- '--repair-sddm' "$fixture/help"
+
+(
+  # A fresh install configures package-owned Breeze without copying or patching QML.
+  # shellcheck disable=SC1091
+  source "$post"
+  MOUNT_POINT="$fixture/target"
+  ASSET_WALLPAPER="$fixture/wallpaper.png"
+  printf 'wallpaper\n' > "$ASSET_WALLPAPER"
+  mkdir -p "$MOUNT_POINT/usr/share/sddm/themes/breeze" "$MOUNT_POINT/usr/share/sddm/themes/breeze-kmos"
+  printf 'upstream QML\n' > "$MOUNT_POINT/usr/share/sddm/themes/breeze/Main.qml"
+  printf 'obsolete QML\n' > "$MOUNT_POINT/usr/share/sddm/themes/breeze-kmos/Main.qml"
+  apply_sddm_defaults
+  [[ $(cat "$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf") == $'[Theme]\nCurrent=breeze' ]]
+  grep -Fxq 'upstream QML' "$MOUNT_POINT/usr/share/sddm/themes/breeze/Main.qml"
+  grep -Fxq 'obsolete QML' "$MOUNT_POINT/usr/share/sddm/themes/breeze-kmos/Main.qml"
+  grep -Fxq "background=$TARGET_WALLPAPER" "$MOUNT_POINT/usr/share/sddm/themes/breeze/theme.conf.user"
+  printf 'custom theme\n' > "$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf"
+  printf 'custom background\n' > "$MOUNT_POINT/usr/share/sddm/themes/breeze/theme.conf.user"
+  apply_sddm_defaults
+  grep -Fxq 'custom theme' "$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf"
+  grep -Fxq 'custom background' "$MOUNT_POINT/usr/share/sddm/themes/breeze/theme.conf.user"
+  rm "$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf"
+  printf '[Theme]\nCurrent=personal\n' > "$MOUNT_POINT/etc/sddm.conf.d/other.conf"
+  apply_sddm_defaults
+  [[ ! -e "$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf" ]]
+  grep -Fxq 'Current=personal' "$MOUNT_POINT/etc/sddm.conf.d/other.conf"
+) > "$fixture/fresh-sddm" 2>&1
+
+(
+  # Targeted repair changes only the exact KMOS-managed choice; no user files.
+  # shellcheck disable=SC1091
+  source "$script"
+  sddm_breeze_dir="$fixture/recovery/themes/breeze"
+  sddm_config_dir="$fixture/recovery/etc/sddm.conf.d"
+  sddm_main_config="$fixture/recovery/etc/sddm.conf"
+  sddm_choice_file="$sddm_config_dir/kmos-theme.conf"
+  sddm_wallpaper="$fixture/wallpaper.png"
+  mkdir -p "$sddm_breeze_dir" "$sddm_config_dir"
+  printf 'upstream QML\n' > "$sddm_breeze_dir/Main.qml"
+  printf '[General]\n' > "$sddm_breeze_dir/theme.conf"
+  printf '[Theme]\nCurrent=breeze-kmos\n' > "$sddm_choice_file"
+  repair_sddm
+  [[ $(cat "$sddm_choice_file") == $'[Theme]\nCurrent=breeze' ]]
+  grep -Fxq "background=$sddm_wallpaper" "$sddm_breeze_dir/theme.conf.user"
+  printf 'personal background\n' > "$sddm_breeze_dir/theme.conf.user"
+  repair_sddm
+  grep -Fxq 'personal background' "$sddm_breeze_dir/theme.conf.user"
+  printf '[Theme]\nCurrent=personal\n' > "$sddm_choice_file"
+  if repair_sddm > "$fixture/custom-choice" 2>&1; then exit 1; fi
+  grep -Fxq 'Current=personal' "$sddm_choice_file"
+  printf '[Theme]\nCurrent=breeze-kmos\n' > "$sddm_choice_file"
+  printf '[Theme]\nCurrent=personal\n' > "$sddm_config_dir/other.conf"
+  if repair_sddm > "$fixture/other-choice" 2>&1; then exit 1; fi
+  grep -Fxq 'Current=breeze-kmos' "$sddm_choice_file"
+  rm "$sddm_config_dir/other.conf" "$sddm_breeze_dir/theme.conf.user"
+  ln -s "$fixture/wallpaper.png" "$sddm_breeze_dir/theme.conf.user"
+  if repair_sddm > "$fixture/symlink-choice" 2>&1; then exit 1; fi
+  grep -Fxq 'Current=breeze-kmos' "$sddm_choice_file"
+) > "$fixture/repaired-sddm" 2>&1
+
+(
+  # The live KDE upgrade stages only settings for packaged Breeze, not a copy.
+  # shellcheck disable=SC1091
+  source "$script"
+  temp="$fixture"
+  mode=plan
+  sddm_breeze_dir="$fixture/upgrade/themes/breeze"
+  sddm_config_dir="$fixture/upgrade/etc/sddm.conf.d"
+  sddm_main_config="$fixture/upgrade/etc/sddm.conf"
+  sddm_choice_file="$sddm_config_dir/kmos-theme.conf"
+  mkdir -p "$sddm_breeze_dir" "$sddm_config_dir" "$fixture/upgrade/themes/breeze-kmos"
+  printf 'packaged QML\n' > "$sddm_breeze_dir/Main.qml"
+  printf 'old QML\n' > "$fixture/upgrade/themes/breeze-kmos/Main.qml"
+  stage_sddm_assets
+  [[ ! -e "$sddm_breeze_dir/theme.conf.user" && ! -e "$sddm_choice_file" ]]
+  grep -Fxq 'old QML' "$fixture/upgrade/themes/breeze-kmos/Main.qml"
+  write_sddm_theme "$fixture/staged-choice"
+  grep -Fxq 'Current=breeze' "$fixture/staged-choice"
+  mode=apply
+  stage_sddm_assets
+  grep -Fxq 'Current=breeze' "$sddm_choice_file"
+  grep -Fxq "background=$sddm_wallpaper" "$sddm_breeze_dir/theme.conf.user"
+  grep -Fxq 'packaged QML' "$sddm_breeze_dir/Main.qml"
+  grep -Fxq 'old QML' "$fixture/upgrade/themes/breeze-kmos/Main.qml"
+) > "$fixture/upgrade-sddm" 2>&1
 
 (
   # shellcheck disable=SC1091
