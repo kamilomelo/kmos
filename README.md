@@ -124,6 +124,21 @@ experimental and has not been field-tested. See the
   `cd /opt/kmos/bin && ./kmos-headless-wifi.sh` to set up iwd with Impala or
   `iwctl`.
 
+### Kartouche template updates
+
+`./scripts/check-kartouche-update.sh` compares KMOS's pinned Bash template with
+upstream. A separate GitHub Actions workflow also checks weekly or can be run
+with **Run workflow** once this workflow is on the default branch. A failed
+check means the template code, version, or config keys need review; a network
+failure also fails rather than claiming everything is current. The check never
+changes scripts. Enable GitHub notifications for failed Actions runs if you want
+an alert; if GitHub disables schedules in an inactive repository, use the manual
+command or **Run workflow**. To update, review upstream's
+[update instructions](https://github.com/kamilomelo/kartouche/blob/main/UPDATING.md),
+then update the pinned `platforms/archlinux/tools/kartouche.sh` and each
+self-contained KMOS script together, preserving their KMOS-specific config.
+The offline fixtures verify that the embedded code matches the pinned copy.
+
 ## Other platforms and work in progress
 
 - [Quartz64 Model B](./platforms/archlinuxarm/boards/quartz64b/README.md):

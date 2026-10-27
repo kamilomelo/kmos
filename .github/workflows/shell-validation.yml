@@ -23,3 +23,9 @@ jobs:
           echo "$RUNNER_TEMP/shellcheck-v0.11.0" >> "$GITHUB_PATH"
       - name: Validate tracked Bash scripts
         run: bash scripts/check-shell.sh
+      - name: Check embedded Kartouche copies and update-check fixtures
+        run: |
+          bash -n scripts/check-kartouche-update.sh tests/kartouche-update-check.sh
+          ./tests/kartouche-update-check.sh
+          ./tests/arch-usb-kartouche.sh
+          ./tests/arch-wifi-kartouche.sh
