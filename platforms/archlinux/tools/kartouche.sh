@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Kamilo Melo
 # KARTOUCHE_TEMPLATE_VERSION: 5
 # Vendored from kartouche 26c10e8bcffcde4af82d9e9bc7238d020ea11042.
-# See kartouche.LICENSE in this directory; keep both files beside the flasher.
+# Pinned source for embedding in standalone KMOS scripts; see kartouche.LICENSE.
 
 # kartouche:config begin
 KT_NAME='kmos USB Flasher'

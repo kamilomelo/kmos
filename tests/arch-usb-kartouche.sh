@@ -4,7 +4,15 @@ set -euo pipefail
 repo=$(git rev-parse --show-toplevel)
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
-script="$repo/platforms/archlinux/tools/kmos-usb-flasher.sh"
+script="$fixture/kmos-usb-flasher.sh"
+# The flasher must also work when only its script is copied to a USB host.
+cp "$repo/platforms/archlinux/tools/kmos-usb-flasher.sh" "$script"
+[[ ! -e "$fixture/kartouche.sh" ]]
+bash -n "$script"
+# Keep the inlined code aligned with the pinned Kartouche source in this repo.
+cmp -s \
+  <(sed -n '/^# kartouche:code begin v5$/,/^# kartouche:code end$/p' "$script") \
+  <(sed -n '/^# kartouche:code begin v5$/,/^# kartouche:code end$/p' "$repo/platforms/archlinux/tools/kartouche.sh")
 
 for term in xterm-256color linux; do
   (

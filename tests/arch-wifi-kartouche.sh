@@ -9,6 +9,9 @@ helper="$fixture/kmos-wifi-connect.sh"
 cp "$repo/platforms/archlinux/tools/kmos-wifi-connect.sh" "$helper"
 [[ ! -e "$fixture/kartouche.sh" ]]
 bash -n "$helper"
+cmp -s \
+  <(sed -n '/^# kartouche:code begin v5$/,/^# kartouche:code end$/p' "$helper") \
+  <(sed -n '/^# kartouche:code begin v5$/,/^# kartouche:code end$/p' "$repo/platforms/archlinux/tools/kartouche.sh")
 
 for term in xterm-256color linux; do
   (
