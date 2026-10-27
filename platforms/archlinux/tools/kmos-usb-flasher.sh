@@ -5,8 +5,11 @@
 
 set -Eeuo pipefail
 
-SCRIPT_PATH="$(readlink -f "$0")"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+# Bundled presentation only; no download or package install at runtime.
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/kartouche.sh"
 WORK_DIR="$SCRIPT_DIR/work"
 ARCH_BASE_URL="${ARCH_BASE_URL:-https://theswissbay.ch/archlinux/iso/latest}"
 ARCH_BASE_URL_FALLBACKS="${ARCH_BASE_URL_FALLBACKS:-https://mirror.puzzle.ch/archlinux/iso/latest https://mirror.init7.net/archlinux/iso/latest https://mirror.arch-linux.ch/archlinux/iso/latest https://mirror.metanet.ch/archlinux/iso/latest https://geo.mirror.pkgbuild.com/iso/latest}"
@@ -56,7 +59,12 @@ UI_SUCCESS=""
 UI_WARN=""
 UI_DANGER=""
 STEP_INDEX=0
-STEP_TOTAL=4
+STEP_LABELS=(
+  'Preparing installation media'
+  'Selecting target USB disk'
+  'Flashing image to USB'
+  'Final cleanup'
+)
 
 repeat_char() {
   local char="$1"
@@ -72,11 +80,19 @@ repeat_char() {
 }
 
 init_ui() {
-  if [[ -t 2 && "${TERM:-dumb}" != "dumb" ]]; then
+  # The Linux console does not reliably render the 256-color gray accent.
+  if [[ ${TERM:-} == linux ]]; then
+    KT_ACCENT=37
+  fi
+  if [[ -t 2 && "${TERM:-dumb}" != "dumb" && -z "${NO_COLOR:-}" ]]; then
     UI_RESET=$'\033[0m'
     UI_BOLD=$'\033[1m'
     UI_DIM=$'\033[2m'
-    UI_HEADER=$'\033[34m'
+    if [[ ${TERM:-} == linux ]]; then
+      UI_HEADER=$'\033[37m'
+    else
+      UI_HEADER=$'\033[38;5;244m'
+    fi
     UI_INFO=$'\033[37m'
     UI_SUCCESS=$'\033[32m'
     UI_WARN=$'\033[33m'
@@ -97,14 +113,17 @@ warn() {
 }
 
 success() {
-  printf '%b▸%b %s\n' "$UI_SUCCESS" "$UI_RESET" "$*" >&2
-}
-
-final_success() {
-  printf '\n%b✔%b %s\n\n' "$UI_SUCCESS" "$UI_RESET" "$*" >&2
+  local icon=▸
+  if [[ $KT_GLYPHS == ascii || ( $KT_GLYPHS == auto && ( ${TERM:-} == linux || ${TERM:-} == dumb ) ) ]]; then
+    icon='>'
+  fi
+  printf '%b%s%b %s\n' "$UI_SUCCESS" "$icon" "$UI_RESET" "$*" >&2
 }
 
 die() {
+  if ((STEP_INDEX > 0)); then
+    kt_render_end 2 0 "failed at $STEP_INDEX/${#STEP_LABELS[@]} ${STEP_LABELS[STEP_INDEX-1]} · $*" >&2
+  fi
   printf '%bERROR:%b %s\n' "${UI_DANGER}${UI_BOLD}" "$UI_RESET" "$*" >&2
   exit 1
 }
@@ -121,33 +140,14 @@ detail() {
   printf '  %b%-12s%b %s\n' "$UI_DIM" "$key" "$UI_RESET" "$value" >&2
 }
 
-progress_bar() {
-  local current="$1"
-  local total="$2"
-  local width="${3:-28}"
-  local filled=0
-  local percent=0
-
-  if (( total > 0 )); then
-    filled=$(( current * width / total ))
-    percent=$(( current * 100 / total ))
-  fi
-
-  printf '[%s%s] %3d%%' \
-    "$(repeat_char "#" "$filled")" \
-    "$(repeat_char "-" "$((width - filled))")" \
-    "$percent"
-}
-
 advance_step() {
-  local label="$1"
-  local bar
-
   ((STEP_INDEX += 1))
-  bar="$(progress_bar "$STEP_INDEX" "$STEP_TOTAL")"
-
-  printf '\n%bStep %d/%d%b %s\n' "${UI_HEADER}${UI_BOLD}" "$STEP_INDEX" "$STEP_TOTAL" "$UI_RESET" "$label" >&2
-  printf '  %s\n' "$bar" >&2
+  printf '\n' >&2
+  # A fresh, append-only rail snapshot is safe alongside curl/dd progress.
+  kt_render_title 2 "$KT_NAME" "$KT_VERSION" >&2
+  kt_render_frame 2 rail "$STEP_INDEX" "${#STEP_LABELS[@]}" \
+    "${STEP_LABELS[STEP_INDEX-1]}" "${STEP_LABELS[@]}" >&2
+  printf '\n' >&2
 }
 
 substep() {
@@ -162,10 +162,8 @@ warning_block() {
 
 print_banner() {
   printf '\n' >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 16)" "$UI_RESET" >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "kmos USB Flasher" "$UI_RESET" >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 16)" "$UI_RESET" >&2
-  log "Bootable USB creator for good Linux Operating Systems."
+  kt_banner
+  printf '\n' >&2
   log "Downloads, verifies, and writes the selected ISO to a USB device."
   log "Warning: the selected target disk will be erased."
 }
@@ -560,6 +558,8 @@ prepare_iso_for_os() {
 }
 
 main() {
+  local label
+  local -a summary_args=()
   init_ui
   require_tools
   init_base_urls
@@ -594,18 +594,21 @@ main() {
   detail "Selected OS" "$os_label"
 
   local iso_path
-  advance_step "Preparing installation media"
+  advance_step
   iso_path="$(prepare_iso_for_os "$os_key")"
 
   local target_disk
-  advance_step "Selecting target USB disk"
+  advance_step
   target_disk="$(select_target_disk)"
 
-  advance_step "Flashing image to USB"
+  advance_step
   flash_iso "$iso_path" "$target_disk"
-  advance_step "Final cleanup"
+  advance_step
   cleanup_workdir_prompt
-  final_success "All steps completed."
+  for label in "${STEP_LABELS[@]}"; do summary_args+=("$label" ok); done
+  printf '\n' >&2
+  kt_summary rail "${summary_args[@]}"
+  printf '\n' >&2
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
