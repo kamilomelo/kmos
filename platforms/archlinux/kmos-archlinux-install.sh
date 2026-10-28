@@ -265,6 +265,17 @@ print_banner() {
   log "This stage prepares partitions, installs base packages, and configures users."
 }
 
+installer_choice_header() {
+  # A neutral review heading: nothing is approved until its typed gate succeeds.
+  _kt_print_block "$(kt_render_banner 2 "$KT_NAME" "$KT_VERSION" '' "$1")"
+}
+
+installer_choice_option() {
+  _kt_glyphs
+  _kt_style 2 dim "${_kt_mid}${_kt_h}" >&2
+  printf ' %s) %s\n' "$1" "$2" >&2
+}
+
 ask_yes_no() {
   local prompt="$1"
   local default="${2:-}"
@@ -394,9 +405,9 @@ prompt_choice() {
     fi
   done
 
-  log "$prompt"
+  installer_choice_header "$prompt"
   for index in "${!options[@]}"; do
-    printf '  %d) %s\n' "$((index + 1))" "${options[$index]}" >&2
+    installer_choice_option "$((index + 1))" "${options[$index]}"
   done
 
   while true; do
@@ -500,6 +511,7 @@ select_disk() {
   default_disk="${candidates[0]}"
   selectable=("${candidates[@]}")
 
+  installer_choice_header 'Select target disk (review before formatting)'
   info "Autodetected install disk."
   detail "Default" "$default_disk"
   if ask_yes_no "Use autodetected default disk?" "yes"; then
@@ -596,7 +608,7 @@ pick_from_candidates() {
   local choice=""
 
   for idx in "${!candidates[@]}"; do
-    printf '  %d) %s\n' "$((idx + 1))" "${candidates[$idx]}" >&2
+    installer_choice_option "$((idx + 1))" "${candidates[$idx]}"
   done
 
   while true; do
@@ -665,6 +677,7 @@ select_root_partition() {
 choose_partitions() {
   local mode=${1:-existing}
   while true; do
+    installer_choice_header 'Review target partition layout'
     info "Current partition layout:"
     lsblk -fp "$TARGET_DISK" >&2
 
@@ -757,6 +770,7 @@ partition_on_target_disk() {
 choose_boot_partition_action() {
   local fstype="" identity="" action="" confirm=""
 
+  installer_choice_header 'Choose EFI reuse or format (root will be formatted)'
   fstype="$(partition_fstype "$BOOT_PARTITION")"
   BOOT_PARTITION_ACTION=""
   EFI_FORMAT_PARTUUID=""
@@ -970,6 +984,7 @@ collect_system_config() {
   local locale_list=""
   local locale=""
 
+  installer_choice_header 'Choose system, filesystem and accounts'
   TIMEZONE="$(prompt_choice "Timezone options" "$TIMEZONE" "${TIMEZONE_OPTIONS[@]}")"
   LOCALE="$(prompt_choice "Locale options" "$LOCALE" "${LOCALE_OPTIONS[@]}")"
   locale_list="$(prompt_default "Additional locales, space separated, or none" "none")"
@@ -1038,12 +1053,15 @@ choose_kde_packages() {
 
 collect_desktop_config() {
   local choice
+  installer_choice_header 'Choose headless or KDE (required, no default)'
   info 'Select desktop and AUR options now; installation will not ask again later.'
   DESKTOP_CHOICE_MADE=0
   if [[ "$KDE_PROFILE" == custom ]]; then
-    printf '  1) Headless (no KDE)\n  2) KDE desktop (choose packages)\n' >&2
+    installer_choice_option 1 'Headless (no KDE)'
+    installer_choice_option 2 'KDE desktop (choose packages)'
   else
-    printf '  1) Headless (no KDE)\n  2) KDE desktop (%s)\n' "$KDE_PROFILE" >&2
+    installer_choice_option 1 'Headless (no KDE)'
+    installer_choice_option 2 "KDE desktop ($KDE_PROFILE)"
   fi
   while true; do
     printf 'Choose system type [1/2] (required, no default): ' >&2
@@ -1174,7 +1192,7 @@ confirm_install_plan() {
   ((DESKTOP_CHOICE_MADE == 1)) || die 'Desktop/headless choice was not collected; cannot approve formatting.'
   ((BOOT_MENU_CHOICE_MADE == 1)) || die 'Boot Menu and Windows policy were not collected; cannot approve formatting.'
 
-  printf '\n' >&2
+  installer_choice_header 'Review install plan — no formatting approved yet'
   info "Install plan:"
   detail "Disk" "$TARGET_DISK"
   detail "Disk identity" "$CONFIRMED_DISK_ID / $CONFIRMED_DISK_SIZE bytes"

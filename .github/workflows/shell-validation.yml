@@ -34,3 +34,4 @@ jobs:
           ./tests/arch-adopt-headless-kartouche.sh
           ./tests/arch-adopt-pacman-style.sh
           ./tests/arch-installer-kartouche.sh
+          ./tests/arch-installer-choices.sh
