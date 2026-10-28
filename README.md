@@ -46,16 +46,6 @@ does not format disks or install AUR packages. A next-boot NetworkManager
 handoff is offered separately; have local access if upgrading over Wi-Fi. See
 the [upgrade and recovery guide](./docs/arch-headless-to-kde.md).
 
-To repair an older KMOS login theme after a Plasma update, run from a current
-checkout on the installed KDE machine:
-
-```bash
-./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --repair-sddm
-```
-
-This changes only a recognized KMOS theme choice and safe missing defaults; it
-does not restart SDDM or change personal KDE settings.
-
 ## Adopt an existing headless Arch system (VPS)
 
 This **experimental** path is for installed headless Arch x86_64, not an ISO or

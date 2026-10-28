@@ -107,6 +107,12 @@ if none exist, and preserves unrelated or custom SDDM configurations. It leaves
 the old theme copy, user files, other desktop settings and running sessions
 untouched. Changes take effect the next time the greeter starts; do not restart
 SDDM during an unsaved desktop session.
+
+**Maintenance reminder (2026-11-28):** review whether older installations
+still need `--repair-sddm`. Keep that legacy repair option until confirmed
+unnecessary; do not remove the whole `kmos-kde-finish.sh`, which also applies
+KDE defaults. Any removal is a separate change, not part of this release.
+
 Future KMOS installs and upgrades use Breeze directly rather than copying its
 entire theme. Fresh ISO installs reveal the black color behind the transparent
 image with a targeted change to Breeze's `Background.qml`; a Breeze package
