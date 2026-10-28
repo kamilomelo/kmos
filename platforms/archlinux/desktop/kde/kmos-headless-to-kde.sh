@@ -196,6 +196,7 @@ stage_live_defaults() (
 
 confirm_install() {
   local answer
+  kt_banner 'Final installation approval'
   printf 'KDE packages will be installed; pacman may upgrade existing packages.\n' >&2
   printf 'Current SSH/network services stay active; next-boot NM staging is separately confirmed.\n' >&2
   printf 'Type INSTALL KDE to continue: ' >&2
@@ -258,7 +259,7 @@ require_root() {
 }
 
 install_layer() {
-  local profile="$1" pkg list before_iwd before_dhcpcd before_nm before_nm_enabled
+  local profile="$1" pkg list before_iwd before_dhcpcd before_nm before_nm_enabled personal_state=skipped extras_state=skipped
   local -a packages=()
   preflight
   if kde_profile_present; then
@@ -286,6 +287,7 @@ install_layer() {
   if [[ "$profile" == custom ]]; then
     require_root --install --select || return 1
     guided_upgrade_user >/dev/null || return 1
+    kt_banner 'Choose optional KDE packages'
     select_live_packages || { printf 'Selection cancelled; nothing installed.\n' >&2; return 1; }
     list=$(resolve_kde_packages "$profile" "${SELECTED_KDE_METAPACKAGES[@]}") || return 1
   else
@@ -300,6 +302,12 @@ install_layer() {
   printf 'KDE profile: %s; packages: %s; AUR: no\n' "$profile" "${#packages[@]}"
   printf 'Active networking stays unchanged; guided mode may offer next-boot NetworkManager staging.\n'
   if [[ "$profile" != custom ]]; then require_root --install --profile "$profile"; fi
+  if [[ "$profile" == custom ]]; then
+    if ((${#SELECTED_KDE_METAPACKAGES[@]} > 0)); then personal_state=ok; fi
+    if ((${#EXTRA_KDE_PACKAGES[@]} > 0)); then extras_state=ok; fi
+    kt_summary rail 'KDE base, apps and Firefox' ok \
+      'Kamilo productivity' "$personal_state" 'Extra repository packages' "$extras_state"
+  fi
   confirm_install || { printf 'Cancelled without changes.\n' >&2; return 1; }
   mark_upgrade "$profile" || { printf 'Cannot record an upgrade attempt; no packages installed.\n' >&2; return 1; }
   before_iwd=$(service_state iwd.service)

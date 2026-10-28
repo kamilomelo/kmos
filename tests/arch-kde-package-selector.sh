@@ -108,6 +108,9 @@ grep -Fq 'Invalid repository package: kmos-unknown' "$fixture/invalid-package"
   install_layer custom
 ) > "$fixture/custom-install-output" 2>&1
 [[ $(cat "$fixture/custom-order") == $'visual-finish\nnetwork-stage' ]]
+grep -Fq 'Choose optional KDE packages' "$fixture/custom-install-output"
+grep -Fq 'KDE base, apps and Firefox' "$fixture/custom-install-output"
+grep -Fq '3 ok' "$fixture/custom-install-output"
 grep -Fxq firefox "$fixture/custom-pacman-packages"
 grep -Fxq plasma-desktop "$fixture/custom-pacman-packages"
 [[ $(cat "$fixture/custom-profile") == custom ]]
