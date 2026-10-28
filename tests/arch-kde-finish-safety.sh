@@ -14,18 +14,20 @@ grep -Fq -- '--apply --all-users' "$fixture/help"
 grep -Fq -- '--repair-sddm' "$fixture/help"
 
 (
-  # A fresh install configures package-owned Breeze without copying or patching QML.
+  # A fresh install keeps Breeze's layout and reveals black behind the PNG.
   # shellcheck disable=SC1091
   source "$post"
   MOUNT_POINT="$fixture/target"
   ASSET_WALLPAPER="$fixture/wallpaper.png"
   printf 'wallpaper\n' > "$ASSET_WALLPAPER"
   mkdir -p "$MOUNT_POINT/usr/share/sddm/themes/breeze" "$MOUNT_POINT/usr/share/sddm/themes/breeze-kmos"
-  printf 'upstream QML\n' > "$MOUNT_POINT/usr/share/sddm/themes/breeze/Main.qml"
+  printf 'upstream QML\nsceneBackgroundColor: config.color\n' > "$MOUNT_POINT/usr/share/sddm/themes/breeze/Main.qml"
+  printf 'name: "imageBackground"\ntarget: sceneColorBackground\nvisible: false\n' > "$MOUNT_POINT/usr/share/sddm/themes/breeze/Background.qml"
   printf 'obsolete QML\n' > "$MOUNT_POINT/usr/share/sddm/themes/breeze-kmos/Main.qml"
   apply_sddm_defaults
   [[ $(cat "$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf") == $'[Theme]\nCurrent=breeze' ]]
   grep -Fxq 'upstream QML' "$MOUNT_POINT/usr/share/sddm/themes/breeze/Main.qml"
+  grep -Fxq 'visible: true' "$MOUNT_POINT/usr/share/sddm/themes/breeze/Background.qml"
   grep -Fxq 'obsolete QML' "$MOUNT_POINT/usr/share/sddm/themes/breeze-kmos/Main.qml"
   grep -Fxq "background=$TARGET_WALLPAPER" "$MOUNT_POINT/usr/share/sddm/themes/breeze/theme.conf.user"
   printf 'custom theme\n' > "$MOUNT_POINT/etc/sddm.conf.d/kmos-theme.conf"

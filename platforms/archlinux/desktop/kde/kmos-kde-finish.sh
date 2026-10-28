@@ -13,6 +13,7 @@ KT_ACCENT='38;5;244'
 [[ ${TERM:-} == linux ]] && KT_ACCENT=37
 mode= user= home= backup_stamp= temp= changes=0 skipped=0 backup_bytes=0
 system_backup_root=/var/backups/kmos
+sddm_backup_dir=/var/backups/kmos/sddm
 font_dir=/usr/local/share/fonts/kmos
 local_passwd_file=/etc/passwd
 sddm_breeze_dir=/usr/share/sddm/themes/breeze
@@ -27,7 +28,8 @@ Usage: ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan
        ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --apply
        ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --plan --all-users
        ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --apply --all-users
-       ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --repair-sddm
+        ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --repair-sddm
+        ./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --black-sddm-background
 
 By default, finishes the invoking user's KDE settings. --all-users includes
 every local regular account with a real home under /home (never root or service
@@ -36,7 +38,9 @@ existing file and backs up approved replacements. Missing defaults are added;
 panels, wallpaper choices, networking and packages are not changed. System-wide
 defaults can affect KDE users with no personal override. No automatic reboot.
 --repair-sddm changes only KMOS's managed login-theme choice and adds KMOS
-wallpaper settings when absent. It does not restart SDDM or change user settings.
+ wallpaper settings when absent. It does not restart SDDM or change user settings.
+ --black-sddm-background only reveals the existing black color behind the
+ KMOS PNG in managed Breeze; it backs up the original Background.qml.
 EOF
 }
 
@@ -297,6 +301,35 @@ repair_sddm() (
   printf 'SDDM now uses packaged Breeze. Changes take effect when the login screen next starts; no sessions were restarted.\n'
 )
 
+black_sddm_background() (
+  local settings=$sddm_breeze_dir/theme.conf.user qml=$sddm_breeze_dir/Background.qml config
+  [[ -f $sddm_choice_file && ! -L $sddm_choice_file ]] &&
+    grep -Fxq 'Current=breeze' "$sddm_choice_file" || {
+      fail 'SDDM is not using the KMOS-managed Breeze choice; no changes made.'; return 1;
+    }
+  for config in "$sddm_main_config" "$sddm_config_dir"/*.conf; do
+    [[ $config != "$sddm_choice_file" && -f $config ]] || continue
+    if grep -Eq '^[[:space:]]*Current[[:space:]]*=' "$config"; then
+      fail "Another SDDM theme choice exists in $config; no changes made."
+      return 1
+    fi
+  done
+  [[ -f $settings && ! -L $settings ]] &&
+    grep -Fxq 'type=image' "$settings" &&
+    grep -Fxq "background=$sddm_wallpaper" "$settings" &&
+    grep -Fxq 'color=#000000' "$settings" || {
+      fail 'The KMOS image and black color are not configured in Breeze; no changes made.'; return 1;
+    }
+  safe_path "$qml" || return 1
+  # The post-install writer is self-contained; source it only in this subshell.
+  # shellcheck disable=SC1090
+  source "$SCRIPT_DIR/kmos-kde-post.sh"
+  patch_breeze_image_background "$sddm_breeze_dir" "$sddm_backup_dir" || {
+    fail 'Breeze QML did not match the known image background; no changes made.'; return 1;
+  }
+  printf 'SDDM will show black behind the existing PNG at its next login screen; no session restarted.\n'
+)
+
 load_finish_assets() {
   # Source only the ISO's individual config writers, never apply_post_tweaks.
   # shellcheck disable=SC1090,SC1091
@@ -371,6 +404,15 @@ main() {
       fi
       kt_banner 'Repair managed SDDM settings'
       repair_sddm
+      return
+      ;;
+    --black-sddm-background)
+      (( $# == 1 )) || { usage >&2; return 2; }
+      if ((EUID != 0)); then
+        command -v sudo >/dev/null || { fail 'sudo is required for the SDDM background.'; return 1; }
+        exec sudo -- "$SCRIPT_DIR/kmos-kde-finish.sh" --black-sddm-background
+      fi
+      black_sddm_background
       return
       ;;
     --plan|--apply) ;;

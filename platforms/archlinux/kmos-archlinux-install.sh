@@ -45,7 +45,6 @@ UI_SUCCESS=""
 UI_WARN=""
 UI_DANGER=""
 SUCCESS_ICON="▸"
-FINAL_SUCCESS_ICON="✔"
 
 TARGET_DISK=""
 ROOT_PARTITION=""
@@ -130,19 +129,6 @@ FILESYSTEM_OPTIONS=(
   "btrfs"
 )
 
-repeat_char() {
-  local char="$1"
-  local count="$2"
-  local out=""
-
-  while ((count > 0)); do
-    out+="$char"
-    ((count--))
-  done
-
-  printf '%s' "$out"
-}
-
 init_ui() {
   if [[ ${TERM:-} == linux ]]; then KT_ACCENT=37; fi
   if [[ ${TERM:-} == linux || ${ASCII_UI:-${kmos_ASCII_UI:-0}} == 1 ]]; then KT_GLYPHS=ascii; fi
@@ -159,7 +145,6 @@ init_ui() {
 
   if [[ "${TERM:-}" == "linux" || "${ASCII_UI:-${kmos_ASCII_UI:-0}}" == "1" ]]; then
     SUCCESS_ICON=">"
-    FINAL_SUCCESS_ICON="OK"
   fi
 }
 
@@ -216,10 +201,6 @@ success() {
   printf '%b%s%b %s\n' "$UI_SUCCESS" "$SUCCESS_ICON" "$UI_RESET" "$*" >&2
 }
 
-final_success() {
-  printf '\n%b%s%b %s\n\n' "$UI_SUCCESS" "$FINAL_SUCCESS_ICON" "$UI_RESET" "$*" >&2
-}
-
 die() {
   printf '%bERROR:%b %s\n' "${UI_DANGER}${UI_BOLD}" "$UI_RESET" "$*" >&2
   exit 1
@@ -229,24 +210,6 @@ detail() {
   local key="$1"
   local value="$2"
   printf '  %b%-14s%b %s\n' "$UI_DIM" "$key" "$UI_RESET" "$value" >&2
-}
-
-progress_bar() {
-  local current="$1"
-  local total="$2"
-  local width="${3:-28}"
-  local filled=0
-  local percent=0
-
-  if ((total > 0)); then
-    filled=$((current * width / total))
-    percent=$((current * 100 / total))
-  fi
-
-  printf '[%s%s] %3d%%' \
-    "$(repeat_char "#" "$filled")" \
-    "$(repeat_char "-" "$((width - filled))")" \
-    "$percent"
 }
 
 advance_step() {
@@ -2463,10 +2426,13 @@ countdown_or_reboot() {
 
 final_reboot() {
   local fd
+  local label
+  local -a completed=()
   unmount_target
   sync
-  final_success "Install complete."
-  printf '  %s\n\n' "$(progress_bar "$STEP_TOTAL" "$STEP_TOTAL")" >&2
+  for label in "${STEP_LABELS[@]}"; do completed+=("$label" ok); done
+  _kt_print_block "$(kt_render_summary 2 rail "$KT_NAME" "$KT_VERSION" "${completed[@]}"; \
+    kt_render_end 2 1 'Install complete.')"
   if ! { exec {fd}</dev/tty; } 2>/dev/null; then
     warn 'No interactive terminal; automatic reboot skipped. Reboot manually when ready.'
     return 0

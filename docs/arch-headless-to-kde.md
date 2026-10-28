@@ -15,8 +15,15 @@ failure path still lack field tests; see the [v1.0.0 release notes](./releases/v
 **VM follow-up (2026-10-28):** The isolated QEMU headless → KDE upgrade reached
 SDDM, logged into Plasma, and retained working internet (ping). The login screen
 showed the intended image, but its background appeared white instead of the
-expected black. Investigate that visual issue later; do not change the login
-theme or existing user settings without first identifying the cause. The VM has
+expected black. The packaged Breeze `Background.qml` hides the configured black
+color behind images; a targeted repair is available, but its appearance still
+needs verification in a guest. On a KMOS-managed Breeze login screen, run
+`./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --black-sddm-background`
+from an updated checkout to reveal that black color behind the existing PNG.
+The script prompts for sudo, backs up the original QML under
+`/var/backups/kmos/sddm/`, and does not restart SDDM or alter user settings.
+A Breeze package upgrade may replace its QML; recheck the login screen afterward.
+The VM has
 only virtual Ethernet, so KMOS did not stage the Wi-Fi-aware NetworkManager
 handoff; iwd and dhcpcd remained enabled and active. Test that handoff separately
 with a suitable Wi-Fi device rather than force it in this VM.

@@ -538,8 +538,42 @@ EOF
 Current=breeze
 EOF
 
-  success 'SDDM uses package-maintained Breeze with the KMOS wallpaper; no theme QML was copied.'
+  patch_breeze_image_background "$source_theme_dir" "$MOUNT_POINT/var/backups/kmos/sddm" || die 'Could not set the black SDDM image background.'
+  success 'SDDM uses Breeze with the KMOS wallpaper and a black color behind its transparency.'
 }
+
+patch_breeze_image_background() (
+  local theme_dir=$1 backup_dir=$2 qml candidate backup
+  qml=$theme_dir/Background.qml
+  [[ -d $theme_dir && ! -L $theme_dir && -f $qml && ! -L $qml && -r $theme_dir/Main.qml ]] || return 1
+  grep -Fq 'sceneBackgroundColor: config.color' "$theme_dir/Main.qml" || return 1
+  candidate=$(mktemp "$theme_dir/.Background.qml.kmos.XXXXXXXX") || return 1
+  trap 'rm -f -- "$candidate"' EXIT
+  # Packaged Breeze hides its color rectangle for images. Keep the rectangle
+  # visible behind the PNG so the existing color=#000000 can show through.
+  awk '
+    /name: "imageBackground"/ { image=1 }
+    image && /target: sceneColorBackground/ { next_color=1; print; next }
+    next_color {
+      if ($0 !~ /^[[:space:]]*visible: (false|true)[[:space:]]*$/) exit 1
+      sub(/visible: false/, "visible: true")
+      matched=1; next_color=0
+    }
+    { print }
+    END { if (!matched) exit 1 }
+  ' "$qml" > "$candidate" || return 1
+  cmp -s -- "$candidate" "$qml" && return 0
+  install -d -m 0700 -- "$backup_dir" || return 1
+  [[ ! -L $backup_dir ]] || return 1
+  backup=$(mktemp "$backup_dir/Background.qml.XXXXXXXX") || return 1
+  cp -p -- "$qml" "$backup" || return 1
+  chmod 0600 -- "$backup" || return 1
+  chmod --reference="$qml" "$candidate" || return 1
+  chown --reference="$qml" "$candidate" || return 1
+  [[ -f $qml && ! -L $qml ]] || return 1
+  mv -T -- "$candidate" "$qml" || return 1
+  printf 'Breeze image background uses the existing black color; original QML saved at %s\n' "$backup" >&2
+)
 
 write_kscreenlocker_defaults() {
   local target="$1"

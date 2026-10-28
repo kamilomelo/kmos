@@ -30,5 +30,14 @@ response=timeout
 countdown_or_reboot 9 > "$fixture/timeout-output" 2>&1
 [[ $(grep -o 'Press any key to stay' "$fixture/timeout-output" | wc -l) == 10 ]]
 [[ $(cat "$fixture/actions") == reboot ]]
-[[ $(progress_bar "$STEP_TOTAL" "$STEP_TOTAL") == *'100%' ]]
-printf 'Arch completion countdown and 100%% progress bar: OK (mocked).\n'
+(
+  unmount_target() { :; }
+  sync() { :; }
+  countdown_or_reboot() { :; }
+  exec() { :; }
+  final_reboot
+) > "$fixture/final" 2>&1
+grep -Fq 'Install complete.' "$fixture/final"
+grep -Fq '9 ok' "$fixture/final"
+! grep -Fq '100%' "$fixture/final"
+printf 'Arch completion countdown and Kartouche summary: OK (mocked).\n'

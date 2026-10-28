@@ -35,3 +35,4 @@ jobs:
           ./tests/arch-adopt-pacman-style.sh
           ./tests/arch-installer-kartouche.sh
           ./tests/arch-installer-choices.sh
+          ./tests/arch-sddm-black.sh
