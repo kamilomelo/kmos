@@ -11,6 +11,7 @@ for term in xterm-256color linux; do
     TERM=$term
     # shellcheck disable=SC1090
     source "$script"
+    [[ $KT_PAUSE_SECONDS == 1 ]]
     if [[ $term == linux ]]; then
       [[ $KT_ACCENT == 37 ]]
     else

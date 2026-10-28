@@ -11,13 +11,14 @@ cp "$repo/platforms/archlinux/tools/kmos-usb-flasher.sh" "$script"
 bash -n "$script"
 # Keep the inlined code aligned with the pinned Kartouche source in this repo.
 cmp -s \
-  <(sed -n '/^# kartouche:code begin v5$/,/^# kartouche:code end$/p' "$script") \
-  <(sed -n '/^# kartouche:code begin v5$/,/^# kartouche:code end$/p' "$repo/platforms/archlinux/tools/kartouche.sh")
+  <(sed -n '/^# kartouche:code begin v6$/,/^# kartouche:code end$/p' "$script") \
+  <(sed -n '/^# kartouche:code begin v6$/,/^# kartouche:code end$/p' "$repo/platforms/archlinux/tools/kartouche.sh")
 
 for term in xterm-256color linux; do
   (
     # shellcheck disable=SC1090
     source "$script"
+    [[ $KT_PAUSE_SECONDS == 1 ]]
     WORK_DIR="$fixture/work"
     require_tools() { :; }
     ensure_workdir() { :; }

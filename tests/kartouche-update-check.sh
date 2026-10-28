@@ -14,7 +14,7 @@ export KARTOUCHE_PINNED_FILE="$pinned" KARTOUCHE_SOURCE_URL="file://$upstream"
 KARTOUCHE_SOURCE_URL=file:///not/a/real/file "$checker" --help > "$fixture/help"
 grep -Fq 'never modify KMOS files' "$fixture/help"
 "$checker" > "$fixture/current"
-grep -Fq 'template v5 is current' "$fixture/current"
+grep -Fq 'template v6 is current' "$fixture/current"
 
 # A project-specific config value is intentional, not a new template version.
 sed -i "s/^KT_NAME=.*/KT_NAME='another name'/" "$upstream"
@@ -29,7 +29,7 @@ expect_update() {
   [[ $(cat "$pinned") == "$(cat "$repo/platforms/archlinux/tools/kartouche.sh")" ]]
 }
 
-sed -i 's/^# KARTOUCHE_TEMPLATE_VERSION: 5$/# KARTOUCHE_TEMPLATE_VERSION: 6/; s/^# kartouche:code begin v5$/# kartouche:code begin v6/' "$upstream"
+sed -i 's/^# KARTOUCHE_TEMPLATE_VERSION: 6$/# KARTOUCHE_TEMPLATE_VERSION: 7/; s/^# kartouche:code begin v6$/# kartouche:code begin v7/' "$upstream"
 expect_update version
 cp "$pinned" "$upstream"
 sed -i 's/^_kt_text() { /_kt_text() { # upstream change /' "$upstream"

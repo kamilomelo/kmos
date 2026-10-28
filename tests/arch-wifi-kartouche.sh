@@ -10,13 +10,14 @@ cp "$repo/platforms/archlinux/tools/kmos-wifi-connect.sh" "$helper"
 [[ ! -e "$fixture/kartouche.sh" ]]
 bash -n "$helper"
 cmp -s \
-  <(sed -n '/^# kartouche:code begin v5$/,/^# kartouche:code end$/p' "$helper") \
-  <(sed -n '/^# kartouche:code begin v5$/,/^# kartouche:code end$/p' "$repo/platforms/archlinux/tools/kartouche.sh")
+  <(sed -n '/^# kartouche:code begin v6$/,/^# kartouche:code end$/p' "$helper") \
+  <(sed -n '/^# kartouche:code begin v6$/,/^# kartouche:code end$/p' "$repo/platforms/archlinux/tools/kartouche.sh")
 
 for term in xterm-256color linux; do
   (
     # shellcheck disable=SC1090
     source "$helper"
+    [[ $KT_PAUSE_SECONDS == 1 ]]
     require_root() { :; }
     require_tools() { :; }
     unblock_wireless() { :; }
