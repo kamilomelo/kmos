@@ -12,11 +12,14 @@ new Wi-Fi-SSH handoff was subsequently reported working, without captured
 service diagnostics. The AUR-declined install path and Wi-Fi-only boot-guard
 failure path still lack field tests; see the [v1.0.0 release notes](./releases/v1.0.0.md).
 
-**VM follow-up (2026-10-28):** A headless → KDE upgrade reached SDDM in the
-isolated QEMU test. The login screen showed the intended image, but its
-background appeared white instead of the expected black. Investigate the SDDM
-theme/background later; do not change the login theme or existing user settings
-without first reproducing and identifying the cause.
+**VM follow-up (2026-10-28):** The isolated QEMU headless → KDE upgrade reached
+SDDM, logged into Plasma, and retained working internet (ping). The login screen
+showed the intended image, but its background appeared white instead of the
+expected black. Investigate that visual issue later; do not change the login
+theme or existing user settings without first identifying the cause. The VM has
+only virtual Ethernet, so KMOS did not stage the Wi-Fi-aware NetworkManager
+handoff; iwd and dhcpcd remained enabled and active. Test that handoff separately
+with a suitable Wi-Fi device rather than force it in this VM.
 
 From a current checkout, you can inspect the system with the optional
 read-only check (the guided install also runs this check):
