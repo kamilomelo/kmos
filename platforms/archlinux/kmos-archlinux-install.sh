@@ -411,13 +411,19 @@ prompt_choice() {
   done
 
   while true; do
-    read -r -p "Select [1-${#options[@]}] (default: $default_index): " choice || die 'Input closed while collecting installation choices.'
+    read -r -p "Select number or name [1-${#options[@]}] (Enter: $default_index ${options[$((default_index - 1))]}): " choice || die 'Input closed while collecting installation choices.'
     choice="${choice:-$default_index}"
     if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#options[@]})); then
       printf '%s\n' "${options[$((choice - 1))]}"
       return 0
     fi
-    warn "Invalid selection."
+    for index in "${!options[@]}"; do
+      if [[ "$choice" == "${options[$index]}" ]]; then
+        printf '%s\n' "${options[$index]}"
+        return 0
+      fi
+    done
+    warn "Invalid selection. Enter a listed number or name."
   done
 }
 

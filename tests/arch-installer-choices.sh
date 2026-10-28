@@ -15,6 +15,17 @@ grep -Fq '|- 1) xfs' "$fixture/choice"
 grep -Fq '|- 2) ext4' "$fixture/choice"
 choice=$(prompt_choice 'Test filesystem options' xfs xfs ext4 <<< '' 2> "$fixture/default")
 [[ $choice == xfs ]]
+choice=$(prompt_choice 'AUR helper options' paru paru yay <<< 'yay' 2> "$fixture/yay-name")
+[[ $choice == yay ]]
+grep -Fq '|- 2) yay' "$fixture/yay-name"
+choice=$(prompt_choice 'AUR helper options' paru paru yay <<< '2' 2> "$fixture/yay-number")
+[[ $choice == yay ]]
+choice=$(prompt_choice 'AUR helper options' paru paru yay <<< $'YAY\nyay' 2> "$fixture/invalid-helper")
+[[ $choice == yay ]]
+grep -Fq 'Invalid selection. Enter a listed number or name.' "$fixture/invalid-helper"
+choice=$(prompt_choice 'AUR helper options' yay paru yay <<< '' 2> "$fixture/yay-default")
+[[ $choice == yay ]]
+grep -Fq 'Select number or name [1-${#options[@]}] (Enter:' "$repo/platforms/archlinux/kmos-archlinux-install.sh"
 
 pacman() { [[ $1 == -Si && $2 == impala ]]; }
 KDE_PROFILE=full
