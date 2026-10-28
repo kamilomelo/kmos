@@ -60,4 +60,57 @@ done
 grep -Fq 'No changes made.' "$fixture/plain.stdout"
 [[ ! -s "$fixture/plain.stderr" ]]
 
+# Both guided entry points must show a banner before the original approval
+# gate; declining either one must not reach account or package operations.
+(
+  # shellcheck disable=SC1090
+  source "$script"
+  require_root() { :; }
+  preflight() {
+    # shellcheck disable=SC1090
+    source "$repo/platforms/archlinux/tools/kartouche.sh"
+    KT_NAME='kmos Adopt Headless'
+  }
+  ask() { return 1; }
+  pacman() { printf 'Unexpected package operation.\n' >&2; return 1; }
+  repair_admin_sudo() { printf 'Unexpected account operation.\n' >&2; return 1; }
+  guided
+  users_only
+) > "$fixture/cancel.stdout" 2> "$fixture/cancel.stderr"
+grep -Fq 'Review adoption before approval' "$fixture/cancel.stderr"
+grep -Fq 'Review account changes' "$fixture/cancel.stderr"
+[[ $(grep -Fc 'Cancelled without changes.' "$fixture/cancel.stderr") == 2 ]]
+! grep -Fq 'Unexpected' "$fixture/cancel.stderr"
+
+(
+  # A fully mocked successful run checks the stage headings and end rail.
+  # shellcheck disable=SC1090
+  source "$script"
+  MARKER="$fixture/mock-adopted"
+  require_root() { :; }
+  preflight() {
+    # shellcheck disable=SC1090
+    source "$repo/platforms/archlinux/tools/kartouche.sh"
+    KT_NAME='kmos Adopt Headless'
+    PACKAGES=(git)
+  }
+  ask() { :; }
+  select_aur_helper() { printf 'yay\n'; }
+  pacman() { [[ $1 == -Syu && $2 == --needed ]]; }
+  enable_ssh() { :; }
+  offer_hostname() { :; }
+  create_accounts() { :; }
+  aur_builder() { printf 'builder\n'; }
+  choose_builder() { :; }
+  install_aur() { :; }
+  install_appearance() { :; }
+  remove_accounts() { :; }
+  guided
+) > "$fixture/guided.stdout" 2> "$fixture/guided.stderr"
+[[ -f "$fixture/mock-adopted" ]]
+for label in 'Review adoption before approval' 'Choose AUR helper' 'Review hostname and accounts' 'Review old-account removals'; do
+  grep -Fq "$label" "$fixture/guided.stderr"
+done
+grep -Fq '3 ok' "$fixture/guided.stderr"
+
 printf 'Arch adoption Kartouche preflight: OK (fixtures only).\n'

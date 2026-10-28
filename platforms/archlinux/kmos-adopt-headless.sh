@@ -31,6 +31,14 @@ EOF
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; return 1; }
 note() { printf '%s\n' "$*" >&2; }
+adoption_banner() {
+  if declare -F kt_banner >/dev/null; then kt_banner "$1"; fi
+  return 0
+}
+adoption_summary() {
+  if declare -F kt_summary >/dev/null; then kt_summary rail "$@"; fi
+  return 0
+}
 ask() {
   local reply
   while true; do
@@ -508,13 +516,16 @@ guided() {
   local helper builder
   require_root || return 1
   preflight || return 1
+  adoption_banner 'Review adoption before approval'
   note 'Review the package transaction; Arch upgrades and pacman hooks may affect running services.'
   note 'Take a VPS snapshot or have provider console access. No automatic configuration backups are retained.'
   ask 'Continue with KMOS adoption?' || { note 'Cancelled without changes.'; return 0; }
+  adoption_banner 'Choose AUR helper'
   helper=$(select_aur_helper) || return 1
   note 'Running pacman -Syu --needed; review package replacement prompts.'
   pacman -Syu --needed -- "${PACKAGES[@]}" || return 1
   enable_ssh || return 1
+  adoption_banner 'Review hostname and accounts'
   offer_hostname || return 1
   create_accounts || return 1
   builder=$(aur_builder) || return 1
@@ -523,17 +534,21 @@ guided() {
   install_aur "$builder" "$helper" || return 1
   install_appearance || return 1
   [[ ! -e "$MARKER" && ! -L "$MARKER" ]] && install -Dm0644 /dev/stdin "$MARKER" <<< 'Arch headless adoption (not ISO-installed KMOS)'
+  adoption_banner 'Review old-account removals'
   remove_accounts || return 1
   note 'KMOS headless adoption completed; sshd is enabled and active, and network services were not reconfigured.'
+  adoption_summary 'Packages and AUR installed' ok 'Accounts reviewed' ok 'Network services unchanged' ok
 }
 users_only() {
   require_root --users-only || return 1
   preflight || return 1
+  adoption_banner 'Review account changes'
   note 'Accounts-only mode: no package transactions, AUR builds or SSH/network changes.'
   ask 'Continue to account management?' || { note 'Cancelled without changes.'; return 0; }
   repair_admin_sudo || return 1
   create_accounts || return 1
-  remove_accounts
+  remove_accounts || return 1
+  adoption_summary 'Accounts reviewed' ok 'Packages and network unchanged' ok
 }
 
 main() {
