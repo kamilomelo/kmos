@@ -4,6 +4,13 @@
 # shellcheck disable=SC2154
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The finishing pass runs from a complete checkout; use its pinned v6 renderer.
+# shellcheck disable=SC1090,SC1091
+source "$SCRIPT_DIR/../../tools/kartouche.sh"
+KT_NAME='kmos KDE Finish'
+KT_DESCRIPTION='Reviewable desktop defaults; existing settings need approval.'
+KT_ACCENT='38;5;244'
+[[ ${TERM:-} == linux ]] && KT_ACCENT=37
 mode= user= home= backup_stamp= temp= changes=0 skipped=0 backup_bytes=0
 system_backup_root=/var/backups/kmos
 font_dir=/usr/local/share/fonts/kmos
@@ -362,6 +369,7 @@ main() {
         command -v sudo >/dev/null || { fail 'sudo is required for SDDM repair.'; return 1; }
         exec sudo -- "$SCRIPT_DIR/kmos-kde-finish.sh" --repair-sddm
       fi
+      kt_banner 'Repair managed SDDM settings'
       repair_sddm
       return
       ;;
@@ -397,12 +405,18 @@ main() {
   backup_stamp=$(date +%Y%m%d-%H%M%S)
   temp=$(mktemp -d) || return 1
   trap 'rm -rf -- "$temp"' EXIT
+  if [[ "$mode" == plan ]]; then
+    kt_banner 'Read-only KDE defaults plan'
+  else
+    kt_banner 'Review KDE defaults'
+  fi
   if [[ "$all_users" == yes ]]; then
     printf 'KMOS KDE defaults for all local regular users: %s (%s). Existing files require individual approval.\n' "${accounts[*]}" "$mode"
   else
     printf 'KMOS KDE defaults for %s (%s). Existing files require individual approval.\n' "$user" "$mode"
   fi
   if [[ "$mode" == apply && "$from_upgrade" == no ]]; then
+    kt_banner 'Approve KDE defaults review'
     printf 'Type APPLY KMOS to add missing defaults and review existing files: ' >&2
     read -r answer </dev/tty || return 1
     [[ "$answer" == 'APPLY KMOS' ]] || { fail 'Cancelled without changes.'; return 1; }
@@ -422,6 +436,13 @@ main() {
     printf 'Maximum existing-config backup payload if you approve every replacement: %s bytes (not packages or home directories).\n' "$backup_bytes"
   fi
   printf 'Done. Skipped existing files: %s. No panels, wallpaper choices, packages or network services changed.\n' "$skipped"
+  if [[ "$mode" == plan ]]; then
+    kt_summary rail 'KDE defaults reviewed' ok 'No existing settings replaced' ok
+  else
+    local skipped_state=ok
+    if ((skipped > 0)); then skipped_state=skipped; fi
+    kt_summary rail 'KDE defaults reviewed' ok "Existing files skipped: $skipped" "$skipped_state"
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
