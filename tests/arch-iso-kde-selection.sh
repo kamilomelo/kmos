@@ -29,6 +29,27 @@ trap 'rm -rf -- "$fixture"' EXIT
 ) > "$fixture/planned" 2>&1
 grep -Fq 'KDE desktop (choose packages)' "$fixture/planned"
 
+# Exercise the real custom-KDE AUR selector through the ISO installer's path.
+(
+  source "$base"
+  source "$repo/platforms/archlinux/desktop/kde/kmos-kde-package-select.sh"
+  KDE_PROFILE=custom
+  choose_kde_packages() { :; }
+  read_selector_line() {
+    if [[ -z ${aur_answer_seen:-} ]]; then
+      printf -v "$1" '%s' yay
+      aur_answer_seen=1
+    else
+      printf -v "$1" '%s' ''
+    fi
+  }
+  pacman() { :; }
+  collect_desktop_config <<< '2'
+  [[ $INSTALL_KDE == yes && $INSTALL_KDE_AUR == yes && $AUR_HELPER == yay ]]
+  [[ ${#SELECTED_KDE_AUR_PACKAGES[@]} == 0 ]]
+) > "$fixture/custom-yay" 2>&1
+grep -Fq 'AUR picks' "$fixture/custom-yay"
+
 if (
   source "$base"
   KDE_PROFILE=custom

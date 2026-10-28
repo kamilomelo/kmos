@@ -26,6 +26,10 @@ grep -Fq 'Invalid selection. Enter a listed number or name.' "$fixture/invalid-h
 choice=$(prompt_choice 'AUR helper options' yay paru yay <<< '' 2> "$fixture/yay-default")
 [[ $choice == yay ]]
 grep -Fq 'Select number or name [1-${#options[@]}] (Enter:' "$repo/platforms/archlinux/kmos-archlinux-install.sh"
+if ask_yes_no 'Install an AUR helper?' yes <<< $'yay\nn' 2> "$fixture/aur-yes-no"; then
+  printf 'yay was mistaken for yes at the AUR yes/no question.\n' >&2; exit 1
+fi
+grep -Fq 'Please answer yes or no.' "$fixture/aur-yes-no"
 
 pacman() { [[ $1 == -Si && $2 == impala ]]; }
 KDE_PROFILE=full

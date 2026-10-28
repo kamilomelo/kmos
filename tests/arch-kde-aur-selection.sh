@@ -54,7 +54,26 @@ cmp "$fixture/allowed-aur" "$fixture/repo-aur"
   [[ "$INSTALL_KDE_AUR" == yes && "$AUR_HELPER" == paru ]]
   [[ ${#SELECTED_KDE_AUR_PACKAGES[@]} == 0 ]]
 ) > "$fixture/default-aur" 2>&1
-grep -Fq 'Install AUR? [Y/n]:' "$fixture/default-aur"
+grep -Fq 'Install AUR? [Y/n, or type paru/yay to select helper]:' "$fixture/default-aur"
+for answer in yay 'y yay' 'y 2'; do
+  (
+    source "$selector"
+    input=0
+    read_selector_line() {
+      ((input += 1))
+      case "$answer:$input" in
+        yay:1) printf -v "$1" '%s' yay ;;
+        'y yay:1'|'y 2:1') printf -v "$1" '%s' y ;;
+        'y yay:2') printf -v "$1" '%s' yay ;;
+        'y 2:2') printf -v "$1" '%s' 2 ;;
+        *) printf -v "$1" '%s' '' ;;
+      esac
+    }
+    select_kde_aur
+    [[ $INSTALL_KDE_AUR == yes && $AUR_HELPER == yay ]]
+    if [[ $answer == yay ]]; then [[ $input == 2 ]]; else [[ $input == 3 ]]; fi
+  ) > "$fixture/yay-${answer// /-}" 2>&1
+done
 if (
   source "$selector"
   SELECTED_KDE_AUR_PACKAGES=(unapproved-aur)

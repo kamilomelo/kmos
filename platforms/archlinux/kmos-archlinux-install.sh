@@ -293,8 +293,8 @@ ask_yes_no() {
     fi
 
     case "$answer" in
-      [Yy]*) return 0 ;;
-      [Nn]*) return 1 ;;
+      [Yy]|[Yy][Ee][Ss]) return 0 ;;
+      [Nn]|[Nn][Oo]) return 1 ;;
       *) warn "Please answer yes or no." ;;
     esac
   done

@@ -55,22 +55,26 @@ select_live_packages() {
 
 select_kde_aur() {
   local selection=
+  local helper_selected=no
   local -a names=()
   SELECTED_KDE_AUR_PACKAGES=()
-  printf 'Install AUR? [Y/n]: ' >&2
+  printf 'Install AUR? [Y/n, or type paru/yay to select helper]: ' >&2
   read_selector_line selection || return 1
   case "$selection" in
     ''|[Yy]|[Yy][Ee][Ss]) INSTALL_KDE_AUR=yes ;;
     [Nn]|[Nn][Oo]) INSTALL_KDE_AUR=no; return 0 ;;
-    *) printf 'Answer yes or no; selection cancelled.\n' >&2; return 1 ;;
+    paru|yay) INSTALL_KDE_AUR=yes; AUR_HELPER=$selection; helper_selected=yes ;;
+    *) printf 'Answer yes, no, paru or yay; selection cancelled.\n' >&2; return 1 ;;
   esac
-  printf 'AUR helper [paru/yay; default paru]: ' >&2
-  read_selector_line selection || return 1
-  case "$selection" in
-    ''|1|paru) AUR_HELPER=paru ;;
-    2|yay) AUR_HELPER=yay ;;
-    *) printf 'Unknown AUR helper; selection cancelled.\n' >&2; return 1 ;;
-  esac
+  if [[ $helper_selected == no ]]; then
+    printf 'AUR helper [1 paru / 2 yay; Enter: paru]: ' >&2
+    read_selector_line selection || return 1
+    case "$selection" in
+      ''|1|paru) AUR_HELPER=paru ;;
+      2|yay) AUR_HELPER=yay ;;
+      *) printf 'Unknown AUR helper; selection cancelled.\n' >&2; return 1 ;;
+    esac
+  fi
   if command -v fzf >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
     selection=$(printf '%s\n' "${OPTIONAL_KDE_AUR_PACKAGES[@]}" | fzf --multi --prompt='Optional AUR > ' --header='TAB selects, ENTER confirms; ESC cancels') || return 1
     [[ -n "$selection" ]] && mapfile -t names <<< "$selection"
