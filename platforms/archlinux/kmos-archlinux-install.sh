@@ -1152,6 +1152,9 @@ verify_kde_repository_packages() (
   local -a missing=()
   [[ -r "$kde_installer" ]] || die 'Complete local KDE sources are required to verify packages before formatting.'
   # Sourcing in a subshell keeps the ISO installer's globals intact.
+  # Show the choices actually collected above, not the KDE installer's defaults.
+  kmos_AUR_HELPER=$AUR_HELPER
+  kmos_INSTALL_AUR=$INSTALL_KDE_AUR
   # shellcheck disable=SC1090
   source "$kde_installer"
   KDE_PROFILE=$selected_profile

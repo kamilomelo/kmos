@@ -67,13 +67,16 @@ select_kde_aur() {
     *) printf 'Answer yes, no, paru or yay; selection cancelled.\n' >&2; return 1 ;;
   esac
   if [[ $helper_selected == no ]]; then
-    printf 'AUR helper [1 paru / 2 yay; Enter: paru]: ' >&2
-    read_selector_line selection || return 1
-    case "$selection" in
-      ''|1|paru) AUR_HELPER=paru ;;
-      2|yay) AUR_HELPER=yay ;;
-      *) printf 'Unknown AUR helper; selection cancelled.\n' >&2; return 1 ;;
-    esac
+    printf 'AUR helper options:\n  1) paru\n  2) yay\n' >&2
+    while true; do
+      printf 'Select helper [1-2 or name] (Enter: 1 paru): ' >&2
+      read_selector_line selection || return 1
+      case "$selection" in
+        ''|1|paru) AUR_HELPER=paru; break ;;
+        2|yay) AUR_HELPER=yay; break ;;
+        *) printf 'Invalid selection. Enter 1, 2, paru or yay.\n' >&2 ;;
+      esac
+    done
   fi
   if command -v fzf >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
     selection=$(printf '%s\n' "${OPTIONAL_KDE_AUR_PACKAGES[@]}" | fzf --multi --prompt='Optional AUR > ' --header='TAB selects, ENTER confirms; ESC cancels') || return 1

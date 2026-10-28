@@ -74,6 +74,9 @@ for answer in yay 'y yay' 'y 2'; do
     if [[ $answer == yay ]]; then [[ $input == 2 ]]; else [[ $input == 3 ]]; fi
   ) > "$fixture/yay-${answer// /-}" 2>&1
 done
+grep -Fq '  1) paru' "$fixture/yay-y-yay"
+grep -Fq '  2) yay' "$fixture/yay-y-yay"
+grep -Fq 'Select helper [1-2 or name] (Enter: 1 paru):' "$fixture/yay-y-yay"
 if (
   source "$selector"
   SELECTED_KDE_AUR_PACKAGES=(unapproved-aur)

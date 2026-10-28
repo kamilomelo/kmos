@@ -29,26 +29,37 @@ trap 'rm -rf -- "$fixture"' EXIT
 ) > "$fixture/planned" 2>&1
 grep -Fq 'KDE desktop (choose packages)' "$fixture/planned"
 
-# Exercise the real custom-KDE AUR selector through the ISO installer's path.
-(
-  source "$base"
-  source "$repo/platforms/archlinux/desktop/kde/kmos-kde-package-select.sh"
-  KDE_PROFILE=custom
-  choose_kde_packages() { :; }
-  read_selector_line() {
-    if [[ -z ${aur_answer_seen:-} ]]; then
-      printf -v "$1" '%s' yay
-      aur_answer_seen=1
-    else
-      printf -v "$1" '%s' ''
-    fi
-  }
-  pacman() { :; }
-  collect_desktop_config <<< '2'
-  [[ $INSTALL_KDE == yes && $INSTALL_KDE_AUR == yes && $AUR_HELPER == yay ]]
-  [[ ${#SELECTED_KDE_AUR_PACKAGES[@]} == 0 ]]
-) > "$fixture/custom-yay" 2>&1
-grep -Fq 'AUR picks' "$fixture/custom-yay"
+# Exercise the real custom-KDE selector, package check and approval display.
+for helper_choice in direct via-menu; do
+  (
+    source "$base"
+    source "$repo/platforms/archlinux/desktop/kde/kmos-kde-package-select.sh"
+    KDE_PROFILE=custom
+    choose_kde_packages() { :; }
+    input=0
+    read_selector_line() {
+      ((input += 1))
+      if [[ $helper_choice == direct ]]; then
+        case $input in 1) printf -v "$1" '%s' yay ;; *) printf -v "$1" '%s' '' ;; esac
+      else
+        case $input in 1) printf -v "$1" '%s' y ;; 2) printf -v "$1" '%s' yay ;; *) printf -v "$1" '%s' '' ;; esac
+      fi
+    }
+    pacman() { :; }
+    collect_desktop_config <<< '2'
+    [[ $INSTALL_KDE == yes && $INSTALL_KDE_AUR == yes && $AUR_HELPER == yay ]]
+    [[ ${#SELECTED_KDE_AUR_PACKAGES[@]} == 0 ]]
+    BOOT_MENU_CHOICE_MADE=1
+    TARGET_DISK=/dev/fixture-disk
+    CONFIRMED_DISK_ID=8:0 CONFIRMED_DISK_SIZE=42949672960
+    BOOT_PARTITION=/dev/fixture-efi BOOT_PARTITION_ACTION=reuse
+    ROOT_PARTITION=/dev/fixture-root PRIMARY_USER=fixture
+    confirm_install_plan <<< FORMAT
+    [[ $FORMAT_APPROVED == 1 ]]
+  ) > "$fixture/custom-yay-$helper_choice" 2>&1
+  [[ $(grep -Ec 'AUR helper[[:space:]]+yay' "$fixture/custom-yay-$helper_choice") -ge 2 ]]
+  ! grep -Eq 'AUR helper[[:space:]]+paru' "$fixture/custom-yay-$helper_choice"
+done
 
 if (
   source "$base"
