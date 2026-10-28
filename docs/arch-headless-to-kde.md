@@ -17,7 +17,9 @@ SDDM, logged into Plasma, and retained working internet (ping). The login screen
 showed the intended image, but its background appeared white instead of the
 expected black. The packaged Breeze `Background.qml` hides the configured black
 color behind images; a targeted repair is available, but its appearance still
-needs verification in a guest. On a KMOS-managed Breeze login screen, run
+needs verification on this older upgraded VM. A **fresh ISO KDE install from
+`main`** was subsequently reported to show the image over black in an isolated
+x86 VM. On an older KMOS-managed Breeze login screen, run
 `./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --black-sddm-background`
 from an updated checkout to reveal that black color behind the existing PNG.
 The script prompts for sudo, backs up the original QML under
@@ -47,14 +49,16 @@ installs the shared Arch CLI tools. Choosing KDE adds mandatory KDE base,
 KDE apps (including Spectacle and Kdenlive), and desktop productivity
 (`firefox-developer-edition`). Kamilo productivity is asked with **Yes** as the
 default; the full package list is below. The free-text official-repository
-package prompt remains. AUR is asked separately (yes by default): choose `paru` or
-`yay`, then select optional AUR packages by name or with `fzf` when already
+package prompt remains. AUR is asked separately (yes by default): type `yay`
+or `paru` there, or answer yes and select the helper by number or name. Then
+select optional AUR packages by name or with `fzf` when already
 available; `tododo-bin` is included only when AUR is approved. All choices and
 local manifests are validated **before** final disk approval/format. There is
 no Firefox pruning policy; guided installs also skip the old font/package
 cleanup. Explicit `--profile full|noapps` remains for compatibility, not the
 recommended flow. The guided KDE install has a reported successful hardware
-test; see the [v1.0.0 release notes](./releases/v1.0.0.md) for remaining limits.
+test; see the [v1.1.1 release notes](./releases/v1.1.1.md) for the latest VM
+result and remaining limits.
 
 ### Guided KDE package choices
 
@@ -103,9 +107,10 @@ if none exist, and preserves unrelated or custom SDDM configurations. It leaves
 the old theme copy, user files, other desktop settings and running sessions
 untouched. Changes take effect the next time the greeter starts; do not restart
 SDDM during an unsaved desktop session.
-Future KMOS installs and upgrades use packaged Breeze directly rather than
-copying its QML. Breeze's upstream image scaling may differ from the old KMOS
-copy; preserving an updatable login screen takes priority over that tweak.
+Future KMOS installs and upgrades use Breeze directly rather than copying its
+entire theme. Fresh ISO installs reveal the black color behind the transparent
+image with a targeted change to Breeze's `Background.qml`; a Breeze package
+update may overwrite that change, so recheck the greeter afterward.
 
 On a **new headless → KDE upgrade**, run the script without arguments to
 choose the optional Kamilo set and extra official-repository packages:

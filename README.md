@@ -1,169 +1,55 @@
 # KMOS
 
-KMOS installs Arch Linux x86_64 as a headless system or a KDE desktop. Fresh
-KDE installs and headless → KDE upgrades are available on `main`.
+KMOS installs Arch Linux x86_64 headless or with KDE. It also supports a
+guided KMOS headless → KDE upgrade and experimental adoption of an installed,
+headless Arch system. Other platforms have separate workflows below.
 
 ## Fresh Arch install
 
-1. Back up your data and boot an Arch x86_64 ISO on the target machine. Connect
-   Ethernet, or use the [live-ISO Wi-Fi helper](#helpers) from a local copy of
-   this repository.
-2. On the live ISO, get the checkout and start the installer:
-
-   ```bash
-   git clone https://github.com/kamilomelo/kmos.git
-   cd kmos
-   ./kmos-install.sh
-   ```
-
-3. Choose **headless** or **KDE**, then review the optional package and AUR
-   choices. The installer shows your selections before disk approval.
-4. Review the disk and EFI plan before typing **`FORMAT`**. The installer
-   **formats the selected root partition**; an existing FAT EFI partition can
-   be **reused without formatting** or separately approved for formatting.
-   Formatting an existing EFI requires typing **`EREASE`**, then the final
-   `FORMAT`. This forcibly erases all boot files there, **including Windows**;
-   verify the selected EFI device in the plan before approving it.
-   Partition edits made in `cfdisk` may take effect even before `FORMAT`.
-   Reboot when installation finishes.
-
-If KDE package installation fails **after** the base system and bootloader
-were installed, do not rerun the ISO installer. From the live ISO, update your
-checkout, confirm that the same target is still mounted at `/mnt` and its EFI
-at `/mnt/boot`, then run `./kmos-install.sh resume-kde`. It asks for KDE choices
-again and never selects or formats partitions. See the
-[KDE recovery details](./docs/arch-headless-to-kde.md#resume-a-failed-iso-kde-stage).
-
-**Never run the ISO installer on an installed system or VPS.** It is not an
-existing-Arch conversion tool. See the
-[package choices and safety details](./docs/arch-headless-to-kde.md).
-
-## Upgrade a KMOS headless install to KDE
-
-Only use this path on an **installed KMOS headless Arch x86_64** machine, not
-an arbitrary Arch installation. With internet access, run as a regular user:
+Boot an Arch x86_64 live ISO, connect to the internet, and run:
 
 ```bash
-git clone https://github.com/kamilomelo/kmos.git ~/kmos
-cd ~/kmos
-./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight
-./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
+git clone https://github.com/kamilomelo/kmos.git
+cd kmos
+./kmos-install.sh
 ```
 
-The single guided run installs KDE and applies visual defaults to existing
-local regular users with homes under `/home`; new users inherit defaults too.
-Existing personal panels stay intact; differing files require approval and
-are backed up. The live upgrade does **not** install AUR packages or format disks.
+Review the disk and EFI plan before typing **`FORMAT`**: the selected root is
+formatted. Formatting an existing EFI partition requires the separate exact
+**`EREASE`** approval and erases its boot files, including Windows. `cfdisk`
+can write partition changes **before** `FORMAT`. Choose headless or KDE and
+review all package and AUR selections in the final plan.
 
-It separately offers a **next-boot** NetworkManager handoff. Current SSH and
-networking stay active until you reboot. If staging over Wi-Fi, have a local
-screen and keyboard ready: after reboot, reconnect Wi-Fi in KDE before SSH
-returns. Existing iwd Wi-Fi passwords are not imported. If staging is declined
-or fails its checks, iwd/dhcpcd remain in charge. See the
-[upgrade and recovery guide](./docs/arch-headless-to-kde.md). Do not rerun the
-upgrade on an already-upgraded KDE system.
+**Never run this ISO installer on an installed system or VPS.** If KDE fails
+after the base install, do not rerun it: with the original target still
+mounted at `/mnt` and `/mnt/boot`, use `./kmos-install.sh resume-kde` from the
+live ISO. See [KDE recovery](./docs/arch-headless-to-kde.md#resume-a-failed-iso-kde-stage).
 
-**Broken KMOS login theme after a Plasma update?** The old `breeze-kmos`
-copy can become incompatible with upgraded Breeze. From a current checkout on
-the installed KDE machine, run
-`./platforms/archlinux/desktop/kde/kmos-kde-finish.sh --repair-sddm`.
-It switches only KMOS's exact old SDDM theme choice to package-maintained
-Breeze and adds KMOS wallpaper settings when safe; it leaves personal KDE
-settings and the old theme files alone. The login screen picks this up on its
-next start; it is **not** restarted automatically.
+## Existing Arch systems
 
-## Adopt an existing headless Arch system (VPS)
+- **KMOS headless → KDE:** on a KMOS-installed headless system, run
+  `./platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh --preflight`, then
+  the same script without `--preflight`. It preserves personal settings unless
+  you approve replacements. A network handoff is offered separately; plan for
+  local access when upgrading over Wi-Fi. See the [upgrade guide](./docs/arch-headless-to-kde.md).
+- **Installed headless Arch → KMOS headless (experimental):** run
+  `./platforms/archlinux/kmos-adopt-headless.sh --preflight`, then the same
+  script without `--preflight`. Have a snapshot or provider console available;
+  Arch upgrades and account changes can affect a running VPS. It does not
+  convert an existing KDE installation. See the [adoption guide](./docs/arch-adopt-headless.md).
 
-The **experimental** adoption workflow on `main` sets up an *installed,
-headless Arch Linux x86_64* system, including a VPS, without formatting disks
-or reconfiguring networking. It is not for an Arch ISO or an existing KDE
-desktop. **Never run `./kmos-install.sh` on an installed system.** Keep your
-SSH session open and have a VPS snapshot or provider console available.
+Clone this repository on the installed system before running either workflow.
+Neither workflow formats a disk.
 
-```bash
-git clone https://github.com/kamilomelo/kmos.git ~/kmos-adopt
-cd ~/kmos-adopt
-./platforms/archlinux/kmos-adopt-headless.sh --preflight
-./platforms/archlinux/kmos-adopt-headless.sh
-```
+## Helpers and other platforms
 
-`--preflight` is read-only. The guided run requires a working sudo login or
-root; **wheel membership alone does not grant sudo**. It upgrades Arch, sets up
-headless tools and OpenSSH without restarting active SSH, optionally changes
-the hostname with confirmation, offers account and terminal setup, and requires
-an AUR helper and `tododo-bin`. It asks before granting sudo to a new admin,
-using a per-user rule when needed. Existing settings are preserved where
-possible, but package upgrades can affect running services and there is no
-automatic rollback.
+- [Arch live-ISO Wi-Fi](./platforms/archlinux/tools/kmos-wifi-connect.sh)
+- [Installer USB flasher](./platforms/archlinux/tools/kmos-usb-flasher.sh)
+  (asks you to confirm the destructive device)
+- [Quartz64 Model B](./platforms/archlinuxarm/boards/quartz64b/README.md)
+- [Rocky Linux 10 Minimal](./platforms/rockylinux/kmos-rockylinux-install.sh)
+- [Windows manual guide](./platforms/windows/WINDOWS_SETUP.md)
 
-Choose **paru** (source build) or **yay**. A paru build was killed by SIGKILL on
-one small VPS; OOM has **not** been confirmed. Yay worked on the tested VPS.
-See the [adoption guide](./docs/arch-adopt-headless.md) for package choices,
-checks, paru diagnostics, and safeguards.
-
-To manage users later without reinstalling packages, run from an authorized
-admin account (or provider root console):
-
-```bash
-./platforms/archlinux/kmos-adopt-headless.sh --users-only
-```
-
-This can also offer a per-user sudo repair for existing wheel users. Verify a
-replacement admin's **new SSH login and sudo access** before removing an old
-account; home deletion needs separate approval. Account removal remains
-experimental and has not been field-tested. See the
-[v1.0.0 release notes](./docs/releases/v1.0.0.md) for field results and limits.
-
-## Helpers
-
-- **Prepare an installer USB:** `./platforms/archlinux/tools/kmos-usb-flasher.sh`
-  detects eligible media and confirms the destructive target.
-- **Wi-Fi on the live ISO:** from a local checkout, run
-  `./platforms/archlinux/tools/kmos-wifi-connect.sh` before installing.
-- **Wi-Fi on a headless install:** run
-  `cd /opt/kmos/bin && ./kmos-headless-wifi.sh` to set up iwd with Impala or
-  `iwctl`.
-
-### Kartouche template updates
-
-`./scripts/check-kartouche-update.sh` compares KMOS's pinned Bash template with
-upstream. A separate GitHub Actions workflow also checks weekly or can be run
-with **Run workflow** once this workflow is on the default branch. A failed
-check means the template code, version, or config keys need review; a network
-failure also fails rather than claiming everything is current. The check never
-changes scripts. Enable GitHub notifications for failed Actions runs if you want
-an alert; if GitHub disables schedules in an inactive repository, use the manual
-command or **Run workflow**. To update, review upstream's
-[update instructions](https://github.com/kamilomelo/kartouche/blob/main/UPDATING.md),
-then update the pinned `platforms/archlinux/tools/kartouche.sh` and each
-self-contained KMOS script together, preserving their KMOS-specific config.
-The offline fixtures verify that the embedded code matches the pinned copy.
-
-## Other platforms and work in progress
-
-- [Quartz64 Model B](./platforms/archlinuxarm/boards/quartz64b/README.md):
-  board-specific Arch Linux ARM workflow; do not use the x86 installer.
-- [Rocky Linux 10 Minimal](./platforms/rockylinux/kmos-rockylinux-install.sh):
-  separate post-install workflow, not an Arch install.
-- [Windows](./platforms/windows/WINDOWS_SETUP.md): manual guide; no automated
-  installer.
-- Wi-Fi-only KDE handoff recovery still needs a hardware failure test. See the
-  [v1.0.0 release notes](./docs/releases/v1.0.0.md).
-
-Run `./scripts/check-shell.sh` for local shell checks (requires an already
-installed ShellCheck 0.11.0). KMOS is licensed under the [MIT License](./LICENSE).
-
-## Project structure
-
-```text
-kmos/
-├── kmos-install.sh           Platform entry point
-├── platforms/
-│   ├── archlinux/            x86 installer, KDE, packages, assets, tools
-│   ├── archlinuxarm/         Board-specific ARM workflows
-│   ├── rockylinux/          Rocky Linux post-install workflow
-│   └── windows/             Windows manual guide
-├── docs/                    Upgrade/adoption guides and release notes
-├── scripts/                 Shell checks
-└── tests/                   Non-destructive fixtures
-```
+The fresh x86_64 installer and KDE login were tested in isolated VMs. See the
+[v1.1.1 release notes](./docs/releases/v1.1.1.md) for test scope and limits.
+KMOS is licensed under the [MIT License](./LICENSE).
