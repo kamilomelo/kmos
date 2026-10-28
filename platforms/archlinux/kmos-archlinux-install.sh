@@ -6,6 +6,12 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+# The ISO installer runs from the complete KMOS checkout.
+# shellcheck disable=SC1090,SC1091
+source "$SCRIPT_DIR/tools/kartouche.sh"
+KT_NAME='kmos Arch Linux Install'
+KT_DESCRIPTION='Install Arch Linux headless or with KDE.'
+KT_ACCENT='38;5;244'
 MOUNT_POINT="/mnt"
 WIFI_HANDOFF_DIR="/run/kmos/wifi"
 ARCHISO_DIR="/run/archiso"
@@ -18,6 +24,17 @@ DEBUG_MODE="${kmos_DEBUG:-0}"
 PACMAN_RETRIES="${kmos_PACMAN_RETRIES:-4}"
 STEP_INDEX=0
 STEP_TOTAL=9
+STEP_LABELS=(
+  'Verifying live environment'
+  'Planning target disk'
+  'Collecting all installation choices'
+  'Formatting and mounting'
+  'Setting live system time'
+  'Installing base system'
+  'Configuring target system'
+  'Updating target system'
+  'Installing krub bootloader'
+)
 
 UI_RESET=""
 UI_BOLD=""
@@ -127,6 +144,8 @@ repeat_char() {
 }
 
 init_ui() {
+  if [[ ${TERM:-} == linux ]]; then KT_ACCENT=37; fi
+  if [[ ${TERM:-} == linux || ${ASCII_UI:-${kmos_ASCII_UI:-0}} == 1 ]]; then KT_GLYPHS=ascii; fi
   if [[ -t 2 && "${TERM:-dumb}" != "dumb" ]]; then
     UI_RESET=$'\033[0m'
     UI_BOLD=$'\033[1m'
@@ -232,20 +251,16 @@ progress_bar() {
 
 advance_step() {
   local label="$1"
-  local bar
 
   ((STEP_INDEX += 1))
-  bar="$(progress_bar "$STEP_INDEX" "$STEP_TOTAL")"
-
-  printf '\n%bStep %d/%d%b %s\n' "${UI_HEADER}${UI_BOLD}" "$STEP_INDEX" "$STEP_TOTAL" "$UI_RESET" "$label" >&2
-  printf '  %s\n' "$bar" >&2
+  # The v6 block wrapper owns spacing and its terminal pause; append-only
+  # snapshots never erase pacman, cfdisk or disk-approval output.
+  _kt_print_block "$(kt_render_title 2 "$KT_NAME" "$KT_VERSION"; \
+    kt_render_frame 2 rail "$STEP_INDEX" "$STEP_TOTAL" "$label" "${STEP_LABELS[@]}")"
 }
 
 print_banner() {
-  printf '\n' >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 23)" "$UI_RESET" >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "kmos Arch Linux Install" "$UI_RESET" >&2
-  printf '%b%s%b\n' "${UI_HEADER}${UI_BOLD}" "$(repeat_char "=" 23)" "$UI_RESET" >&2
+  kt_banner
   log "Lean Arch Linux installer for the base system."
   log "This stage prepares partitions, installs base packages, and configures users."
 }
@@ -300,11 +315,14 @@ parse_args() {
 usage() {
   cat <<'EOF'
 Usage: ./kmos-install.sh [--profile full|noapps]
+       ./kmos-install.sh preview-ui
        ./kmos-install.sh resume-kde
        ./kmos-install.sh inspect-krub
        ./kmos-install.sh repair-panel
 
-No argument starts the interactive x86 installation. inspect-krub reports
+No argument starts the interactive x86 installation. preview-ui displays only
+the Kartouche banner and first step; it needs no root and inspects no disks.
+inspect-krub reports
 GRUB and firmware menu entries without changing them. repair-panel disables
 only recognized old KMOS panel hooks; it preserves the personal panel layout.
 resume-kde resumes KDE on a verified, mounted KMOS target at /mnt. It never
@@ -2436,6 +2454,12 @@ main() {
   if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then
     (($# == 1)) || die 'Help does not accept additional arguments.'
     usage
+    return
+  fi
+  if [[ "${1:-}" == preview-ui ]]; then
+    (($# == 1)) || die 'preview-ui does not accept additional arguments.'
+    print_banner
+    advance_step 'Verifying live environment'
     return
   fi
   if [[ "${1:-}" == inspect-krub ]]; then
