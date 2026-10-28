@@ -32,3 +32,4 @@ jobs:
           ./tests/arch-headless-kde-kartouche.sh
           ./tests/arch-kde-finish-kartouche.sh
           ./tests/arch-adopt-headless-kartouche.sh
+          ./tests/arch-adopt-pacman-style.sh

@@ -7,13 +7,14 @@ PRESETS="$SCRIPT_DIR/assets/starship-presets"
 MARKER=/usr/share/kmos/adopted-headless
 BASHRC=/etc/bash.bashrc
 STARSHIP_PROFILE=/etc/profile.d/10-kmos-starship.sh
+PACMAN_CONFIG=/etc/pacman.conf
 SHARE_KMOS=/usr/share/kmos
 SUDO_RULE_DIR=/etc/sudoers.d
 declare -a PACKAGES=() USERS_CREATED=()
 
 usage() {
   cat <<'EOF'
-Usage: ./platforms/archlinux/kmos-adopt-headless.sh [--preflight|--users-only|--help]
+Usage: ./platforms/archlinux/kmos-adopt-headless.sh [--preflight|--users-only|--pacman-style|--help]
 
 Guided adoption of an INSTALLED Arch x86_64 headless machine (including a VPS).
 Reviews packages, accounts, and terminal appearance before changes. Builds
@@ -24,6 +25,8 @@ network services. Never formats disks or converts an existing KDE desktop.
 Account deletion is final.
 --preflight reports eligibility without root or changes; --help needs no root.
 --users-only manages accounts without rerunning pacman, AUR, or appearance setup.
+--pacman-style only updates pacman's Color, ParallelDownloads and ILoveCandy
+after confirmation, with a private backup; it never reruns adoption.
 An authorized admin can also grant sudo to existing wheel users in --users-only.
 Have a VPS snapshot or provider console available before a package upgrade.
 EOF
@@ -153,6 +156,7 @@ preflight() {
     else printf '  %-18s absent\n' "$pkg"; fi
   done
   printf 'Appearance: KMOS Starship presets and managed Bash integration; conflicting configuration is skipped.\n'
+  printf 'Pacman after approval: Color, ILoveCandy, and 6 parallel downloads unless a custom active value exists; original config backed up if changed.\n'
   printf 'No changes made. Guided mode offers an optional hostname change and enables/starts sshd without changing its config; network services, bootloader and disk settings stay intact.\n'
   if [[ "$styled" == yes ]]; then
     kt_summary rail 'Installed Arch eligible' ok 'Packages and accounts inventoried' ok 'Host settings unchanged' ok
@@ -460,6 +464,65 @@ fi
 EOF
   fi
 }
+configure_pacman_style() (
+  local config=$PACMAN_CONFIG candidate backup
+  if [[ ! -f $config || -L $config || -L ${config%/*} ]]; then
+    note "Pacman config is missing, symlinked or unsafe: $config; leaving it untouched."
+    return 0
+  fi
+  [[ $(grep -Ec '^\[options\]$' "$config") == 1 ]] || {
+    fail "Expected one [options] section in $config; leaving it untouched."; return 1;
+  }
+  candidate=$(mktemp "${config}.kmos.XXXXXXXX") || return 1
+  trap 'rm -f -- "$candidate"' EXIT
+  cp -p -- "$config" "$candidate" || return 1
+  if ! grep -Fxq Color "$candidate"; then
+    if grep -Fxq '#Color' "$candidate"; then
+      sed -i '0,/^#Color$/s//Color/' "$candidate"
+    else
+      sed -i '/^\[options\]$/a Color' "$candidate"
+    fi
+  fi
+  # Arch's active default is 5. Leave other active values to their owner.
+  if grep -Eq '^ParallelDownloads[[:space:]]*=[[:space:]]*5[[:space:]]*$' "$candidate"; then
+    sed -i 's/^ParallelDownloads[[:space:]]*=[[:space:]]*5[[:space:]]*$/ParallelDownloads = 6/' "$candidate"
+  elif ! grep -Eq '^ParallelDownloads[[:space:]]*=' "$candidate"; then
+    if grep -Eq '^#ParallelDownloads[[:space:]]*=' "$candidate"; then
+      sed -i '0,/^#ParallelDownloads[[:space:]]*=/s/^#ParallelDownloads[[:space:]]*=.*/ParallelDownloads = 6/' "$candidate"
+    else
+      sed -i '/^\[options\]$/a ParallelDownloads = 6' "$candidate"
+    fi
+  fi
+  if ! grep -Fxq ILoveCandy "$candidate"; then
+    sed -i '/^\[options\]$/a ILoveCandy' "$candidate"
+  fi
+  if cmp -s -- "$config" "$candidate"; then
+    note "Pacman presentation already configured; $config unchanged."
+    return 0
+  fi
+  backup=$(mktemp "${config}.kmos-backup.XXXXXXXX") || return 1
+  cp -p -- "$config" "$backup" || return 1
+  chmod 0600 -- "$backup" || return 1
+  chmod --reference="$config" "$candidate" || return 1
+  chown --reference="$config" "$candidate" || return 1
+  [[ -f $config && ! -L $config ]] || { fail 'Pacman config changed while staging; refusing replacement.'; return 1; }
+  mv -T -- "$candidate" "$config" || return 1
+  note "Pacman presentation configured; original saved privately at $backup."
+)
+
+pacman_style_only() {
+  [[ -r /etc/os-release ]] || { fail 'Cannot identify the OS.'; return 1; }
+  # shellcheck disable=SC1091
+  [[ $(. /etc/os-release; printf '%s' "${ID:-}") == arch && $(uname -m) == x86_64 ]] || {
+    fail 'Only installed Arch Linux x86_64 is supported.'; return 1;
+  }
+  [[ -f "$MARKER" && ! -L "$MARKER" ]] || { fail 'Adoption has not completed; use guided adoption first.'; return 1; }
+  require_root --pacman-style || return 1
+  ask 'Configure pacman appearance (backup existing config; preserve custom parallel downloads)?' || {
+    note 'Pacman config unchanged.'; return 0;
+  }
+  configure_pacman_style
+}
 remove_account() {
   local name=$1 home login count=0 entry
   regular_user "$name" || { fail 'Only regular /home users can be removed.'; return 1; }
@@ -522,6 +585,7 @@ guided() {
   ask 'Continue with KMOS adoption?' || { note 'Cancelled without changes.'; return 0; }
   adoption_banner 'Choose AUR helper'
   helper=$(select_aur_helper) || return 1
+  configure_pacman_style || return 1
   note 'Running pacman -Syu --needed; review package replacement prompts.'
   pacman -Syu --needed -- "${PACKAGES[@]}" || return 1
   enable_ssh || return 1
@@ -556,6 +620,7 @@ main() {
     --help|-h) (($# <= 1)) || { usage >&2; return 2; }; usage ;;
     --preflight) (($# == 1)) || { usage >&2; return 2; }; preflight ;;
     --users-only) (($# == 1)) || { usage >&2; return 2; }; users_only ;;
+    --pacman-style) (($# == 1)) || { usage >&2; return 2; }; pacman_style_only ;;
     --guided) (($# == 0)) || { usage >&2; return 2; }; guided ;;
     *) usage >&2; return 2 ;;
   esac

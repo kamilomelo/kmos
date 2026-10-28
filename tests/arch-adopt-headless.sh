@@ -96,6 +96,7 @@ bash -n "$script"
   regular_user() { [[ "$1" == builder ]]; }
   is_admin() { [[ "$1" == builder ]]; }
   pacman() { printf 'pacman %s\n' "$*" >> "$fixture/order"; }
+  configure_pacman_style() { :; } # Never touch the host's pacman.conf.
   choose_builder() { printf 'builder %s\n' "$1" >> "$fixture/order"; }
   enable_ssh() { printf 'enable sshd\n' >> "$fixture/order"; }
   offer_hostname() { printf 'hostname\n' >> "$fixture/order"; }

@@ -15,6 +15,15 @@ cd ~/kmos
 
 `--preflight` needs no root and changes nothing. The guided script requests
 sudo when needed. Review the proposed packages and confirm before changes.
+After approval, guided adoption enables pacman's `Color`, adds `ILoveCandy`,
+and sets `ParallelDownloads = 6` when the value is absent, commented, or Arch's
+active default of 5. It preserves other active values and pacman settings,
+including any deliberately enabled download timeout override. When changes
+are needed, the original config is
+saved privately as `/etc/pacman.conf.kmos-backup.*`; a symlinked or missing
+config is left untouched. On an already adopted host, run
+`./platforms/archlinux/kmos-adopt-headless.sh --pacman-style` to review and
+apply **only** these pacman settings without repeating adoption or AUR builds.
 It uses `pacman -Syu --needed`: an Arch upgrade can upgrade existing packages,
 run hooks, and require a later reboot even though KMOS does not deliberately
 restart SSH, networking, or the VPS. Do not use a partial upgrade.
@@ -98,7 +107,8 @@ Home deletion is irreversible; use a provider snapshot if you need recovery.
 KMOS installs Starship presets and a small managed Bash prompt integration.
 It leaves existing personal dotfiles alone, skips conflicting global prompt
 configurations and differing presets, and does not duplicate settings on rerun.
-There is **no persistent configuration backup or automatic rollback**. The
+Aside from the pacman-config backup above, there is **no persistent configuration
+backup or automatic rollback**. The
 script cleans up its temporary AUR build directory when the build returns, but
 normal pacman caches remain managed by pacman. An interrupted run may leave
 packages or newly created accounts in place; inspect the system and rerun.

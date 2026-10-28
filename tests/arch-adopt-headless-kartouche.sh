@@ -97,6 +97,7 @@ grep -Fq 'Review account changes' "$fixture/cancel.stderr"
   ask() { :; }
   select_aur_helper() { printf 'yay\n'; }
   pacman() { [[ $1 == -Syu && $2 == --needed ]]; }
+  configure_pacman_style() { :; } # Never touch the host's pacman.conf.
   enable_ssh() { :; }
   offer_hostname() { :; }
   create_accounts() { :; }
