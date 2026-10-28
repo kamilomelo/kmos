@@ -34,6 +34,11 @@ name) is validated and shown for a second confirmation before `hostnamectl`
 sets it. This does not edit `/etc/hosts`, provider DNS, SSH settings, or network
 services; check any old hostname references yourself. `--users-only` does not
 offer or change the hostname.
+Minimal Arch installs need not include the separate `hostname` command; the
+current hostname is read from `/proc/sys/kernel/hostname` without installing a
+new package. If an older adoption run stopped at this step, its pacman upgrade
+and SSH enablement may already have happened; review that partial state before
+rerunning guided adoption from an updated checkout.
 
 The package list includes the headless KMOS CLI set (including fastfetch), plus
 the base tools needed for adoption. `openssh` is installed if missing; the

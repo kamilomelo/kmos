@@ -13,6 +13,9 @@ bash -n "$script"
 (
   # shellcheck disable=SC1090
   source "$script"
+  # Minimal Arch need not install the separate hostname executable.
+  hostname() { printf 'Unexpected hostname command.\n' >&2; return 1; }
+  [[ $(current_hostname) == "$(</proc/sys/kernel/hostname)" ]]
   eligible() { :; }
   installed() { [[ "$1" == nvidia-utils ]]; }
   has_nvidia() { return 0; }
@@ -116,7 +119,7 @@ bash -n "$script"
   for name in '' '-vps' 'vps-' 'vps..example' 'vps.' 'vps_name' 'vps name' 'UPPER' "$(printf '%064d' 0)"; do
     if valid_hostname "$name"; then printf 'Accepted invalid hostname: %s\n' "$name" >&2; exit 1; fi
   done
-  hostname() { printf 'old-vps\n'; }
+  current_hostname() { printf 'old-vps\n'; }
   hostnamectl() { printf '%s\n' "$*" >> "$fixture/hostname-changes"; }
   ask() { return 1; }
   offer_hostname

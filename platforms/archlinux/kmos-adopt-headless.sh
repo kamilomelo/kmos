@@ -55,6 +55,12 @@ input() {
   printf '%s\n' "$answer"
 }
 installed() { pacman -Qq "$1" >/dev/null 2>&1; }
+current_hostname() {
+  local value
+  IFS= read -r value </proc/sys/kernel/hostname || return 1
+  [[ -n $value ]] || return 1
+  printf '%s\n' "$value"
+}
 is_admin() { id -nG "$1" 2>/dev/null | tr ' ' '\n' | grep -Fxq wheel; }
 regular_user() {
   local name=$1 entry uid home shell
@@ -119,9 +125,10 @@ packages_for_host() {
   return 0
 }
 preflight() {
-  local pkg entry name _ home styled=no renderer="$SCRIPT_DIR/tools/kartouche.sh"
+  local pkg entry name _ home hostname_value styled=no renderer="$SCRIPT_DIR/tools/kartouche.sh"
   eligible || return 1
   packages_for_host || return 1
+  hostname_value=$(current_hostname) || { fail 'Cannot read current hostname.'; return 1; }
   # The optional renderer affects only presentation, not adoption eligibility.
   if [[ -f "$renderer" && -r "$renderer" && ! -L "$renderer" ]]; then
     # shellcheck disable=SC1090,SC1091
@@ -135,7 +142,7 @@ preflight() {
     fi
   fi
   printf 'Arch headless x86_64: eligible\nPackages (pacman upgrade + --needed):\n'
-  printf 'Current hostname: %s (optional change in guided mode)\n' "$(hostname)"
+  printf 'Current hostname: %s (optional change in guided mode)\n' "$hostname_value"
   for pkg in "${PACKAGES[@]}"; do
     if installed "$pkg"; then printf '  %-18s installed\n' "$pkg"; else printf '  %-18s to install\n' "$pkg"; fi
   done
@@ -181,7 +188,7 @@ valid_hostname() {
 }
 offer_hostname() {
   local current name
-  current=$(hostname) || { fail 'Cannot read current hostname.'; return 1; }
+  current=$(current_hostname) || { fail 'Cannot read current hostname.'; return 1; }
   ask "Change hostname (currently $current)?" || return 0
   while true; do
     name=$(input 'New hostname (lowercase DNS name; blank to cancel): ') || return 1

@@ -14,7 +14,7 @@ for term in xterm-256color linux; do
     eligible() { :; }
     packages_for_host() { PACKAGES=(git openssh); }
     installed() { [[ $1 == git ]]; }
-    hostname() { printf 'fixture-arch\n'; }
+    current_hostname() { printf 'fixture-arch\n'; }
     regular_users() { printf 'tester:x:1000:1000::/home/tester:/bin/bash\n'; }
     is_admin() { return 1; }
     systemctl() {
@@ -51,7 +51,7 @@ done
   eligible() { :; }
   packages_for_host() { PACKAGES=(git); }
   installed() { return 1; }
-  hostname() { printf 'fixture-arch\n'; }
+  current_hostname() { printf 'fixture-arch\n'; }
   regular_users() { :; }
   systemctl() { printf 'inactive\n'; }
   helper_works() { return 1; }
