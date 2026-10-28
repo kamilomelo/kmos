@@ -80,8 +80,22 @@ ssh_interface() {
   printf '%s\n' "$route" | awk '{for (i=1; i<NF; i++) if ($i == "dev") {print $(i+1); exit}}'
 }
 
+plan_banner() {
+  local renderer="$SCRIPT_DIR/kartouche.sh"
+  # A staged boot guard is a standalone copy: only the checkout's --plan
+  # gains optional presentation. Never load a renderer for service operations.
+  [[ -f "$renderer" && -r "$renderer" && ! -L "$renderer" ]] || return 1
+  # shellcheck disable=SC1090,SC1091
+  source "$renderer" || return 1
+  KT_NAME='kmos Network Migration'
+  KT_DESCRIPTION='Read-only network and service inventory.'
+  KT_ACCENT='38;5;244'
+  [[ ${TERM:-} == linux ]] && KT_ACCENT=37
+  kt_banner 'Handoff plan'
+}
+
 plan() {
-  local iface kind carrier dhcp wifi=0 wired=0 wired_ready=0 wifi_ready=0 ssh_dev
+  local iface kind carrier dhcp wifi=0 wired=0 wired_ready=0 wifi_ready=0 ssh_dev styled=no
   [[ -r /etc/os-release ]] || { printf 'Cannot identify this OS.\n' >&2; return 1; }
   [[ $(os_id) == arch && $(uname -m) == x86_64 ]] || {
     printf 'Only installed Arch Linux x86_64 is supported.\n' >&2; return 1;
@@ -89,6 +103,7 @@ plan() {
   kde_ready || {
     printf 'KMOS KDE upgrade marker not found; refusing migration planning.\n' >&2; return 1;
   }
+  if plan_banner; then styled=yes; fi
   printf 'NetworkManager binary: '
   if command -v nmcli >/dev/null 2>&1; then printf 'present\n'; else printf 'missing\n'; fi
   if [[ -f "$STAGED_MARKER" && ! -L "$STAGED_MARKER" ]]; then
@@ -159,6 +174,9 @@ plan() {
     else
       printf 'For an eligible handoff, use --stage-reboot over wired SSH or --stage-reboot-wifi over Wi-Fi SSH (local console required after reboot); both recheck prerequisites. --apply requires a local console.\n'
     fi
+  fi
+  if [[ "$styled" == yes ]]; then
+    kt_summary rail 'Inventory complete' ok 'Network services unchanged' ok
   fi
 }
 

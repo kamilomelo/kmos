@@ -23,6 +23,7 @@ printf '[General]\nEnableNetworkConfiguration=true\n' > "$fixture/iwd.conf"
 (
   # shellcheck disable=SC1091
   source "$script"
+  TERM=linux
   SYS_NET_ROOT="$fixture/net"
   IWD_CONF="$fixture/iwd.conf"
   os_id() { printf 'arch\n'; }
@@ -43,7 +44,11 @@ printf '[General]\nEnableNetworkConfiguration=true\n' > "$fixture/iwd.conf"
   }
   SSH_CONNECTION='192.0.2.9 1234 192.0.2.10 22'
   plan
-) > "$fixture/plan"
+) > "$fixture/plan" 2> "$fixture/plan-ui"
+grep -Fq 'Handoff plan' "$fixture/plan-ui"
+grep -Fq '|- + Network services unchanged' "$fixture/plan-ui"
+grep -Fq '2 ok' "$fixture/plan-ui"
+! grep -Fq $'\033' "$fixture/plan-ui"
 grep -Fq 'enp1s0: Ethernet, carrier=1, IPv4=yes, default route=yes' "$fixture/plan"
 grep -Fq 'wlan0: Wi-Fi, carrier=1, IPv4=yes' "$fixture/plan"
 grep -Fq 'Current SSH route interface: wlan0' "$fixture/plan"
@@ -52,6 +57,7 @@ grep -Fq 'Plan complete: nothing changed' "$fixture/plan"
 (
   # shellcheck disable=SC1091
   source "$script"
+  TERM=xterm-256color
   SYS_NET_ROOT="$fixture/net" IWD_CONF="$fixture/iwd.conf"
   STAGED_MARKER="$fixture/no-stage" MIGRATION_DONE="$fixture/no-done"
   os_id() { printf 'arch\n'; }
@@ -68,7 +74,8 @@ grep -Fq 'Plan complete: nothing changed' "$fixture/plan"
   }
   unset SSH_CONNECTION SSH_CLIENT SSH_TTY
   plan
-) > "$fixture/wired-only-plan"
+) > "$fixture/wired-only-plan" 2> "$fixture/wired-only-ui"
+grep -Fq '├─ ✓ Network services unchanged' "$fixture/wired-only-ui"
 grep -Fq 'Wi-Fi has no IPv4: --apply requires active Wi-Fi and will refuse' "$fixture/wired-only-plan"
 grep -Fq -- '--stage-reboot can use disconnected Wi-Fi' "$fixture/wired-only-plan"
 (
@@ -133,4 +140,26 @@ fi
 if grep -Eq '192\.0\.2\.|password=|SSID: ' "$fixture/plan"; then
   printf 'Inventory leaked connection details.\n' >&2; exit 1
 fi
+if grep -Eq '192\.0\.2\.|password=|SSID: ' "$fixture/plan-ui"; then
+  printf 'Styled inventory leaked connection details.\n' >&2; exit 1
+fi
+
+# A copy used as a boot guard has no renderer sibling. Its inventory stays
+# functional, and boot/service paths never depend on the presentation helper.
+mkdir -p "$fixture/standalone/net"
+cp "$script" "$fixture/standalone/kmos-network-migration.sh"
+(
+  # shellcheck disable=SC1091
+  source "$fixture/standalone/kmos-network-migration.sh"
+  SYS_NET_ROOT="$fixture/standalone/net"
+  STAGED_MARKER="$fixture/no-stage" MIGRATION_DONE="$fixture/no-done"
+  os_id() { printf 'arch\n'; }
+  uname() { printf 'x86_64\n'; }
+  kde_ready() { :; }
+  state() { printf 'inactive\n'; }
+  ip() { return 1; }
+  plan
+) > "$fixture/standalone-plan" 2> "$fixture/standalone-ui"
+grep -Fq 'Handoff not ready: a physical Wi-Fi interface is required.' "$fixture/standalone-plan"
+[[ ! -s "$fixture/standalone-ui" ]]
 printf 'Network migration inventory: OK (fixture only; no service changes).\n'
