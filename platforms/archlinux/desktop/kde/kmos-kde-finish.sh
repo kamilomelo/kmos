@@ -298,6 +298,14 @@ repair_sddm() (
   if ! cmp -s -- "$sddm_choice_file" "$directory/kmos-choice"; then
     install -m 0644 "$directory/kmos-choice" "$sddm_choice_file" || return 1
   fi
+  if [[ -f $existing_settings && ! -L $existing_settings ]] &&
+      grep -Fxq 'type=image' "$existing_settings" &&
+      grep -Fxq "background=$sddm_wallpaper" "$existing_settings" &&
+      grep -Fxq 'color=#000000' "$existing_settings"; then
+    black_sddm_background || return 1
+  else
+    printf 'KMOS black image settings are unavailable; existing Breeze background preserved, black not applied.\n' >&2
+  fi
   printf 'SDDM now uses packaged Breeze. Changes take effect when the login screen next starts; no sessions were restarted.\n'
 )
 
@@ -325,7 +333,7 @@ black_sddm_background() (
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/kmos-kde-post.sh"
   patch_breeze_image_background "$sddm_breeze_dir" "$sddm_backup_dir" || {
-    fail 'Breeze QML did not match the known image background; no changes made.'; return 1;
+    fail 'Breeze QML did not match the known image background; background QML unchanged.'; return 1;
   }
   printf 'SDDM will show black behind the existing PNG at its next login screen; no session restarted.\n'
 )

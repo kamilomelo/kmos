@@ -50,17 +50,28 @@ grep -Fq -- '--repair-sddm' "$fixture/help"
   sddm_config_dir="$fixture/recovery/etc/sddm.conf.d"
   sddm_main_config="$fixture/recovery/etc/sddm.conf"
   sddm_choice_file="$sddm_config_dir/kmos-theme.conf"
+  sddm_backup_dir="$fixture/recovery/backups"
   sddm_wallpaper="$fixture/wallpaper.png"
   mkdir -p "$sddm_breeze_dir" "$sddm_config_dir"
-  printf 'upstream QML\n' > "$sddm_breeze_dir/Main.qml"
+  printf 'upstream QML\nsceneBackgroundColor: config.color\n' > "$sddm_breeze_dir/Main.qml"
+  printf 'name: "imageBackground"\ntarget: sceneColorBackground\nvisible: false\n' > "$sddm_breeze_dir/Background.qml"
+  cp "$sddm_breeze_dir/Background.qml" "$fixture/recovery-original-qml"
   printf '[General]\n' > "$sddm_breeze_dir/theme.conf"
   printf '[Theme]\nCurrent=breeze-kmos\n' > "$sddm_choice_file"
   repair_sddm
   [[ $(cat "$sddm_choice_file") == $'[Theme]\nCurrent=breeze' ]]
   grep -Fxq "background=$sddm_wallpaper" "$sddm_breeze_dir/theme.conf.user"
-  printf 'personal background\n' > "$sddm_breeze_dir/theme.conf.user"
+  grep -Fxq 'color=#000000' "$sddm_breeze_dir/theme.conf.user"
+  grep -Fxq 'visible: true' "$sddm_breeze_dir/Background.qml"
+  mapfile -t qml_backups < <(find "$sddm_backup_dir" -type f)
+  [[ ${#qml_backups[@]} == 1 ]]
+  cmp -s "$fixture/recovery-original-qml" "${qml_backups[0]}"
   repair_sddm
+  [[ $(find "$sddm_backup_dir" -type f | wc -l) == 1 ]]
+  printf 'personal background\n' > "$sddm_breeze_dir/theme.conf.user"
+  repair_sddm > "$fixture/personal-background" 2>&1
   grep -Fxq 'personal background' "$sddm_breeze_dir/theme.conf.user"
+  grep -Fq 'black not applied' "$fixture/personal-background"
   printf '[Theme]\nCurrent=personal\n' > "$sddm_choice_file"
   if repair_sddm > "$fixture/custom-choice" 2>&1; then exit 1; fi
   grep -Fxq 'Current=personal' "$sddm_choice_file"

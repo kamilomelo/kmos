@@ -81,7 +81,7 @@ EOF
   printf '[Theme]\nCurrent=breeze\n' > "$sddm_choice_file"
   sed -i 's/target: sceneColorBackground/target: personalBackground/' "$sddm_breeze_dir/Background.qml"
   if black_sddm_background > "$fixture/unrecognized" 2>&1; then exit 1; fi
-  grep -Fq 'no changes made' "$fixture/unrecognized"
+  grep -Fq 'background QML unchanged' "$fixture/unrecognized"
 ) > "$fixture/existing-output" 2>&1
 
 printf 'SDDM black image background: OK (fixture QML and backup only).\n'

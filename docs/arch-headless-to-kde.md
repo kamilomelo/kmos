@@ -105,7 +105,11 @@ exact KMOS-managed `breeze-kmos` choice to the packaged `breeze` theme (or
 accepts an already-repaired `breeze` choice), adds KMOS wallpaper settings only
 if none exist, and preserves unrelated or custom SDDM configurations. It leaves
 the old theme copy, user files, other desktop settings and running sessions
-untouched. Changes take effect the next time the greeter starts; do not restart
+untouched. When the managed black-image settings are present, repair also
+reveals black behind the transparent PNG and backs up the original Breeze
+`Background.qml` under `/var/backups/kmos/sddm/`. Custom settings are preserved
+and reported rather than overwritten; in that case a black background is not
+promised. Changes take effect the next time the greeter starts; do not restart
 SDDM during an unsaved desktop session.
 
 **Maintenance reminder (2026-11-28):** review whether older installations
