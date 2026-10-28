@@ -108,9 +108,21 @@ packages_for_host() {
   return 0
 }
 preflight() {
-  local pkg entry name _ home
+  local pkg entry name _ home styled=no renderer="$SCRIPT_DIR/tools/kartouche.sh"
   eligible || return 1
   packages_for_host || return 1
+  # The optional renderer affects only presentation, not adoption eligibility.
+  if [[ -f "$renderer" && -r "$renderer" && ! -L "$renderer" ]]; then
+    # shellcheck disable=SC1090,SC1091
+    if source "$renderer"; then
+      KT_NAME='kmos Adopt Headless'
+      KT_DESCRIPTION='Arch Linux adoption preview; no changes made.'
+      KT_ACCENT='38;5;244'
+      [[ ${TERM:-} == linux ]] && KT_ACCENT=37
+      kt_banner 'Read-only preflight'
+      styled=yes
+    fi
+  fi
   printf 'Arch headless x86_64: eligible\nPackages (pacman upgrade + --needed):\n'
   printf 'Current hostname: %s (optional change in guided mode)\n' "$(hostname)"
   for pkg in "${PACKAGES[@]}"; do
@@ -134,6 +146,9 @@ preflight() {
   done
   printf 'Appearance: KMOS Starship presets and managed Bash integration; conflicting configuration is skipped.\n'
   printf 'No changes made. Guided mode offers an optional hostname change and enables/starts sshd without changing its config; network services, bootloader and disk settings stay intact.\n'
+  if [[ "$styled" == yes ]]; then
+    kt_summary rail 'Installed Arch eligible' ok 'Packages and accounts inventoried' ok 'Host settings unchanged' ok
+  fi
 }
 require_root() {
   ((EUID == 0)) && return 0

@@ -31,3 +31,4 @@ jobs:
           ./tests/arch-wifi-kartouche.sh
           ./tests/arch-headless-kde-kartouche.sh
           ./tests/arch-kde-finish-kartouche.sh
+          ./tests/arch-adopt-headless-kartouche.sh
