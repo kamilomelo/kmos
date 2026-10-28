@@ -12,6 +12,12 @@ new Wi-Fi-SSH handoff was subsequently reported working, without captured
 service diagnostics. The AUR-declined install path and Wi-Fi-only boot-guard
 failure path still lack field tests; see the [v1.0.0 release notes](./releases/v1.0.0.md).
 
+**VM follow-up (2026-10-28):** A headless → KDE upgrade reached SDDM in the
+isolated QEMU test. The login screen showed the intended image, but its
+background appeared white instead of the expected black. Investigate the SDDM
+theme/background later; do not change the login theme or existing user settings
+without first reproducing and identifying the cause.
+
 From a current checkout, you can inspect the system with the optional
 read-only check (the guided install also runs this check):
 
