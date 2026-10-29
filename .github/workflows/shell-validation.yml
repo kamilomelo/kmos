@@ -36,3 +36,4 @@ jobs:
           ./tests/arch-installer-kartouche.sh
           ./tests/arch-installer-choices.sh
           ./tests/arch-sddm-black.sh
+          ./tests/arch-kde-users.sh

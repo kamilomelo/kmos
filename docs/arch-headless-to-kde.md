@@ -208,6 +208,31 @@ users without a personal override. It may download Kappa fonts with the existing
 `curl` tool, but does not delete other fonts. Review the resulting KDE session
 before removing any backup. Rerunning skips defaults that already match.
 
+## Manage local KDE accounts (including over SSH)
+
+On an **installed KMOS KDE Arch x86_64** host, open a terminal or connect with
+`ssh -t admin@host`. From a current checkout run:
+
+```bash
+./platforms/archlinux/desktop/kde/kmos-kde-users.sh --preflight
+./platforms/archlinux/desktop/kde/kmos-kde-users.sh
+```
+
+The guided menu creates **or** removes a local account in a separate run. A
+new user receives `/etc/skel`, a password through the system `passwd` prompt,
+and optional sudo via wheel (checked against the host's actual sudo policy).
+The helper previews KMOS KDE defaults for that user before offering to apply
+them; it **does not copy another person's private Plasma settings**. Existing
+settings require their own approval and backup during KDE finishing.
+
+Removal refuses the current login, active users, and the last working admin.
+For an admin, first verify a **new independent SSH login and sudo** with a
+different admin account. Removing the account and deleting its home require
+different exact typed approvals; declining home deletion leaves its data in
+place. Make a backup first: neither operation has automatic rollback. This
+helper does not install packages, change networking, or run the ISO installer.
+The headless adoption `--users-only` mode is **not** for KDE hosts.
+
 ## NetworkManager handoff
 
 The KDE upgrade deliberately retains the headless `iwd`/`dhcpcd` connection

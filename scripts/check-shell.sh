@@ -21,6 +21,7 @@ if ((${#scripts[@]} == 0)); then
 fi
 scripts+=(
   platforms/archlinux/desktop/kde/kmos-kde-finish.sh
+  platforms/archlinux/desktop/kde/kmos-kde-users.sh
   platforms/archlinux/tools/kmos-network-migration.sh
   platforms/archlinux/kmos-adopt-headless.sh
   platforms/archlinux/desktop/kde/kmos-headless-to-kde.sh
@@ -52,6 +53,7 @@ scripts+=(
   tests/arch-kde-fresh-panel.sh
   tests/arch-kde-first-login-colors.sh
   tests/arch-kde-finish-safety.sh
+  tests/arch-kde-users.sh
   tests/arch-kde-kappa-fonts.sh
   tests/arch-krub-policy.sh
   tests/quartz-disk-safety.sh
@@ -113,6 +115,7 @@ bash tests/arch-kde-panel-safety.sh
 bash tests/arch-kde-fresh-panel.sh
 bash tests/arch-kde-first-login-colors.sh
 bash tests/arch-kde-finish-safety.sh
+bash tests/arch-kde-users.sh
 bash tests/arch-kde-kappa-fonts.sh
 bash tests/arch-krub-policy.sh
 bash tests/archarm-dispatch.sh
