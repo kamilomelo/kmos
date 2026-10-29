@@ -6,6 +6,8 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 FINISHER=$SCRIPT_DIR/kmos-kde-finish.sh
 HOME_ROOT=/home
 PASSWD_FILE=/etc/passwd
+GROUP_FILE=/etc/group
+LINGER_ROOT=/var/lib/systemd/linger
 # shellcheck disable=SC1090,SC1091
 source "$SCRIPT_DIR/../../tools/kartouche.sh"
 KT_NAME='kmos KDE Accounts'
@@ -22,8 +24,11 @@ No argument opens a guided create/remove menu on an installed KMOS KDE Arch
 x86_64 system. --preflight is read-only and does not ask for sudo. New accounts
 inherit /etc/skel; optional finishing applies KMOS defaults, NOT a copy of
 another user's personal Plasma files. Creation and removal are separate runs.
-Removal never happens automatically after creation. Account deletion and home
-deletion require different exact typed approvals. Use a terminal (ssh -t).
+Removal never happens automatically after creation. Removal uses the system
+root password prompt (su), then requires separate exact approvals for account
+and home deletion. Root sessions can proceed without another password. The
+home and local account are deleted together; logs and external data are not
+erased. Use a terminal (ssh -t).
 EOF
 }
 fail() { printf 'ERROR: %s\n' "$*" >&2; return 1; }
@@ -58,13 +63,6 @@ local_account() {
 }
 sudo_allowed() { sudo -l -U "$1" -u root -- /usr/bin/true >/dev/null 2>&1; }
 is_wheel() { id -nG "$1" 2>/dev/null | tr ' ' '\n' | grep -Fxq wheel; }
-admin_count() {
-  local name _ count=0
-  while IFS=: read -r name _; do
-    local_account "$name" && sudo_allowed "$name" && ((count+=1)) || :
-  done <"$PASSWD_FILE"
-  printf '%s\n' "$count"
-}
 check_host() {
   local os_id
   [[ -r /etc/os-release ]] || { fail 'Cannot identify the OS.'; return 1; }
@@ -87,6 +85,14 @@ require_root() {
   ((EUID == 0)) && return 0
   command -v sudo >/dev/null || { fail 'sudo is required for account changes.'; return 1; }
   exec sudo -- "$SCRIPT_DIR/kmos-kde-users.sh" "$@"
+}
+require_removal_root() {
+  local command
+  ((EUID == 0)) && return 0
+  command -v su >/dev/null || { fail 'su is required for root-authorized removal.'; return 1; }
+  printf -v command '%q --remove' "$SCRIPT_DIR/kmos-kde-users.sh"
+  note 'Authenticate as root using the system su prompt (not your sudo password).'
+  exec su -c "$command" root
 }
 run_finish() { "$FINISHER" "$@"; }
 
@@ -155,42 +161,49 @@ home_has_mounts() {
   return 1
 }
 remove_account() {
-  local name login answer home count
+  local name login answer home uid gid group_entry group_gid members remaining linger
   kt_banner 'Review account removal'
   name=$(input 'Existing username to remove: ') || return 1
   local_account "$name" || { fail 'Only local regular accounts with a standard /home/name can be removed.'; return 1; }
   login=${SUDO_USER:-$(id -un)}
   [[ $name != "$login" ]] || { fail 'Cannot remove the current login.'; return 1; }
   if sudo_allowed "$name" || is_wheel "$name"; then
-    if ! local_account "$login" || ! is_wheel "$login" || ! sudo_allowed "$login"; then
-      fail 'Admin removal requires a different working administrator login.'; return 1;
-    fi
-    count=$(admin_count)
-    ((count > 1)) || { fail 'Cannot remove the last working regular administrator.'; return 1; }
-    answer=$(input "After verifying a NEW SSH login and sudo as $login, type VERIFIED $login: ") || return 1
-    [[ $answer == "VERIFIED $login" ]] || { note 'Verification not confirmed; account retained.'; return 0; }
+    note "WARNING: $name has administrative access. Removal may leave this machine without a working sudo login."
+    note 'Ensure root console/SSH recovery is available before proceeding.'
   fi
   if active_account "$name"; then fail 'User is logged in, has processes, or session safety could not be checked.'; return 1; fi
   home=$HOME_ROOT/$name
-  note "Account: $name; home: $home. Account removal cannot be undone."
+  IFS=: read -r _ _ uid gid _ _ _ < <(getent passwd "$name")
+  [[ $uid =~ ^[0-9]+$ && $gid =~ ^[0-9]+$ ]] || { fail 'Account identity changed; refusing removal.'; return 1; }
+  note "Account: $name; home: $home. Both will be permanently removed."
   answer=$(input "Type REMOVE $name to remove the account: ") || return 1
   [[ $answer == "REMOVE $name" ]] || { note 'Cancelled without changes.'; return 0; }
-  if ask "Also permanently delete $home and its contents?"; then
-    answer=$(input "Type DELETE $home to erase the home: ") || return 1
-    [[ $answer == "DELETE $home" ]] || { note 'Home deletion declined; account retained.'; return 0; }
-    [[ -d $home && ! -L $home && $(stat -c %u -- "$home") == "$(id -u "$name")" ]] || {
-      fail 'Home is missing, symlinked, or not owned by the account; refusing deletion.'; return 1;
-    }
-    if home_has_mounts "$home"; then fail 'Home has a mounted filesystem or mount checks failed.'; return 1; fi
-    if active_account "$name"; then fail 'Account became active; refusing removal.'; return 1; fi
-    userdel -r -- "$name" || return 1
-    kt_summary rail 'Account removed' ok 'Home permanently deleted' ok
-  else
-    if active_account "$name"; then fail 'Account became active; refusing removal.'; return 1; fi
-    userdel -- "$name" || return 1
-    note "Home retained at $home; review it manually when no longer needed."
-    kt_summary rail 'Account removed' ok 'Home retained' skipped
+  answer=$(input "Type DELETE $home to erase the home: ") || return 1
+  [[ $answer == "DELETE $home" ]] || { note 'Home deletion declined; account retained.'; return 0; }
+  [[ -d $home && ! -L $home && $(stat -c %u -- "$home") == "$uid" ]] || {
+    fail 'Home is missing, symlinked, or not owned by the account; refusing deletion.'; return 1;
+  }
+  if home_has_mounts "$home"; then fail 'Home has a mounted filesystem or mount checks failed.'; return 1; fi
+  if active_account "$name"; then fail 'Account became active; refusing removal.'; return 1; fi
+  linger=$LINGER_ROOT/$name
+  [[ ! -L $linger ]] || { fail 'Lingering service marker is symlinked; refusing removal.'; return 1; }
+  if [[ -e $linger ]]; then
+    loginctl disable-linger "$name" || { fail 'Could not disable user service lingering; account retained.'; return 1; }
+    [[ ! -e $linger ]] || { fail 'User service lingering remains enabled; account retained.'; return 1; }
   fi
+  userdel -r -- "$name" || return 1
+  # userdel normally removes the matching user-private group. Handle hosts
+  # where it does not, but never remove a group used by anyone else.
+  if group_entry=$(getent group "$name"); then
+    IFS=: read -r _ _ group_gid members <<< "$group_entry"
+    if [[ $group_gid == "$gid" && -z $members ]] &&
+      awk -F: -v name="$name" -v gid="$gid" '$1 == name && $3 == gid {found=1} END {exit !found}' "$GROUP_FILE"; then
+      remaining=$(awk -F: -v gid="$gid" '$4 == gid {print $1}' "$PASSWD_FILE")
+      if [[ -z $remaining ]]; then groupdel -- "$name" || { fail 'Account removed; private group cleanup failed.'; return 1; }; fi
+    fi
+  fi
+  note 'Account and home removed. Historical logs, backups and files elsewhere are not erased.'
+  kt_summary rail 'Account removed' ok 'Home permanently deleted' ok
 }
 
 guided() {
@@ -203,7 +216,7 @@ guided() {
   choice=$(input 'Select [1-3]: ') || return 1
   case $choice in
     1) require_root --create || return 1; create_account ;;
-    2) require_root --remove || return 1; remove_account ;;
+    2) require_removal_root || return 1; remove_account ;;
     3) note 'No changes made.' ;;
     *) fail 'Invalid selection; no changes made.' ;;
   esac
@@ -213,7 +226,7 @@ main() {
     --help|-h) (($# == 1)) || { usage >&2; return 2; }; usage ;;
     --preflight) (($# == 1)) || { usage >&2; return 2; }; check_host || return 1; kt_banner 'Eligible KMOS KDE host; no changes made' ;;
     --create) (($# == 1)) || { usage >&2; return 2; }; check_host || return 1; require_root --create || return 1; create_account ;;
-    --remove) (($# == 1)) || { usage >&2; return 2; }; check_host || return 1; require_root --remove || return 1; remove_account ;;
+    --remove) (($# == 1)) || { usage >&2; return 2; }; check_host || return 1; require_removal_root || return 1; remove_account ;;
     '') (($# == 0)) || { usage >&2; return 2; }; guided ;;
     *) usage >&2; return 2 ;;
   esac

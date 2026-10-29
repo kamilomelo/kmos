@@ -74,16 +74,22 @@ grep -Fq 'Creation and removal are separate runs.' "$fixture/help"
   # shellcheck disable=SC1090
   source "$script"
   HOME_ROOT="$fixture/homes"
+  LINGER_ROOT="$fixture/linger"
   SUDO_USER='admin'
   mkdir -p "$HOME_ROOT/olduser"
   local_account() { [[ $1 == olduser || $1 == admin ]]; }
   sudo_allowed() { [[ $1 == admin || ${target_admin:-no} == yes ]]; }
   is_wheel() { [[ $1 == admin || ${target_admin:-no} == yes ]]; }
-  admin_count() { printf '%s\n' "${count:-2}"; }
   active_account() { [[ ${active:-no} == yes ]]; }
   home_has_mounts() { [[ ${mounted:-no} == yes ]]; }
   stat() { printf '1001\n'; }
   id() { if [[ $1 == -u ]]; then printf '1001\n'; else command id "$@"; fi; }
+  getent() {
+    if [[ $1 == passwd ]]; then printf '%s:x:1001:1001::%s/%s:/bin/bash\n' "$2" "$HOME_ROOT" "$2"
+    elif [[ $1 == group && ${group_present:-no} == yes ]]; then printf '%s:x:1001:\n' "$2"
+    else return 2; fi
+  }
+  groupdel() { printf 'groupdel %s\n' "$*" >> "$fixture/remove-ops"; }
   userdel() { printf 'userdel %s\n' "$*" >> "$fixture/remove-ops"; }
   input() { local value; IFS= read -r value <&9 || return 1; printf '%s\n' "$value"; }
   ask() { local answer; IFS= read -r answer <&8 || return 1; [[ $answer == y ]]; }
@@ -96,46 +102,59 @@ grep -Fq 'Creation and removal are separate runs.' "$fixture/help"
   exec 9< <(printf 'olduser\nWRONG\n')
   remove_account > /dev/null 2> "$fixture/refused"
   [[ ! -e $fixture/remove-ops ]]
-  exec 9< <(printf 'olduser\nREMOVE olduser\n')
-  exec 8< <(printf 'n\n')
-  remove_account > /dev/null 2> "$fixture/retained"
-  [[ $(cat "$fixture/remove-ops") == 'userdel -- olduser' ]]
-  : > "$fixture/remove-ops"
-  target_admin=yes count=1
-  exec 9< <(printf 'olduser\n')
-  if remove_account > /dev/null 2> "$fixture/last-admin"; then exit 1; fi
-  [[ ! -s $fixture/remove-ops ]]
-  count=2
+  target_admin=yes
   exec 9< <(printf 'olduser\nWRONG\n')
-  remove_account > /dev/null 2> "$fixture/unverified"
+  remove_account > /dev/null 2> "$fixture/last-admin-cancel"
   [[ ! -s $fixture/remove-ops ]]
   target_admin=no
   exec 9< <(printf 'olduser\nREMOVE olduser\nWRONG HOME\n')
-  exec 8< <(printf 'y\n')
   remove_account > /dev/null 2> "$fixture/home-refused"
   [[ ! -s $fixture/remove-ops ]]
   target_admin=no mounted=yes
   exec 9< <(printf 'olduser\nREMOVE olduser\nDELETE %s/olduser\n' "$HOME_ROOT")
-  exec 8< <(printf 'y\n')
   if remove_account > /dev/null 2> "$fixture/mounted"; then exit 1; fi
   [[ ! -s $fixture/remove-ops ]]
   mounted=no
   stat() { printf '1002\n'; }
   exec 9< <(printf 'olduser\nREMOVE olduser\nDELETE %s/olduser\n' "$HOME_ROOT")
-  exec 8< <(printf 'y\n')
   if remove_account > /dev/null 2> "$fixture/wrong-owner"; then exit 1; fi
   [[ ! -s $fixture/remove-ops ]]
   stat() { printf '1001\n'; }
   exec 9< <(printf 'olduser\nREMOVE olduser\nDELETE %s/olduser\n' "$HOME_ROOT")
-  exec 8< <(printf 'y\n')
   remove_account > /dev/null 2> "$fixture/deleted"
   [[ $(cat "$fixture/remove-ops") == 'userdel -r -- olduser' ]]
   : > "$fixture/remove-ops"
+  group_present=yes
+  PASSWD_FILE="$fixture/remaining-passwd"
+  GROUP_FILE="$fixture/group"
+  printf 'olduser:x:1001:\n' > "$GROUP_FILE"
+  : > "$PASSWD_FILE"
+  exec 9< <(printf 'olduser\nREMOVE olduser\nDELETE %s/olduser\n' "$HOME_ROOT")
+  remove_account > /dev/null 2> "$fixture/group-cleaned"
+  [[ $(cat "$fixture/remove-ops") == $'userdel -r -- olduser\ngroupdel -- olduser' ]]
+  : > "$fixture/remove-ops"
+  group_present=no
   target_admin=yes
-  exec 9< <(printf 'olduser\nVERIFIED admin\nREMOVE olduser\n')
-  exec 8< <(printf 'n\n')
+  exec 9< <(printf 'olduser\nREMOVE olduser\nDELETE %s/olduser\n' "$HOME_ROOT")
   remove_account > /dev/null 2> "$fixture/admin-removed"
-  [[ $(cat "$fixture/remove-ops") == 'userdel -- olduser' ]]
+  [[ $(cat "$fixture/remove-ops") == 'userdel -r -- olduser' ]]
+) > /dev/null 2>&1
+
+(
+  # A non-root removal delegates to the system root-password prompt, not sudo.
+  source "$script"
+  if ((EUID != 0)); then
+    mkdir -p "$fixture/bin"
+    cat > "$fixture/bin/su" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$KMOS_SU_LOG"
+EOF
+    chmod +x "$fixture/bin/su"
+    PATH="$fixture/bin:$PATH" KMOS_SU_LOG="$fixture/su-args" require_removal_root
+    [[ $(tail -1 "$fixture/su-args") == root ]]
+    grep -Fxq -- '-c' "$fixture/su-args"
+    if grep -Fq 'sudo' "$fixture/su-args"; then exit 1; fi
+  fi
 ) > /dev/null 2>&1
 
 (
@@ -148,7 +167,6 @@ grep -Fq 'Creation and removal are separate runs.' "$fixture/help"
   sudo_allowed() { [[ $1 == admin || $1 == olduser ]]; }
   local_account admin && local_account olduser
   if local_account root || local_account outsider || local_account service; then exit 1; fi
-  [[ $(admin_count) == 2 ]]
 ) > /dev/null 2>&1
 
 (

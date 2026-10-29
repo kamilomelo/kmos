@@ -225,12 +225,18 @@ The helper previews KMOS KDE defaults for that user before offering to apply
 them; it **does not copy another person's private Plasma settings**. Existing
 settings require their own approval and backup during KDE finishing.
 
-Removal refuses the current login, active users, and the last working admin.
-For an admin, first verify a **new independent SSH login and sudo** with a
-different admin account. Removing the account and deleting its home require
-different exact typed approvals; declining home deletion leaves its data in
-place. Make a backup first: neither operation has automatic rollback. This
-helper does not install packages, change networking, or run the ISO installer.
+Removal authenticates with the **root password** through the system `su`
+prompt, even for sudo-capable users (an existing root session does not need
+to reauthenticate). It can remove the last sudo administrator; ensure you have
+working root console/SSH access or a replacement admin before doing that.
+It still refuses an active account or a mounted home. The local account and
+home are deleted together after **two separate exact typed approvals**;
+declining either leaves both intact. The matching private group is removed
+when unused; systemd user lingering is disabled if enabled. Shared logs,
+external files, system backups, and other users' data are **not** erased;
+inspect them separately. Make a backup first: neither
+operation has automatic rollback. This helper does not install packages,
+change networking, or run the ISO installer.
 The headless adoption `--users-only` mode is **not** for KDE hosts.
 
 ## NetworkManager handoff
