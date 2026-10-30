@@ -4,7 +4,15 @@ This guide is the manual Windows path for `kmos`. Use it from an elevated PowerS
 
 ## Phase 1: Optional Disk Resize
 
-Paste this whole block and run it as one piece. This is the same resize logic used in the original Windows installer.
+For a fresh Windows-only disk, this optional step can leave approximately half
+of the **whole disk** available for another OS. The default is to leave the
+disk unchanged. If you opt in, choose half (default), a custom **total Windows
+footprint** in GiB (C: plus the other Windows partitions), or cancel. A final
+confirmation defaults to No. Partition alignment may prevent an exact 50/50
+split; this does not move existing recovery partitions or guarantee one
+contiguous free-space region. Back up important data first.
+
+Paste this whole block into an elevated PowerShell session and run it as one piece.
 
 ```powershell
 function Prompt-YesNo {
@@ -32,18 +40,18 @@ function Prompt-YesNo {
     }
 }
 
-function Prompt-Choice {
-    param(
-        [Parameter(Mandatory)][string]$Prompt,
-        [Parameter(Mandatory)][string[]]$Choices
-    )
-
+function Prompt-ResizeMode {
     while ($true) {
-        $joined = ($Choices | ForEach-Object { $_ }) -join '/'
-        $answer = Read-Host "$Prompt [$joined]"
-        if ($Choices -contains $answer) {
-            return $answer
+        Write-Host '1) Half the whole disk for Windows (default)'
+        Write-Host '2) Custom total Windows footprint in GiB'
+        Write-Host '3) Cancel without changes'
+        $answer = (Read-Host 'Choose [1/2/3; Enter = 1]').Trim().ToLowerInvariant()
+        switch ($answer) {
+            { $_ -in @('', '1', 'half') } { return 'half' }
+            { $_ -in @('2', 'custom') } { return 'custom' }
+            { $_ -in @('3', 'cancel') } { return 'cancel' }
         }
+        Write-Host 'Enter 1, 2, or 3.'
     }
 }
 
@@ -69,33 +77,55 @@ function Resize-SystemPartitionIfRequested {
     $supported = Get-PartitionSupportedSize -DriveLetter 'C'
     $disk = Get-Disk -Number $systemPartition.DiskNumber
     $currentSize = [uint64]$systemPartition.Size
-    $otherPartitionBytes = [uint64](($disk | Get-Partition | Where-Object { $_.DriveLetter -ne 'C' } | Measure-Object -Property Size -Sum).Sum)
+    $partitions = @(Get-Partition -DiskNumber $disk.Number)
+    $otherPartitionBytes = [uint64](($partitions | Where-Object { $_.PartitionNumber -ne $systemPartition.PartitionNumber } | Measure-Object -Property Size -Sum).Sum)
 
     Show-PartitionSizes -Current $currentSize -Min $supported.SizeMin -Max $supported.SizeMax
+    Write-Host ("Whole disk: {0:N2} GiB; other partitions: {1:N2} GiB" -f ($disk.Size / 1GB), ($otherPartitionBytes / 1GB))
+    $partitions | Format-Table PartitionNumber, DriveLetter, Type, Size
 
-    $choice = Prompt-Choice -Prompt 'Choose resize mode' -Choices @('half','custom')
+    $choice = Prompt-ResizeMode
+    if ($choice -eq 'cancel') {
+        Write-Host 'Leaving the disk layout unchanged.'
+        return
+    }
+
     if ($choice -eq 'half') {
-        $targetSize = [uint64](($disk.Size / 2) - $otherPartitionBytes)
-        $targetSize = [uint64]([math]::Floor($targetSize / 1MB) * 1MB)
+        $targetWindowsBytes = [math]::Floor(([double]$disk.Size / 2) / 1MB) * 1MB
     } else {
         while ($true) {
-            $customGiB = Read-Host 'Enter the new size for C: in GiB'
-            if ($customGiB -match '^\d+(\.\d+)?$') {
-                $targetSize = [uint64]([double]$customGiB * 1GB)
+            $customGiB = (Read-Host 'Total Windows space in GiB (C: plus other partitions; type cancel to stop)').Trim()
+            if ($customGiB -eq 'cancel') {
+                Write-Host 'Leaving the disk layout unchanged.'
+                return
+            }
+            $requestedGiB = 0.0
+            if ($customGiB -match '^\d+(\.\d+)?$' -and
+                [double]::TryParse($customGiB, [Globalization.NumberStyles]::AllowDecimalPoint,
+                    [Globalization.CultureInfo]::InvariantCulture, [ref]$requestedGiB) -and
+                $requestedGiB -gt 0 -and $requestedGiB -le ($disk.Size / 1GB)) {
+                $targetWindowsBytes = [math]::Floor(($requestedGiB * 1GB) / 1MB) * 1MB
                 break
             }
+            Write-Host 'Enter a positive number no larger than the whole disk, or cancel.'
         }
     }
 
+    if ($targetWindowsBytes -le $otherPartitionBytes) {
+        throw 'Other partitions already use the requested Windows space; no changes made.'
+    }
+    $targetSize = [uint64]([math]::Floor(($targetWindowsBytes - $otherPartitionBytes) / 1MB) * 1MB)
     if ($targetSize -lt $supported.SizeMin -or $targetSize -gt $supported.SizeMax) {
-        throw ("Requested C: size {0:N2} GiB is outside the supported range." -f ($targetSize / 1GB))
+        throw ("Requested C: size {0:N2} GiB is outside the supported shrink range; no changes made." -f ($targetSize / 1GB))
     }
 
     if ($targetSize -ge $currentSize) {
         throw 'Requested size is not smaller than the current C: partition.'
     }
 
-    Write-Host ("C: will be resized to {0:N2} GiB" -f ($targetSize / 1GB))
+    Write-Host ("C: after resize: {0:N2} GiB" -f ($targetSize / 1GB))
+    Write-Host ("All listed partitions after resize: {0:N2} GiB" -f (($targetSize + $otherPartitionBytes) / 1GB))
+    Write-Host ("Space outside partitions (not necessarily contiguous): {0:N2} GiB" -f (($disk.Size - $targetSize - $otherPartitionBytes) / 1GB))
     if (-not (Prompt-YesNo -Prompt 'Apply this partition resize now?' -Default $false)) {
         Write-Host 'Skipping partition resize.'
         return
