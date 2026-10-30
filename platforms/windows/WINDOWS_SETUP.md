@@ -197,64 +197,19 @@ $newName = Prompt-ConfirmedText -Prompt 'Enter the desired computer name'
 if ($newName -eq $currentName) {
     Write-Host 'Computer name already matches the requested name.'
 } else {
-    Rename-Computer -NewName $newName -Force
-    Write-Host "Computer renamed to $newName. A reboot will be required for the new name to take effect."
+    Rename-Computer -NewName $newName -Force -ErrorAction Stop
+    Write-Host "Computer renamed to $newName. Use Restart (not Shut down) to apply the name."
 }
 ```
 
-### Remove Old Organization Policy Locks
+### Existing organization policies
 
-```powershell
-$policyPaths = @(
-    'HKCU:\Software\Policies\Microsoft\Windows\Personalization',
-    'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization',
-    'HKCU:\Software\Policies\Microsoft\Windows\CloudContent',
-    'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent',
-    'HKCU:\Software\Policies\Microsoft\Windows\Control Panel\Desktop',
-    'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop',
-    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP',
-    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop',
-    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop',
-    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System',
-    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System',
-    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer',
-    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
-)
-
-foreach ($path in $policyPaths) {
-    Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-$policyValues = @(
-    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop'; Name = 'NoChangingWallPaper' },
-    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop'; Name = 'NoChangingWallPaper' },
-    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'; Name = 'NoActiveDesktop' },
-    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'; Name = 'NoActiveDesktopChanges' },
-    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; Name = 'NoActiveDesktop' },
-    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; Name = 'NoActiveDesktopChanges' },
-    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'Wallpaper' },
-    @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'WallpaperStyle' },
-    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'Wallpaper' },
-    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'WallpaperStyle' },
-    @{ Path = 'HKCU:\Control Panel\Desktop'; Name = 'WallPaper' }
-)
-
-foreach ($item in $policyValues) {
-    Remove-ItemProperty -Path $item.Path -Name $item.Name -ErrorAction SilentlyContinue
-}
-
-$themesDir = Join-Path $env:APPDATA 'Microsoft\Windows\Themes'
-Remove-Item -Path (Join-Path $themesDir 'TranscodedWallpaper*') -Force -ErrorAction SilentlyContinue
-Remove-Item -Path (Join-Path $themesDir 'CachedFiles') -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path (Join-Path $themesDir 'slideshow.ini') -Force -ErrorAction SilentlyContinue
-Remove-Item -Path (Join-Path $themesDir '*.theme') -Force -ErrorAction SilentlyContinue
-
-gpupdate /target:user /force
-gpupdate /target:computer /force
-rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
-```
-
-If personalization is still blocked after this cleanup, reboot once before continuing with Phase 2.
+Do **not** delete broad Windows policy keys as a routine setup step. If an old
+organization's policy blocks personalization, first determine whether the
+computer is still managed. Back up the specific setting and resolve it with
+the administrator or remove only the identified stale policy; a blanket
+registry cleanup can erase unrelated security or management settings. Neither
+Mode A nor Mode B requires such a cleanup on a fresh Windows installation.
 
 ### Stage Wallpaper
 
@@ -274,6 +229,15 @@ Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
 ### Mode A: Enforced Corporate Appearance
 
 Use this if you want Windows to try to enforce the kmos look by policy. This path does not capture a user profile and does not replay anything for later users. It is best-effort on Windows and may still need a manual check after reboot.
+
+**VM finding (2026-10-30):** On a modified Windows 11 Pro ISO, the lock-screen
+image appeared, but the desktop wallpaper needed a manual Fit → Fill change
+to display. Switching Background from Picture to Solid Color then hid the
+wallpaper and blocked switching back. Lock-screen news/weather cards also
+remained. Mode A is **not validated or recommended for deployment** on this
+build; test it only in a disposable VM with a rollback point. Do not use the
+old broad policy cleanup as a repair. Lock-screen status/widgets are separate
+from the lock-screen image.
 
 #### Enforce Wallpaper, Lock Screen, and Colors
 
@@ -473,18 +437,19 @@ Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -No
 This uses `Active Setup` only to register a per-user `RunOnce`. The actual appearance replay then happens after the new user's shell is up, which is more reliable for wallpaper than running too early in the sign-in sequence.
 
 Mode B procedure:
-1. run `Remove Old Organization Policy Locks`
-2. run `Stage Wallpaper`
-3. run `Apply Current User Wallpaper and Dark Mode`
-4. run `Apply Lock Screen by PowerShell`
-5. verify the current user looks exactly right
-6. run `Capture and Replay the Current User Appearance for New Users`
-7. reboot or sign out/sign back in
-8. create new users after that
+1. run `Stage Wallpaper`
+2. run `Apply Current User Wallpaper and Dark Mode`
+3. run `Apply Lock Screen by PowerShell` (optional and best-effort)
+4. verify the current user looks exactly right and can still personalize it
+5. run `Capture and Replay the Current User Appearance for New Users`
+6. restart or sign out/sign back in
+7. create new users after that
 
 Mode B starts with the current user. It does not include the policy-enforcement block from Mode A.
 
-If wallpaper or personalization still behaves inconsistently after unlocking old policy keys, reboot or sign out/sign back in before continuing with the rest of Mode B.
+If wallpaper or personalization behaves inconsistently, restart or sign out
+and back in before proceeding. Do not use Mode B on top of Mode A policies;
+restore a pre-Mode-A checkpoint first.
 
 This mode is unlocked, but wallpaper inheritance is still the weak point on Windows.
 
