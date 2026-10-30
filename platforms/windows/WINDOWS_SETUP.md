@@ -369,11 +369,15 @@ This lock-screen step is best-effort. If Windows ignores it, use Settings for th
 
 #### Capture and Replay the Current User Appearance for New Users
 
-This step captures the current user's appearance values after you have the look exactly right, then replays those same values for each new user at first login. It should transmit the same wallpaper path, dark mode, and accent values without policy-locking them afterward.
+This step captures the current user's appearance values after you have the look exactly right, then replays those values for each new user at first login. It uses the shared KMOS wallpaper file rather than a cached image from the current user's private profile; dark mode and accent values remain editable afterward.
 
 ```powershell
 $scriptDir = 'C:\ProgramData\kmos\scripts'
 $scriptPath = Join-Path $scriptDir 'Apply-KmosAppearance.ps1'
+$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
+if (-not (Test-Path -LiteralPath $wallpaperPath -PathType Leaf)) {
+    throw "Shared KMOS wallpaper is missing: $wallpaperPath. Run Stage Wallpaper first."
+}
 New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
 
 $desktop = Get-ItemProperty 'HKCU:\Control Panel\Desktop'
@@ -409,7 +413,7 @@ Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\
 Set-RegistryValue -Path 'HKCU:\Control Panel\Colors' -Name 'Background' -Value '$($colors.Background)'
 Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '$($desktop.WallpaperStyle)'
 Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'TileWallpaper' -Value '$($desktop.TileWallpaper)'
-Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -Value '$($desktop.WallPaper)'
+Set-RegistryValue -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -Value '$($wallpaperPath)'
 Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColor' -Value $($dwm.AccentColor) -Type DWord
 Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AccentColorInactive' -Value $($dwm.AccentColorInactive) -Type DWord
 Set-RegistryValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Name 'AccentColorMenu' -Value $($accent.AccentColorMenu) -Type DWord
@@ -421,7 +425,7 @@ public class KmosWallpaper {
   public static extern int SystemParametersInfo(int uiAction, int uiParam, string pvParam, int fWinIni);
 }
 '@
-[void][KmosWallpaper]::SystemParametersInfo(20, 0, '$($desktop.WallPaper)', 3)
+[void][KmosWallpaper]::SystemParametersInfo(20, 0, '$($wallpaperPath)', 3)
 rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 "@
 
