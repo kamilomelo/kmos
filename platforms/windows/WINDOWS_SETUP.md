@@ -355,6 +355,11 @@ $accent = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Expl
 $colors = Get-ItemProperty 'HKCU:\Control Panel\Colors'
 
 $scriptContent = @"
+`$ErrorActionPreference = 'Stop'
+if (-not (Test-Path -LiteralPath '$($wallpaperPath)' -PathType Leaf)) {
+    throw 'Shared KMOS wallpaper is missing.'
+}
+
 function Set-RegistryValue {
     param(
         [string]`$Path,
@@ -393,22 +398,29 @@ public class KmosWallpaper {
   public static extern int SystemParametersInfo(int uiAction, int uiParam, string pvParam, int fWinIni);
 }
 '@
-[void][KmosWallpaper]::SystemParametersInfo(20, 0, '$($wallpaperPath)', 3)
+`$wallpaperApplied = [KmosWallpaper]::SystemParametersInfo(20, 0, '$($wallpaperPath)', 3)
+if (`$wallpaperApplied -eq 0) { throw 'Windows rejected the KMOS wallpaper.' }
 rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 "@
 
 Set-Content -Path $scriptPath -Value $scriptContent -Encoding ASCII
 
-# RunOnce can execute before Windows finishes preparing a new user's desktop.
-# Delay only the automatic run; keep the main script immediate for manual retry.
+# A first-login restart can interrupt a one-shot RunOnce before wallpaper is
+# applied. Keep a per-user Run entry until the delayed replay succeeds.
 $runnerPath = Join-Path $scriptDir 'Start-KmosAppearance.ps1'
 $runnerContent = @'
+$ErrorActionPreference = 'Stop'
 $logPath = Join-Path $env:LOCALAPPDATA 'kmos-appearance.log'
-Start-Sleep -Seconds 30
 try {
+    Add-Content -Path $logPath -Value "Started KMOS appearance at $(Get-Date -Format o)"
+    Start-Sleep -Seconds 30
     & 'C:\ProgramData\kmos\scripts\Apply-KmosAppearance.ps1' *>> $logPath
+    if (-not $?) { throw 'KMOS appearance script failed.' }
+    Add-Content -Path $logPath -Value 'KMOS appearance script completed.'
+    Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'kmos.appearance' -ErrorAction Stop
 } catch {
-    $_ | Out-File -FilePath $logPath -Append
+    Add-Content -Path $logPath -Value "KMOS appearance failed: $_"
+    exit 1
 }
 '@
 Set-Content -Path $runnerPath -Value $runnerContent -Encoding ASCII
@@ -417,18 +429,33 @@ $activeSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\km
 New-Item -Path $activeSetupKey -Force | Out-Null
 Set-ItemProperty -Path $activeSetupKey -Name Version -Value '1,0,0,0'
 New-ItemProperty -Path $activeSetupKey -Name IsInstalled -Value 1 -PropertyType DWord -Force | Out-Null
-# RunOnce is launched as a Windows command line, not parsed as PowerShell:
+# Run is launched as a Windows command line, not parsed as PowerShell:
 # single quotes around -File would become part of the filename.
-Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name 'kmos.appearance' -Value 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\kmos\scripts\Start-KmosAppearance.ps1'`""
+Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'kmos.appearance' -Value 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\kmos\scripts\Start-KmosAppearance.ps1'`""
 ```
 
-This uses `Active Setup` only to register a per-user `RunOnce`. The automatic
-runner waits 30 seconds after it starts so Windows can finish setting up the
-new user's desktop, then applies the wallpaper and colors. It writes output
-and errors to `%LOCALAPPDATA%\kmos-appearance.log`; manual runs of
-`Apply-KmosAppearance.ps1` are immediate. In VM tests, a new user's dark mode
-appeared automatically but wallpaper only appeared when the script was run
-later by hand; **the delayed runner still needs a fresh-user retest**.
+This uses `Active Setup` to register a per-user `Run` entry. It logs a start
+to `%LOCALAPPDATA%\kmos-appearance.log`, waits 30 seconds for the desktop,
+then applies the wallpaper and colors. It removes its own startup entry only
+after the script completes; if Windows restarts first, it retries at the next
+sign-in. Manual runs of `Apply-KmosAppearance.ps1` are immediate. In the VM,
+one-shot first-login runs applied dark mode but were interrupted by a restart
+before wallpaper appeared; **this persistent runner still needs testing**.
+
+#### Retest an interrupted first login (test VM only)
+
+If an existing test account already lost its one-shot startup entry, first
+rerun the updated **Capture and Replay** block from the original administrator
+account. Then sign in as the affected test user and register the retry below.
+Do not use this to reset someone else's personalized desktop. Sign out and
+back in, wait at least a minute, and inspect `%LOCALAPPDATA%\kmos-appearance.log`
+if the wallpaper is still missing.
+
+```powershell
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+New-Item -Path $runKey -Force | Out-Null
+Set-ItemProperty -Path $runKey -Name 'kmos.appearance' -Value 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\kmos\scripts\Start-KmosAppearance.ps1'
+```
 
 Mode B procedure:
 1. run `Stage Wallpaper`
