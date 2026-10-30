@@ -335,38 +335,6 @@ public class KmosWallpaper {
 rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 ```
 
-#### Apply Lock Screen by PowerShell
-
-```powershell
-$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
-$fileUrl = 'file:///' + (($wallpaperPath -replace '\\', '/') -replace ' ', '%20')
-
-function Set-RegistryValue {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)]$Value,
-        [string]$Type = 'String'
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
-    }
-
-    try {
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
-    } catch {
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
-    }
-}
-
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $fileUrl
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
-```
-
-This lock-screen step is best-effort. If Windows ignores it, use Settings for the lock screen only.
-
 #### Capture and Replay the Current User Appearance for New Users
 
 This step captures the current user's appearance values after you have the look exactly right, then replays those values for each new user at first login. It uses the shared KMOS wallpaper file rather than a cached image from the current user's private profile; dark mode and accent values remain editable afterward.
@@ -443,11 +411,10 @@ This uses `Active Setup` only to register a per-user `RunOnce`. The actual appea
 Mode B procedure:
 1. run `Stage Wallpaper`
 2. run `Apply Current User Wallpaper and Dark Mode`
-3. run `Apply Lock Screen by PowerShell` (optional and best-effort)
-4. verify the current user looks exactly right and can still personalize it
-5. run `Capture and Replay the Current User Appearance for New Users`
-6. restart or sign out/sign back in
-7. create new users after that
+3. verify the current user looks exactly right and can still personalize it
+4. run `Capture and Replay the Current User Appearance for New Users`
+5. restart or sign out/sign back in
+6. create new users after that and verify their editable starting appearance
 
 Mode B starts with the current user. It does not include the policy-enforcement block from Mode A.
 
@@ -456,6 +423,49 @@ and back in before proceeding. Do not use Mode B on top of Mode A policies;
 restore a pre-Mode-A checkpoint first.
 
 This mode is unlocked, but wallpaper inheritance is still the weak point on Windows.
+
+### Shared lock screen: test separately
+
+The lock screen matters for the KMOS look, but this block writes **device-wide**
+Windows settings. Test it **after** the Mode B new-user desktop check, with a
+VM checkpoint first. On this Windows build, the Mode A lock-screen image did
+appear, but news/weather cards remained; setting the image does not control
+those cards. Verify the image on both original and new-user sign-in screens,
+then check whether Settings still permits changing the lock screen. If a
+shared lock screen must also remain user-editable, do not treat this block as
+validated until that check passes. Roll back the test VM if it locks choices.
+
+```powershell
+$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
+$fileUrl = 'file:///' + (($wallpaperPath -replace '\\', '/') -replace ' ', '%20')
+
+function Set-RegistryValue {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)]$Value,
+        [string]$Type = 'String'
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+
+    try {
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
+    } catch {
+        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    }
+}
+
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $wallpaperPath
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $fileUrl
+Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
+```
+
+Lock-screen news/weather cards are a separate **Lock screen status** setting
+under Settings → Personalization → Lock screen. Check whether **None** is
+available for each account; the image-setting block does not disable them.
 
 ---
 
