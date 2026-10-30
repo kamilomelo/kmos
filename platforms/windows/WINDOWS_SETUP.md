@@ -399,19 +399,36 @@ rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 
 Set-Content -Path $scriptPath -Value $scriptContent -Encoding ASCII
 
+# RunOnce can execute before Windows finishes preparing a new user's desktop.
+# Delay only the automatic run; keep the main script immediate for manual retry.
+$runnerPath = Join-Path $scriptDir 'Start-KmosAppearance.ps1'
+$runnerContent = @'
+$logPath = Join-Path $env:LOCALAPPDATA 'kmos-appearance.log'
+Start-Sleep -Seconds 30
+try {
+    & 'C:\ProgramData\kmos\scripts\Apply-KmosAppearance.ps1' *>> $logPath
+} catch {
+    $_ | Out-File -FilePath $logPath -Append
+}
+'@
+Set-Content -Path $runnerPath -Value $runnerContent -Encoding ASCII
+
 $activeSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\kmos.appearance'
 New-Item -Path $activeSetupKey -Force | Out-Null
 Set-ItemProperty -Path $activeSetupKey -Name Version -Value '1,0,0,0'
 New-ItemProperty -Path $activeSetupKey -Name IsInstalled -Value 1 -PropertyType DWord -Force | Out-Null
 # RunOnce is launched as a Windows command line, not parsed as PowerShell:
 # single quotes around -File would become part of the filename.
-Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name 'kmos.appearance' -Value 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\kmos\scripts\Apply-KmosAppearance.ps1'`""
+Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name 'kmos.appearance' -Value 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\kmos\scripts\Start-KmosAppearance.ps1'`""
 ```
 
-This uses `Active Setup` only to register a per-user `RunOnce`. The actual appearance replay then happens after the new user's shell is up, which is more reliable for wallpaper than running too early in the sign-in sequence.
-The script itself worked when run manually in the test VM; the first new-user
-login did not apply it. The RunOnce command has been corrected for a path with
-no spaces, but **automatic first-login replay still needs a fresh-user retest**.
+This uses `Active Setup` only to register a per-user `RunOnce`. The automatic
+runner waits 30 seconds after it starts so Windows can finish setting up the
+new user's desktop, then applies the wallpaper and colors. It writes output
+and errors to `%LOCALAPPDATA%\kmos-appearance.log`; manual runs of
+`Apply-KmosAppearance.ps1` are immediate. In VM tests, a new user's dark mode
+appeared automatically but wallpaper only appeared when the script was run
+later by hand; **the delayed runner still needs a fresh-user retest**.
 
 Mode B procedure:
 1. run `Stage Wallpaper`
