@@ -570,9 +570,17 @@ winget install --id Microsoft.PowerShell.Preview --exact --source winget
 winget install --id GNU.Nano --exact --source winget --scope machine
 winget install --id KDE.Kate --exact --source winget --scope machine
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
+```
+
+#### Optional: Lenovo Commercial Vantage
+
+Install this Store-backed app on a Lenovo computer if you want its
+hardware-specific management features. It may also install on other hardware,
+but it is not required for KMOS or useful for testing Lenovo features in QEMU.
+
+```powershell
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
 ```
-Lenovo Commercial Vantage is Store-backed. If you want to run it manually, the winget Store ID is `9NR5B8GVVM13`.
 
 ### Install and Enable OpenSSH
 
