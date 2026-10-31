@@ -513,12 +513,15 @@ This mode leaves wallpaper editable; allow extra time at a new account's first s
 
 The lock screen matters for the KMOS look, but this block writes **device-wide**
 Windows settings. Test it **separately** from the Mode B desktop check, with a
-VM checkpoint first. On this Windows build, the Mode A lock-screen image did
-appear, but news/weather cards remained; setting the image does not control
-those cards. Verify the image on both original and new-user sign-in screens,
-then check whether Settings still permits changing the lock screen. If a
-shared lock screen must also remain user-editable, do not treat this block as
-validated until that check passes. Roll back the test VM if it locks choices.
+VM checkpoint first. On the modified Windows 11 Pro VM, the KMOS image appeared
+on the lock screen for both the original account and a fresh test account.
+News/Spotlight links remained visible. The Spotlight choice in Settings was
+already greyed out **before** this block was applied, without a visible
+"managed by your organization" message; this test does not establish what
+caused that restriction or whether users can change their lock-screen image.
+Leave the overlays alone unless a narrow, reversible fix is verified on this
+build. If user-editable lock screens are required, do not treat that aspect as
+validated; the verified behavior is the **shared image across accounts**.
 
 ```powershell
 $wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
@@ -548,9 +551,10 @@ Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Persona
 Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
 ```
 
-Lock-screen news/weather cards are a separate **Lock screen status** setting
-under Settings → Personalization → Lock screen. Check whether **None** is
-available for each account; the image-setting block does not disable them.
+The lock-screen image setting does not disable news/Spotlight links. In the VM,
+Settings → Personalization → Lock screen offered **None** as the only lock-screen
+status choice, yet the links remained; do not assume the status choice controls
+these overlays.
 
 ---
 
