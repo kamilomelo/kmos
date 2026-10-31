@@ -696,6 +696,17 @@ and enter the Windows account password only into your own SSH prompt. If the
 connection is refused, check the guest's active network profile against the
 Windows firewall rule before changing its scope.
 
+In this VM, Windows classified QEMU's adapter as **Public**, so the Private-only
+rule did not allow the host forward. For this VM test **only**, the following
+narrow rule admits SSH on the Public profile **only from QEMU's host-side
+gateway `10.0.2.2`**. Do not use this rule as a general real-machine setup:
+
+```powershell
+if (-not (Get-NetFirewallRule -Name KMOS-SSH-QEMU-Host -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -Name KMOS-SSH-QEMU-Host -DisplayName 'KMOS SSH from QEMU host only' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Public -RemoteAddress 10.0.2.2
+}
+```
+
 ### Install Fonts
 
 ```powershell
