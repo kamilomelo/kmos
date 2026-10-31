@@ -465,8 +465,8 @@ Mode B procedure:
 2. run `Apply Current User Wallpaper and Dark Mode`
 3. verify the current user looks exactly right and can still personalize it
 4. run `Capture and Replay the Current User Appearance for New Users`
-5. restart or sign out/sign back in
-6. create new users after that and verify their editable starting appearance
+5. optionally restart or sign out/sign back in to check that the current user's wallpaper persists; this is **not required** to register the new-user replay
+6. create new users and verify their editable starting appearance
 
 Mode B starts with the current user. It does not include the policy-enforcement block from Mode A.
 
