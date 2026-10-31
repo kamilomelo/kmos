@@ -577,6 +577,8 @@ winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --s
 Install this Store-backed app on a Lenovo computer if you want its
 hardware-specific management features. It may also install on other hardware,
 but it is not required for KMOS or useful for testing Lenovo features in QEMU.
+The Store package **did install successfully** in the Windows 11 QEMU VM;
+Lenovo hardware features were not tested there.
 
 ```powershell
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
