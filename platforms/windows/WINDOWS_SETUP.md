@@ -611,6 +611,7 @@ foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
     if ($feature.State -ne 'NotPresent') { throw "Unexpected $name state: $($feature.State)" }
     Write-Host "Installing $name ..."
     $result = Add-WindowsCapability -Online -Name $name -ErrorAction Stop
+    if (-not $result) { throw "$name installation failed; stop here. Do not configure sshd or the firewall." }
     if ($result.RestartNeeded) {
         Write-Warning 'Restart Windows, then rerun this block before configuring sshd.'
         break
@@ -619,6 +620,18 @@ foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
     if ($feature.State -ne 'Installed') { throw "$name did not finish installing: $($feature.State)" }
 }
 ```
+
+**VM finding:** With built-in Windows PowerShell 5.1 on the modified Windows
+11 ISO, the OpenSSH Server download failed with `0x80240438` (Windows Update
+endpoint unreachable); the server remained `NotPresent`. Do **not** run the
+service/firewall block after this error or assume OpenSSH Server is installed.
+Microsoft documents this error and the need for a working update source or a
+matching Features on Demand package in
+[its OpenSSH installation troubleshooting guide](https://learn.microsoft.com/en-us/troubleshoot/windows-server/system-management-components/cant-install-openssh-features).
+Do not clear broad Windows Update or organization policy keys to work around
+it. A separately distributed Win32-OpenSSH MSI exists, but the current
+GitHub release is explicitly marked **preview/non-production ready**; it
+should not be silently substituted for the supported Windows feature.
 
 Only after **both** components show `Installed`, run this separate block in
 Windows PowerShell (Admin). Windows may already have created its own inbound
