@@ -588,15 +588,22 @@ winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agree
 
 The **client** lets Windows SSH into other machines; the **server** lets other
 machines SSH into Windows. Copy the first block from this guide **inside the
-VM** into Windows PowerShell (Admin). It checks each Windows optional feature,
+VM** into the built-in **Windows PowerShell (Admin)** (`powershell.exe`, version
+5.1), **not PowerShell Preview** (`pwsh.exe`, version 7). The Windows DISM
+capability commands can fail with "Class not registered" in Preview. The block
+checks its PowerShell edition before touching Windows, then checks each optional feature,
 skips those already installed, and installs only missing ones. These are the
 **same Windows capabilities** used by the older guide: if Windows cannot
 download a missing feature, installation can still take minutes or fail.
 Stop on an error rather than continuing to service or firewall setup.
 
 ```powershell
+if ($PSVersionTable.PSEdition -ne 'Desktop') {
+    throw 'Use Windows PowerShell 5.1 (powershell.exe), not PowerShell Preview, for Windows capability installation.'
+}
 foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
     $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
+    if (-not $feature) { throw "Windows did not return a capability state for $name. Stop here." }
     if ($feature.State -eq 'Installed') {
         Write-Host "$name is already installed; skipping."
         continue
