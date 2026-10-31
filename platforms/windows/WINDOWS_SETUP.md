@@ -440,7 +440,10 @@ then applies the wallpaper and colors. It removes its own startup entry only
 after the script completes; if Windows restarts first, it retries at the next
 sign-in. Manual runs of `Apply-KmosAppearance.ps1` are immediate. In the VM,
 one-shot first-login runs applied dark mode but were interrupted by a restart
-before wallpaper appeared; **this persistent runner still needs testing**.
+before wallpaper appeared. Retrying with the persistent runner on an affected
+test account did apply the wallpaper after more than a minute; the user's
+subsequent wallpaper choice survived another sign-in. **A new account's first
+login with this updated runner still needs a separate test.**
 
 #### Retest an interrupted first login (test VM only)
 
@@ -448,7 +451,7 @@ If an existing test account already lost its one-shot startup entry, first
 rerun the updated **Capture and Replay** block from the original administrator
 account. Then sign in as the affected test user and register the retry below.
 Do not use this to reset someone else's personalized desktop. Sign out and
-back in, wait at least a minute, and inspect `%LOCALAPPDATA%\kmos-appearance.log`
+back in, allow up to two minutes on a slow VM, and inspect `%LOCALAPPDATA%\kmos-appearance.log`
 if the wallpaper is still missing.
 
 ```powershell
