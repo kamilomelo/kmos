@@ -735,13 +735,16 @@ foreach ($family in $families) {
         }
     }
 
-    explorer.exe $familyDir
 }
 
 explorer.exe $fontWork
 ```
 
-This installs the current Kappa font system for Windows:
+This **downloads** the current Kappa font system to a temporary folder; it
+does not install it. In the folder that opens, visit each family subfolder,
+select its `.ttf` files, right-click, and choose **Install for all users**
+(use **Show more options** if needed, and approve the administrator prompt).
+Repeat for these five families:
 - `Kappa Text`
 - `Kappa Mark`
 - `Kappa Form`
