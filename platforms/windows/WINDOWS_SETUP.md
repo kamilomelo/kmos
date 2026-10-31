@@ -337,13 +337,16 @@ rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 
 #### Capture and Replay the Current User Appearance for New Users
 
-**Experimental: do not rely on this for new-user setup.** This step attempts to
-capture the current user's appearance and replay it at first login. It uses
+**Experimental until a fresh-account retest passes.** This step captures the
+current user's appearance and attempts to replay it at first login. It uses
 the shared KMOS wallpaper file rather than a cached image from the current
 user's private profile; dark mode and accent values remain editable afterward.
-On a fresh VM account, however, dark mode appeared but the KMOS wallpaper did
-not, and neither the retry log nor its per-user `Run` entry was present. The
-first-login registration mechanism has **not** passed a fresh-account test.
+The earlier Active Setup hand-off failed on a fresh VM account: dark mode
+appeared but the wallpaper did not, and neither its retry log nor its per-user
+`Run` entry was present. This version instead installs the retry entry into
+Windows' default user profile, so it is copied into **future** accounts when
+Windows creates them. It does not reset existing accounts. Run in Windows
+PowerShell (Admin) on the account whose appearance you want to capture.
 
 ```powershell
 $scriptDir = 'C:\ProgramData\kmos\scripts'
@@ -431,33 +434,53 @@ try {
 '@
 Set-Content -Path $runnerPath -Value $runnerContent -Encoding ASCII
 
-$activeSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\kmos.appearance'
-New-Item -Path $activeSetupKey -Force | Out-Null
-Set-ItemProperty -Path $activeSetupKey -Name Version -Value '1,0,0,0'
-New-ItemProperty -Path $activeSetupKey -Name IsInstalled -Value 1 -PropertyType DWord -Force | Out-Null
-# Run is launched as a Windows command line, not parsed as PowerShell:
-# single quotes around -File would become part of the filename.
-Set-ItemProperty -Path $activeSetupKey -Name StubPath -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'kmos.appearance' -Value 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\kmos\scripts\Start-KmosAppearance.ps1'`""
+$defaultHive = Join-Path $env:SystemDrive 'Users\Default\NTUSER.DAT'
+if (-not (Test-Path -LiteralPath $defaultHive -PathType Leaf)) {
+    throw "Default user profile not found: $defaultHive"
+}
+$backupHive = Join-Path $scriptDir 'Default-NTUSER.DAT.backup'
+if (-not (Test-Path -LiteralPath $backupHive)) {
+    Copy-Item -LiteralPath $defaultHive -Destination $backupHive -ErrorAction Stop
+}
+$hiveName = "KMOS_Default_$PID"
+$hiveRoot = "HKU\$hiveName"
+$runKey = "$hiveRoot\Software\Microsoft\Windows\CurrentVersion\Run"
+$runCommand = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\kmos\scripts\Start-KmosAppearance.ps1'
+& reg.exe load $hiveRoot $defaultHive | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Could not load the default user profile: $defaultHive" }
+try {
+    & reg.exe add $runKey /v kmos.appearance /t REG_SZ /d $runCommand /f | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Could not register KMOS appearance in the default profile.' }
+    $registration = & reg.exe query $runKey /v kmos.appearance
+    if ($LASTEXITCODE -ne 0) { throw 'Could not verify the default-profile startup entry.' }
+    if (-not ($registration -match [regex]::Escape($runCommand))) {
+        throw 'The default-profile startup entry does not match the runner.'
+    }
+    $registration
+} finally {
+    & reg.exe unload $hiveRoot | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not unload $hiveRoot; do not create a user until this is resolved." }
+}
+# Remove only the obsolete KMOS hand-off from prior versions of this guide.
+$oldSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\kmos.appearance'
+if (Test-Path -LiteralPath $oldSetupKey) { Remove-Item -LiteralPath $oldSetupKey -Force }
 ```
 
-This uses `Active Setup` to register a per-user `Run` entry. It logs a start
-to `%LOCALAPPDATA%\kmos-appearance.log`, waits 30 seconds for the desktop,
-then applies the wallpaper and colors. It removes its own startup entry only
-after the script completes; if Windows restarts first, it retries at the next
-sign-in. Manual runs of `Apply-KmosAppearance.ps1` are immediate. In the VM,
-one-shot first-login runs applied dark mode but were interrupted by a restart
-before wallpaper appeared. Retrying with the persistent runner on an affected
-test account did apply the wallpaper after more than a minute; the user's
-subsequent wallpaper choice survived another sign-in. A subsequent **fresh**
-account did not get the wallpaper, and had no retry log or per-user `Run`
-entry. That earlier recovery of an existing account does **not** validate
-automatic setup for new accounts.
+The block backs up `C:\Users\Default\NTUSER.DAT` once under
+`C:\ProgramData\kmos\scripts`, loads the default
+profile, prints the registered `Run` command for verification, and unloads
+the profile. Only accounts **created afterward** inherit that entry. At their
+sign-in it logs a start to `%LOCALAPPDATA%\kmos-appearance.log`, waits 30
+seconds for the desktop, applies the appearance, then removes the entry only
+after completion; an interrupted run retries on the next sign-in. The retry
+worked when registered manually for an existing test user, but the new
+default-profile registration has **not yet been tested on a fresh account**.
 
 #### Retest an interrupted first login (test VM only)
 
-If an existing test account already lost its one-shot startup entry, first
-rerun the updated **Capture and Replay** block from the original administrator
-account. Then sign in as the affected test user and register the retry below.
+If an existing test account already lost its one-shot startup entry, sign in
+as the affected test user and register the retry below. Installing the new
+default-profile entry does **not** change an existing account's profile.
 Do not use this to reset someone else's personalized desktop. Sign out and
 back in, allow up to two minutes on a slow VM, and inspect `%LOCALAPPDATA%\kmos-appearance.log`
 if the wallpaper is still missing.
@@ -473,7 +496,7 @@ Mode B procedure:
 2. run `Apply Current User Wallpaper and Dark Mode`
 3. verify the current user looks exactly right and can still personalize it
 4. optionally restart or sign out/sign back in to check that the current user's wallpaper persists
-5. do **not** assume new users inherit this appearance: the experimental `Capture and Replay` block failed the fresh-account VM test above
+5. optional **experimental** new-user test: run `Capture and Replay the Current User Appearance for New Users`, then create a fresh test account; do **not** assume new-user inheritance until its first sign-in passes
 
 Mode B starts with the current user. It does not include the policy-enforcement block from Mode A.
 
