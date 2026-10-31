@@ -584,65 +584,28 @@ Lenovo hardware features were not tested there.
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
 ```
 
-### Check OpenSSH Before Installing
+### Install and Verify OpenSSH
 
-Windows may already have the client or server. Run this read-only check in
-Windows PowerShell (Admin) before changing capabilities, services, or the
-firewall:
+The **client** lets Windows SSH into other machines; the **server** lets other
+machines SSH into Windows. For both directions, download
+[`Install-KmosOpenSSH.cmd`](Install-KmosOpenSSH.cmd) from this guide's GitHub
+branch using the file page's **Download raw file** button, then double-click
+the downloaded file. Review the file before running it and approve the Windows
+administrator prompt. **No PowerShell commands need to be typed.**
 
-```powershell
-Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH*'
-```
+The installer checks both Windows capabilities and skips those already
+installed. It sets `sshd` to start automatically, starts it, checks for an
+existing firewall rule rather than adding a duplicate, and tests localhost
+port 22. If Windows created a firewall rule, review its network scope before
+using SSH on a real network. If no rule exists, the script adds one limited
+to the **Private** network profile and **local subnet**. If a restart is
+required, restart Windows and run the same installer again; the capability
+checks will skip completed installs. It leaves the result window open for you
+to read. Do not type or share your Windows password with this script.
 
-`Installed` means that component needs no installation; `NotPresent` means
-it is available to add. If installation fails, stop and diagnose the error
-before changing the service or firewall. If an install reports
-`RestartNeeded : True`, restart before configuring its service.
-
-#### Optional: Install OpenSSH Client
-
-```powershell
-Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
-```
-
-The client lets this computer connect *out*; it does not open an inbound SSH
-port. **You do not need the client to SSH into this Windows computer.** If
-inbound access is your goal, check/install the server instead.
-
-#### Enable OpenSSH Server (for SSH into Windows)
-
-Do this when you want to allow remote sign-in to this Windows computer.
-Run the `Add-WindowsCapability` line only if the server is `NotPresent`.
-Installing the server may create and enable an inbound port-22 firewall rule.
-On a real network, review who can reach the computer before enabling it. The
-server is **not required** for the other core tools above. QEMU's user-mode
-network also needs host-side port forwarding for inbound connections from
-outside the VM; enabling `sshd` alone does not expose the guest to the host.
-
-```powershell
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-Set-Service -Name sshd -StartupType Automatic
-Start-Service sshd
-```
-
-Check whether Windows created a firewall rule; do not create a second rule
-with the same name. If remote access is needed and the rule is absent, review
-the network scope and add a suitably restricted rule separately.
-
-```powershell
-Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue | Select-Object Name, Enabled, Profile
-```
-
-#### Verify OpenSSH
-
-```powershell
-Get-Service sshd
-Test-NetConnection -ComputerName localhost -Port 22
-```
-
-A localhost port check verifies that the server is listening without asking
-for a password or changing SSH known-hosts files. If you installed only the
-client, use `ssh -V` instead.
+This only configures the **Windows guest**. QEMU's user-mode network still
+needs separate host-side port forwarding to allow SSH from the host into the
+VM; that is not part of the Windows installer.
 
 ### Install Fonts
 
