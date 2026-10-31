@@ -587,106 +587,71 @@ winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agree
 ### Install and Verify OpenSSH
 
 The **client** lets Windows SSH into other machines; the **server** lets other
-machines SSH into Windows. Copy the first block from this guide **inside the
-VM** into the built-in **Windows PowerShell (Admin)** (`powershell.exe`, version
-5.1), **not PowerShell Preview** (`pwsh.exe`, version 7). The Windows DISM
-capability commands can fail with "Class not registered" in Preview. The block
-checks its PowerShell edition before touching Windows, then checks each optional feature,
-skips those already installed, and installs only missing ones. These are the
-**same Windows capabilities** used by the older guide: if Windows cannot
-download a missing feature, installation can still take minutes or fail.
-Stop on an error rather than continuing to service or firewall setup.
+machines SSH into Windows. **Copy and run this one block** from the guide
+inside the VM, in **Windows PowerShell (Admin)** (`powershell.exe`, not
+PowerShell Preview). It installs both when needed, starts `sshd`, creates
+only a missing firewall rule, and prints `SSH READY locally` after a client
+and server check. Rerunning it skips work already completed.
+
+On a normal Windows machine it uses the supported Windows optional features,
+which Windows services through updates. On this QEMU test VM, whose Windows
+Update feature download failed with `0x80240438`, it instead uses a pinned
+Microsoft Win32-OpenSSH MSI. That release is **Preview/non-production ready**
+and needs manual updates; do not use the QEMU fallback on a real machine.
+The VM-only Public-network firewall rule permits port 22 **only from QEMU's
+host gateway `10.0.2.2`**, not from arbitrary network machines.
 
 ```powershell
+& {
+$ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -ne 'Desktop') {
-    throw 'Use Windows PowerShell 5.1 (powershell.exe), not PowerShell Preview, for Windows capability installation.'
+    throw 'Use Windows PowerShell (powershell.exe), not PowerShell Preview.'
 }
-foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
-    $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
-    if (-not $feature) { throw "Windows did not return a capability state for $name. Stop here." }
-    if ($feature.State -eq 'Installed') {
-        Write-Host "$name is already installed; skipping."
-        continue
+$computer = Get-CimInstance Win32_ComputerSystem
+$isKmosVm = $computer.Manufacturer -match 'QEMU' -or $computer.Model -match 'QEMU|Q35'
+if ($isKmosVm) {
+    $msiClient = Join-Path $env:ProgramFiles 'OpenSSH\ssh.exe'
+    if (-not (Test-Path $msiClient) -or -not (Get-Service sshd -ErrorAction SilentlyContinue)) {
+        $msi = Join-Path $env:TEMP 'OpenSSH-Win64-v10.4.0.0.msi'
+        Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.4.0.0p1-Preview/OpenSSH-Win64-v10.4.0.0.msi' -OutFile $msi
+        if ((Get-FileHash $msi -Algorithm SHA256).Hash -ne '788D8643464A01EB63640A2FD746F9ED23D106B5A901A35F88DC8CD40E446AC9') { throw 'OpenSSH download checksum mismatch; do not install.' }
+        $install = Start-Process msiexec.exe -ArgumentList "/i `"$msi`"" -Wait -PassThru
+        if ($install.ExitCode -notin @(0, 3010)) { throw "OpenSSH MSI failed: $($install.ExitCode)" }
+        if ($install.ExitCode -eq 3010) { throw 'Restart Windows, then rerun this block.' }
     }
-    if ($feature.State -ne 'NotPresent') { throw "Unexpected $name state: $($feature.State)" }
-    Write-Host "Installing $name ..."
-    $result = Add-WindowsCapability -Online -Name $name -ErrorAction Stop
-    if (-not $result) { throw "$name installation failed; stop here. Do not configure sshd or the firewall." }
-    if ($result.RestartNeeded) {
-        Write-Warning 'Restart Windows, then rerun this block before configuring sshd.'
-        break
+} else {
+    foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
+        $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
+        if (-not $feature) { throw "Cannot check $name; stop here." }
+        if ($feature.State -eq 'Installed') { continue }
+        if ($feature.State -ne 'NotPresent') { throw "Unexpected $name state: $($feature.State)" }
+        $result = Add-WindowsCapability -Online -Name $name -ErrorAction Stop
+        if (-not $result) { throw "$name installation failed; stop here." }
+        if ($result.RestartNeeded) { throw 'Restart Windows, then rerun this block.' }
+        if ((Get-WindowsCapability -Online -Name $name).State -ne 'Installed') { throw "$name did not finish installing." }
     }
-    $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
-    if ($feature.State -ne 'Installed') { throw "$name did not finish installing: $($feature.State)" }
 }
-```
-
-**VM finding:** With built-in Windows PowerShell 5.1 on the modified Windows
-11 ISO, the OpenSSH Server download failed with `0x80240438` (Windows Update
-endpoint unreachable); the server remained `NotPresent`. Do **not** run the
-service/firewall block after this error or assume OpenSSH Server is installed.
-Microsoft documents this error and the need for a working update source or a
-matching Features on Demand package in
-[its OpenSSH installation troubleshooting guide](https://learn.microsoft.com/en-us/troubleshoot/windows-server/system-management-components/cant-install-openssh-features).
-Do not clear broad Windows Update or organization policy keys to work around
-it.
-
-#### VM fallback: Microsoft Win32-OpenSSH MSI
-
-If Windows Update cannot supply the server, the official
-[Win32-OpenSSH release](https://github.com/PowerShell/Win32-OpenSSH/releases/tag/10.4.0.0p1-Preview)
-provides a small MSI that installs **both client and server** by default,
-without using Windows Features on Demand. This particular release is
-explicitly **preview/non-production ready**; use it for this VM test, not
-as an unannounced replacement on production machines. You are responsible
-for updating a manually installed MSI later. In Windows PowerShell (Admin),
-copy the following from this guide inside the VM:
-
-```powershell
-$msi = Join-Path $env:TEMP 'OpenSSH-Win64-v10.4.0.0.msi'
-Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.4.0.0p1-Preview/OpenSSH-Win64-v10.4.0.0.msi' -OutFile $msi
-if ((Get-FileHash -Path $msi -Algorithm SHA256).Hash -ne '788D8643464A01EB63640A2FD746F9ED23D106B5A901A35F88DC8CD40E446AC9') { throw 'OpenSSH download checksum mismatch; do not install.' }
-$install = Start-Process msiexec.exe -ArgumentList "/i `"$msi`"" -Wait -PassThru
-if ($install.ExitCode -notin @(0, 3010)) { throw "OpenSSH MSI failed: $($install.ExitCode)" }
-if ($install.ExitCode -eq 3010) { Write-Warning 'Restart Windows before configuring OpenSSH.' }
-```
-
-The pinned SHA-256 is from the release asset. Do not run the service/firewall
-block if the checksum or MSI installation fails.
-
-Only after **both** Windows components show `Installed` **or** the MSI succeeds,
-run this separate block in
-Windows PowerShell (Admin). Windows may already have created its own inbound
-SSH firewall rule when the server was installed. This block does **not** create
-a duplicate; if no rule exists, it adds one limited to the **Private** network
-profile and **local subnet**. Review existing rules before using SSH on a
-real network.
-
-```powershell
 Set-Service -Name sshd -StartupType Automatic -ErrorAction Stop
 if ((Get-Service sshd -ErrorAction Stop).Status -ne 'Running') { Start-Service sshd -ErrorAction Stop }
-$rule = Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue
-if (-not $rule) { $rule = Get-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -ErrorAction SilentlyContinue }
-if (-not $rule) {
-    $rule = New-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -DisplayName 'KMOS OpenSSH (private LAN)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Private -RemoteAddress LocalSubnet -ErrorAction Stop
+if ($isKmosVm) {
+    if (-not (Get-NetFirewallRule -Name KMOS-SSH-QEMU-Host -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -Name KMOS-SSH-QEMU-Host -DisplayName 'KMOS SSH from QEMU host only' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Public -RemoteAddress 10.0.2.2 -ErrorAction Stop | Out-Null
+    }
+} elseif (-not (Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue) -and
+          -not (Get-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -DisplayName 'KMOS OpenSSH (private LAN)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Private -RemoteAddress LocalSubnet -ErrorAction Stop | Out-Null
 }
-$rule | Select-Object Name, Enabled, Profile, Action
-Get-Service sshd
-```
-
-If an existing rule is disabled, the block reports it but does not override
-that deliberate setting. Verify both sides with this **read-only** block;
-it prints a single clear result instead of the longer network-test output:
-
-```powershell
 $client = Get-Command ssh.exe -ErrorAction Stop
-if ((Get-Service sshd -ErrorAction Stop).Status -ne 'Running') { throw 'SSH server is not running.' }
 if (-not (Test-NetConnection -ComputerName localhost -Port 22 -InformationLevel Quiet)) { throw 'SSH server is not listening on port 22.' }
 Write-Host "SSH READY locally: client $($client.Source); server listening on port 22."
+}
 ```
 
-This checks that the client is available and the server accepts local TCP
-connections; it does not test authentication or remote reachability.
+If the install fails, stop; the block does not continue to firewall setup.
+On a real machine, check the existing firewall rule's scope before allowing
+remote access. `SSH READY locally` tests the client and listening server, not
+authentication or remote reachability. If Windows reports a restart is
+needed, restart and run the **same block** again.
 
 This only configures the **Windows guest**. The test VM launcher, when started
 with `./start-win11.sh --boot`, forwards **host `127.0.0.1:2222` → guest port `22`** on the
@@ -696,18 +661,7 @@ and enter the Windows account password only into your own SSH prompt. If the
 connection is refused, check the guest's active network profile against the
 Windows firewall rule before changing its scope.
 
-In this VM, Windows classified QEMU's adapter as **Public**, so the Private-only
-rule did not allow the host forward. For this VM test **only**, the following
-narrow rule admits SSH on the Public profile **only from QEMU's host-side
-gateway `10.0.2.2`**. Do not use this rule as a general real-machine setup:
-
-```powershell
-if (-not (Get-NetFirewallRule -Name KMOS-SSH-QEMU-Host -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -Name KMOS-SSH-QEMU-Host -DisplayName 'KMOS SSH from QEMU host only' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Public -RemoteAddress 10.0.2.2
-}
-```
-
-**VM result:** After applying this rule, the Linux host received the Windows
+**VM result:** With the narrow Public-network rule, the Linux host received the Windows
 OpenSSH 10.4 server banner and host keys through `127.0.0.1:2222`. Host-to-VM
 network reachability is verified. An authenticated SSH sign-in from the Linux
 host to the VM's `itadmin` account also succeeded. From Windows in the VM,
