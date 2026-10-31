@@ -688,9 +688,13 @@ Write-Host "SSH READY locally: client $($client.Source); server listening on por
 This checks that the client is available and the server accepts local TCP
 connections; it does not test authentication or remote reachability.
 
-This only configures the **Windows guest**. QEMU's user-mode network still
-needs separate host-side port forwarding to allow SSH from the host into the
-VM; that is not part of these Windows blocks.
+This only configures the **Windows guest**. The test VM launcher, when started
+with `./start-win11.sh --boot`, forwards **host `127.0.0.1:2222` → guest port `22`** on the
+next VM boot. This host-only forward does not expose SSH to other network
+machines. From the Linux host, test with `ssh -p 2222 <Windows-user>@127.0.0.1`
+and enter the Windows account password only into your own SSH prompt. If the
+connection is refused, check the guest's active network profile against the
+Windows firewall rule before changing its scope.
 
 ### Install Fonts
 
