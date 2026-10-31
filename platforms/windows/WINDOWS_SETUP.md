@@ -710,8 +710,10 @@ if (-not (Get-NetFirewallRule -Name KMOS-SSH-QEMU-Host -ErrorAction SilentlyCont
 **VM result:** After applying this rule, the Linux host received the Windows
 OpenSSH 10.4 server banner and host keys through `127.0.0.1:2222`. Host-to-VM
 network reachability is verified. An authenticated SSH sign-in from the Linux
-host to the VM's `itadmin` account also succeeded. SSH connections *out of*
-Windows still need a separate test.
+host to the VM's `itadmin` account also succeeded. From Windows in the VM,
+`ssh kamilo@10.0.2.2` reached an authenticated shell on the Linux host as
+well. **Both SSH directions passed in this VM.** Keep passwords private and
+remember that the Preview MSI must be updated manually.
 
 ### Install Fonts
 
