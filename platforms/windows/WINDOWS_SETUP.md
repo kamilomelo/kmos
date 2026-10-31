@@ -676,7 +676,7 @@ $fontWork = Join-Path $env:TEMP 'kmos-fonts'
 New-Item -ItemType Directory -Path $fontWork -Force | Out-Null
 
 $fontApiBase = 'https://api.github.com/repos/kamilomelo/kappa-type/contents/fonts'
-$families = @('kappa-text', 'kappa-mark', 'kappa-form', 'kappa-mono', 'kappa-spin')
+$families = @('kappa-text', 'kappa-page', 'kappa-mark', 'kappa-form', 'kappa-mono', 'kappa-spin')
 
 foreach ($family in $families) {
     $familyDir = Join-Path $fontWork $family
@@ -698,12 +698,17 @@ This **downloads** the current Kappa font system to a temporary folder; it
 does not install it. In the folder that opens, visit each family subfolder,
 select its `.ttf` files, right-click, and choose **Install for all users**
 (use **Show more options** if needed, and approve the administrator prompt).
-Repeat for these five families:
+Repeat for these five frozen-baseline families:
 - `Kappa Text`
 - `Kappa Mark`
 - `Kappa Form`
 - `Kappa Mono`
 - `Kappa Spin`
+
+The download also includes `Kappa Page` (four `.ttf` files). It is a usable
+**alpha**, not a frozen baseline; install it only if you want to test the new
+print/document family. Existing font installations do not change just because
+you rerun the download block.
 
 ### Set Windows Terminal Default Font
 
