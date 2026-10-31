@@ -584,22 +584,64 @@ Lenovo hardware features were not tested there.
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
 ```
 
-### Install and Enable OpenSSH
+### Check OpenSSH Before Installing
+
+Windows may already have the client or server. Run this read-only check in
+Windows PowerShell (Admin) before changing capabilities, services, or the
+firewall:
+
+```powershell
+Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH*'
+```
+
+`Installed` means that component needs no installation; `NotPresent` means
+it is available to add. If installation fails, stop and diagnose the error
+before changing the service or firewall. If an install reports
+`RestartNeeded : True`, restart before configuring its service.
+
+#### Install OpenSSH Client (if needed)
 
 ```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+```
+
+The client lets this computer connect *out*; it does not open an inbound SSH
+port. If you do not need to sign into this Windows computer remotely, stop
+here and skip the server.
+
+#### Optional: Enable OpenSSH Server
+
+Only do this when you want to allow remote sign-in to this Windows computer.
+Run the `Add-WindowsCapability` line only if the server is `NotPresent`.
+Installing the server may create and enable an inbound port-22 firewall rule.
+On a real network, review who can reach the computer before enabling it. The
+server is **not required** for the core tools above.
+
+```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Set-Service -Name sshd -StartupType Automatic
 Start-Service sshd
-New-NetFirewallRule -Name OpenSSH-Server-In-TCP -DisplayName 'OpenSSH Server (SSH)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow
 ```
 
-#### Verify SSH
+Check whether Windows created a firewall rule; do not create a second rule
+with the same name. If remote access is needed and the rule is absent, review
+the network scope and add a suitably restricted rule separately.
 
 ```powershell
-Get-Service sshd
-ssh localhost
+Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue | Select-Object Name, Enabled, Profile
 ```
+
+#### Verify OpenSSH
+
+```powershell
+ssh -V
+Get-Service sshd
+Test-NetConnection -ComputerName localhost -Port 22
+```
+
+Skip the last two server checks if you installed only the client. A localhost
+port check verifies that the server is listening without asking for a password
+or changing SSH known-hosts files.
 
 ### Install Fonts
 
