@@ -337,7 +337,13 @@ rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 
 #### Capture and Replay the Current User Appearance for New Users
 
-This step captures the current user's appearance values after you have the look exactly right, then replays those values for each new user at first login. It uses the shared KMOS wallpaper file rather than a cached image from the current user's private profile; dark mode and accent values remain editable afterward.
+**Experimental: do not rely on this for new-user setup.** This step attempts to
+capture the current user's appearance and replay it at first login. It uses
+the shared KMOS wallpaper file rather than a cached image from the current
+user's private profile; dark mode and accent values remain editable afterward.
+On a fresh VM account, however, dark mode appeared but the KMOS wallpaper did
+not, and neither the retry log nor its per-user `Run` entry was present. The
+first-login registration mechanism has **not** passed a fresh-account test.
 
 ```powershell
 $scriptDir = 'C:\ProgramData\kmos\scripts'
@@ -442,8 +448,10 @@ sign-in. Manual runs of `Apply-KmosAppearance.ps1` are immediate. In the VM,
 one-shot first-login runs applied dark mode but were interrupted by a restart
 before wallpaper appeared. Retrying with the persistent runner on an affected
 test account did apply the wallpaper after more than a minute; the user's
-subsequent wallpaper choice survived another sign-in. **A new account's first
-login with this updated runner still needs a separate test.**
+subsequent wallpaper choice survived another sign-in. A subsequent **fresh**
+account did not get the wallpaper, and had no retry log or per-user `Run`
+entry. That earlier recovery of an existing account does **not** validate
+automatic setup for new accounts.
 
 #### Retest an interrupted first login (test VM only)
 
@@ -464,9 +472,8 @@ Mode B procedure:
 1. run `Stage Wallpaper`
 2. run `Apply Current User Wallpaper and Dark Mode`
 3. verify the current user looks exactly right and can still personalize it
-4. run `Capture and Replay the Current User Appearance for New Users`
-5. optionally restart or sign out/sign back in to check that the current user's wallpaper persists; this is **not required** to register the new-user replay
-6. create new users and verify their editable starting appearance
+4. optionally restart or sign out/sign back in to check that the current user's wallpaper persists
+5. do **not** assume new users inherit this appearance: the experimental `Capture and Replay` block failed the fresh-account VM test above
 
 Mode B starts with the current user. It does not include the policy-enforcement block from Mode A.
 
@@ -479,7 +486,7 @@ This mode is unlocked, but wallpaper inheritance is still the weak point on Wind
 ### Shared lock screen: test separately
 
 The lock screen matters for the KMOS look, but this block writes **device-wide**
-Windows settings. Test it **after** the Mode B new-user desktop check, with a
+Windows settings. Test it **separately** from the Mode B desktop check, with a
 VM checkpoint first. On this Windows build, the Mode A lock-screen image did
 appear, but news/weather cards remained; setting the image does not control
 those cards. Verify the image on both original and new-user sign-in screens,
