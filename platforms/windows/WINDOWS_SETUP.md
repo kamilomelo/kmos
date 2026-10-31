@@ -672,12 +672,21 @@ if (-not $rule) {
 }
 $rule | Select-Object Name, Enabled, Profile, Action
 Get-Service sshd
-Test-NetConnection -ComputerName localhost -Port 22
 ```
 
 If an existing rule is disabled, the block reports it but does not override
-that deliberate setting. `TcpTestSucceeded : True` confirms `sshd` is
-listening locally; it does not test authentication or remote reachability.
+that deliberate setting. Verify both sides with this **read-only** block;
+it prints a single clear result instead of the longer network-test output:
+
+```powershell
+$client = Get-Command ssh.exe -ErrorAction Stop
+if ((Get-Service sshd -ErrorAction Stop).Status -ne 'Running') { throw 'SSH server is not running.' }
+if (-not (Test-NetConnection -ComputerName localhost -Port 22 -InformationLevel Quiet)) { throw 'SSH server is not listening on port 22.' }
+Write-Host "SSH READY locally: client $($client.Source); server listening on port 22."
+```
+
+This checks that the client is available and the server accepts local TCP
+connections; it does not test authentication or remote reachability.
 
 This only configures the **Windows guest**. QEMU's user-mode network still
 needs separate host-side port forwarding to allow SSH from the host into the
