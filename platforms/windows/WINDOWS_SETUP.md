@@ -587,25 +587,59 @@ winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agree
 ### Install and Verify OpenSSH
 
 The **client** lets Windows SSH into other machines; the **server** lets other
-machines SSH into Windows. For both directions, download
-[`Install-KmosOpenSSH.cmd`](Install-KmosOpenSSH.cmd) from this guide's GitHub
-branch using the file page's **Download raw file** button, then double-click
-the downloaded file. Review the file before running it and approve the Windows
-administrator prompt. **No PowerShell commands need to be typed.**
+machines SSH into Windows. Copy the first block from this guide **inside the
+VM** into Windows PowerShell (Admin). It checks each Windows optional feature,
+skips those already installed, and installs only missing ones. These are the
+**same Windows capabilities** used by the older guide: if Windows cannot
+download a missing feature, installation can still take minutes or fail.
+Stop on an error rather than continuing to service or firewall setup.
 
-The installer checks both Windows capabilities and skips those already
-installed. It sets `sshd` to start automatically, starts it, checks for an
-existing firewall rule rather than adding a duplicate, and tests localhost
-port 22. If Windows created a firewall rule, review its network scope before
-using SSH on a real network. If no rule exists, the script adds one limited
-to the **Private** network profile and **local subnet**. If a restart is
-required, restart Windows and run the same installer again; the capability
-checks will skip completed installs. It leaves the result window open for you
-to read. Do not type or share your Windows password with this script.
+```powershell
+foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
+    $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
+    if ($feature.State -eq 'Installed') {
+        Write-Host "$name is already installed; skipping."
+        continue
+    }
+    if ($feature.State -ne 'NotPresent') { throw "Unexpected $name state: $($feature.State)" }
+    Write-Host "Installing $name ..."
+    $result = Add-WindowsCapability -Online -Name $name -ErrorAction Stop
+    if ($result.RestartNeeded) {
+        Write-Warning 'Restart Windows, then rerun this block before configuring sshd.'
+        break
+    }
+    $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
+    if ($feature.State -ne 'Installed') { throw "$name did not finish installing: $($feature.State)" }
+}
+```
+
+Only after **both** components show `Installed`, run this separate block in
+Windows PowerShell (Admin). Windows may already have created its own inbound
+SSH firewall rule when the server was installed. This block does **not** create
+a duplicate; if no rule exists, it adds one limited to the **Private** network
+profile and **local subnet**. Review existing rules before using SSH on a
+real network.
+
+```powershell
+Set-Service -Name sshd -StartupType Automatic -ErrorAction Stop
+if ((Get-Service sshd -ErrorAction Stop).Status -ne 'Running') { Start-Service sshd -ErrorAction Stop }
+$rule = Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue
+if (-not $rule) { $rule = Get-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -ErrorAction SilentlyContinue }
+if (-not $rule) {
+    $rule = New-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -DisplayName 'KMOS OpenSSH (private LAN)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Private -RemoteAddress LocalSubnet -ErrorAction Stop
+}
+$rule | Select-Object Name, Enabled, Profile, Action
+Get-Service sshd
+Test-NetConnection -ComputerName localhost -Port 22
+```
+
+If an existing rule is disabled, the block reports it but does not override
+that deliberate setting. `TcpTestSucceeded : True` confirms `sshd` is
+listening locally; it does not test authentication or remote reachability.
 
 This only configures the **Windows guest**. QEMU's user-mode network still
 needs separate host-side port forwarding to allow SSH from the host into the
-VM; that is not part of the Windows installer.
+VM; that is not part of these Windows blocks.
 
 ### Install Fonts
 
