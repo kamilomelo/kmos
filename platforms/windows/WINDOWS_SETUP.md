@@ -337,8 +337,8 @@ rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 
 #### Capture and Replay the Current User Appearance for New Users
 
-**Experimental until a fresh-account retest passes.** This step captures the
-current user's appearance and attempts to replay it at first login. It uses
+**Verified on a fresh test account in the Windows 11 VM.** This step captures
+the current user's appearance and replays it at first login. It uses
 the shared KMOS wallpaper file rather than a cached image from the current
 user's private profile; dark mode and accent values remain editable afterward.
 The earlier Active Setup hand-off failed on a fresh VM account: dark mode
@@ -472,9 +472,12 @@ profile, prints the registered `Run` command for verification, and unloads
 the profile. Only accounts **created afterward** inherit that entry. At their
 sign-in it logs a start to `%LOCALAPPDATA%\kmos-appearance.log`, waits 30
 seconds for the desktop, applies the appearance, then removes the entry only
-after completion; an interrupted run retries on the next sign-in. The retry
-worked when registered manually for an existing test user, but the new
-default-profile registration has **not yet been tested on a fresh account**.
+after completion; an interrupted run retries on the next sign-in. The earlier
+retry worked when registered manually for an existing test user; the new
+default-profile registration subsequently **also worked on a fresh account**.
+That first sign-in took a long time: allow Windows to finish creating the
+profile and the runner to finish after the desktop appears. The runner itself
+waits 30 seconds; do not shorten the delay without another fresh-account test.
 
 #### Retest an interrupted first login (test VM only)
 
@@ -496,7 +499,7 @@ Mode B procedure:
 2. run `Apply Current User Wallpaper and Dark Mode`
 3. verify the current user looks exactly right and can still personalize it
 4. optionally restart or sign out/sign back in to check that the current user's wallpaper persists
-5. optional **experimental** new-user test: run `Capture and Replay the Current User Appearance for New Users`, then create a fresh test account; do **not** assume new-user inheritance until its first sign-in passes
+5. for new-user inheritance, run `Capture and Replay the Current User Appearance for New Users` **before** creating those accounts; the default-profile version passed a fresh-account VM test, but first sign-in can be slow
 
 Mode B starts with the current user. It does not include the policy-enforcement block from Mode A.
 
@@ -504,7 +507,7 @@ If wallpaper or personalization behaves inconsistently, restart or sign out
 and back in before proceeding. Do not use Mode B on top of Mode A policies;
 restore a pre-Mode-A checkpoint first.
 
-This mode is unlocked, but wallpaper inheritance is still the weak point on Windows.
+This mode leaves wallpaper editable; allow extra time at a new account's first sign-in for Windows profile setup and KMOS appearance replay.
 
 ### Shared lock screen: test separately
 
