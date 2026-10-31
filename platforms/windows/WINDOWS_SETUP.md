@@ -629,11 +629,33 @@ Microsoft documents this error and the need for a working update source or a
 matching Features on Demand package in
 [its OpenSSH installation troubleshooting guide](https://learn.microsoft.com/en-us/troubleshoot/windows-server/system-management-components/cant-install-openssh-features).
 Do not clear broad Windows Update or organization policy keys to work around
-it. A separately distributed Win32-OpenSSH MSI exists, but the current
-GitHub release is explicitly marked **preview/non-production ready**; it
-should not be silently substituted for the supported Windows feature.
+it.
 
-Only after **both** components show `Installed`, run this separate block in
+#### VM fallback: Microsoft Win32-OpenSSH MSI
+
+If Windows Update cannot supply the server, the official
+[Win32-OpenSSH release](https://github.com/PowerShell/Win32-OpenSSH/releases/tag/10.4.0.0p1-Preview)
+provides a small MSI that installs **both client and server** by default,
+without using Windows Features on Demand. This particular release is
+explicitly **preview/non-production ready**; use it for this VM test, not
+as an unannounced replacement on production machines. You are responsible
+for updating a manually installed MSI later. In Windows PowerShell (Admin),
+copy the following from this guide inside the VM:
+
+```powershell
+$msi = Join-Path $env:TEMP 'OpenSSH-Win64-v10.4.0.0.msi'
+Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.4.0.0p1-Preview/OpenSSH-Win64-v10.4.0.0.msi' -OutFile $msi
+if ((Get-FileHash -Path $msi -Algorithm SHA256).Hash -ne '788D8643464A01EB63640A2FD746F9ED23D106B5A901A35F88DC8CD40E446AC9') { throw 'OpenSSH download checksum mismatch; do not install.' }
+$install = Start-Process msiexec.exe -ArgumentList "/i `"$msi`"" -Wait -PassThru
+if ($install.ExitCode -notin @(0, 3010)) { throw "OpenSSH MSI failed: $($install.ExitCode)" }
+if ($install.ExitCode -eq 3010) { Write-Warning 'Restart Windows before configuring OpenSSH.' }
+```
+
+The pinned SHA-256 is from the release asset. Do not run the service/firewall
+block if the checksum or MSI installation fails.
+
+Only after **both** Windows components show `Installed` **or** the MSI succeeds,
+run this separate block in
 Windows PowerShell (Admin). Windows may already have created its own inbound
 SSH firewall rule when the server was installed. This block does **not** create
 a duplicate; if no rule exists, it adds one limited to the **Private** network
