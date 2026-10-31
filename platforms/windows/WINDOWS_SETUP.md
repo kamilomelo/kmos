@@ -599,23 +599,25 @@ it is available to add. If installation fails, stop and diagnose the error
 before changing the service or firewall. If an install reports
 `RestartNeeded : True`, restart before configuring its service.
 
-#### Install OpenSSH Client (if needed)
+#### Optional: Install OpenSSH Client
 
 ```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
 ```
 
 The client lets this computer connect *out*; it does not open an inbound SSH
-port. If you do not need to sign into this Windows computer remotely, stop
-here and skip the server.
+port. **You do not need the client to SSH into this Windows computer.** If
+inbound access is your goal, check/install the server instead.
 
-#### Optional: Enable OpenSSH Server
+#### Enable OpenSSH Server (for SSH into Windows)
 
-Only do this when you want to allow remote sign-in to this Windows computer.
+Do this when you want to allow remote sign-in to this Windows computer.
 Run the `Add-WindowsCapability` line only if the server is `NotPresent`.
 Installing the server may create and enable an inbound port-22 firewall rule.
 On a real network, review who can reach the computer before enabling it. The
-server is **not required** for the core tools above.
+server is **not required** for the other core tools above. QEMU's user-mode
+network also needs host-side port forwarding for inbound connections from
+outside the VM; enabling `sshd` alone does not expose the guest to the host.
 
 ```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
@@ -634,14 +636,13 @@ Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue | 
 #### Verify OpenSSH
 
 ```powershell
-ssh -V
 Get-Service sshd
 Test-NetConnection -ComputerName localhost -Port 22
 ```
 
-Skip the last two server checks if you installed only the client. A localhost
-port check verifies that the server is listening without asking for a password
-or changing SSH known-hosts files.
+A localhost port check verifies that the server is listening without asking
+for a password or changing SSH known-hosts files. If you installed only the
+client, use `ssh -V` instead.
 
 ### Install Fonts
 
