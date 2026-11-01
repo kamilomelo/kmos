@@ -142,7 +142,10 @@ Resize-SystemPartitionIfRequested
 
 ## Phase 2: Appearance
 
-Run this before creating additional Windows users so new accounts inherit the same visual defaults.
+Set editable KMOS defaults for the current account and register one-time setup
+for other accounts before creating additional users. If organization policy
+blocks personalization, determine whether the computer is still managed; do
+not delete broad Windows policy keys to work around it.
 
 ### Set Computer Name
 
@@ -186,15 +189,6 @@ if (-not $newName -or $newName -eq $currentName) {
 }
 ```
 
-### Existing organization policies
-
-Do **not** delete broad Windows policy keys as a routine setup step. If an old
-organization's policy blocks personalization, first determine whether the
-computer is still managed. Back up the specific setting and resolve it with
-the administrator or remove only the identified stale policy; a blanket
-registry cleanup can erase unrelated security or management settings. Neither
-Mode A nor Mode B requires such a cleanup on a fresh Windows installation.
-
 ### Stage Wallpaper
 
 ```powershell
@@ -210,69 +204,7 @@ Shared wallpaper path:
 Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
 ```
 
-### Mode A: Enforced Corporate Appearance
-
-Use this if you want Windows to try to enforce the kmos look by policy. This path does not capture a user profile and does not replay anything for later users. It is best-effort on Windows and may still need a manual check after reboot.
-
-**VM finding (2026-10-30):** On a modified Windows 11 Pro ISO, the lock-screen
-image appeared, but the desktop wallpaper needed a manual Fit → Fill change
-to display. Switching Background from Picture to Solid Color then hid the
-wallpaper and blocked switching back. Lock-screen news/weather cards also
-remained. Mode A is **not validated or recommended for deployment** on this
-build; test it only in a disposable VM with a rollback point. Do not use the
-old broad policy cleanup as a repair. Lock-screen status/widgets are separate
-from the lock-screen image.
-
-#### Enforce Wallpaper, Lock Screen, and Colors
-
-```powershell
-$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
-$fileUrl = 'file:///' + (($wallpaperPath -replace '\\', '/') -replace ' ', '%20')
-
-function Set-RegistryValue {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)]$Value,
-        [string]$Type = 'String'
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
-    }
-
-    try {
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
-    } catch {
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
-    }
-}
-
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Name 'Wallpaper' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '6'
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'LockScreenImage' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'NoLockScreenSlideshow' -Value 1 -Type DWord
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $fileUrl
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Name 'DisableWindowsSpotlightFeatures' -Value 1 -Type DWord
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' -Name 'DisableSpotlightCollectionOnDesktop' -Value 1 -Type DWord
-```
-
-Mode A procedure:
-1. run `Stage Wallpaper`
-2. run `Enforce Wallpaper, Lock Screen, and Colors`
-3. reboot or sign out/sign back in
-4. verify the machine kept the enforced appearance
-5. create users only after that check passes
-
-Mode A ends here. Do not run the Mode B blocks in this mode.
-
-### Mode B: Unlocked Appearance
-
-Use this if you want to set the current user once and then replay that look for new users later. This mode keeps personalization editable and does not use the policy-enforcement block from Mode A.
-
-#### Apply Current User Wallpaper and Dark Mode
+### Set Current User Wallpaper and Dark Mode
 
 ```powershell
 $wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
@@ -319,18 +251,14 @@ public class KmosWallpaper {
 rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
 ```
 
-#### Capture and Replay the Current User Appearance for New Users
+### Capture and Replay the Current User Appearance for New Users
 
-**Verified on a fresh test account in the Windows 11 VM.** This step captures
-the current user's appearance and replays it at first login. It uses
-the shared KMOS wallpaper file rather than a cached image from the current
-user's private profile; dark mode and accent values remain editable afterward.
-The earlier Active Setup hand-off failed on a fresh VM account: dark mode
-appeared but the wallpaper did not, and neither its retry log nor its per-user
-`Run` entry was present. This version instead installs the retry entry into
-Windows' default user profile, so it is copied into **future** accounts when
-Windows creates them. It does not reset existing accounts. Run in Windows
-PowerShell (Admin) on the account whose appearance you want to capture.
+This captures the current account's appearance and replays it at the first
+sign-in of **future** accounts. It uses the shared KMOS wallpaper, leaves
+personalization editable, and does not reset existing accounts. Run in
+Windows PowerShell (Admin) on the account whose appearance you want to copy.
+The block was tested on a new VM account; allow extra time for its first
+sign-in.
 
 ```powershell
 $scriptDir = 'C:\ProgramData\kmos\scripts'
@@ -445,9 +373,6 @@ try {
     & reg.exe unload $hiveRoot | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not unload $hiveRoot; do not create a user until this is resolved." }
 }
-# Remove only the obsolete KMOS hand-off from prior versions of this guide.
-$oldSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\kmos.appearance'
-if (Test-Path -LiteralPath $oldSetupKey) { Remove-Item -LiteralPath $oldSetupKey -Force }
 ```
 
 The block backs up `C:\Users\Default\NTUSER.DAT` once under
@@ -456,89 +381,106 @@ profile, prints the registered `Run` command for verification, and unloads
 the profile. Only accounts **created afterward** inherit that entry. At their
 sign-in it logs a start to `%LOCALAPPDATA%\kmos-appearance.log`, waits 30
 seconds for the desktop, applies the appearance, then removes the entry only
-after completion; an interrupted run retries on the next sign-in. The earlier
-retry worked when registered manually for an existing test user; the new
-default-profile registration subsequently **also worked on a fresh account**.
+after completion; an interrupted run retries on the next sign-in. The default-profile registration passed a fresh-account VM test.
 That first sign-in took a long time: allow Windows to finish creating the
 profile and the runner to finish after the desktop appears. The runner itself
 waits 30 seconds; do not shorten the delay without another fresh-account test.
 
-#### Retest an interrupted first login (test VM only)
+### Shared Lock Screen: Picture for All Accounts at Sign-In
 
-If an existing test account already lost its one-shot startup entry, sign in
-as the affected test user and register the retry below. Installing the new
-default-profile entry does **not** change an existing account's profile.
-Do not use this to reset someone else's personalized desktop. Sign out and
-back in, allow up to two minutes on a slow VM, and inspect `%LOCALAPPDATA%\kmos-appearance.log`
-if the wallpaper is still missing.
-
-```powershell
-$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-New-Item -Path $runKey -Force | Out-Null
-Set-ItemProperty -Path $runKey -Name 'kmos.appearance' -Value 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\kmos\scripts\Start-KmosAppearance.ps1'
-```
-
-Mode B procedure:
-1. run `Stage Wallpaper`
-2. run `Apply Current User Wallpaper and Dark Mode`
-3. verify the current user looks exactly right and can still personalize it
-4. optionally restart or sign out/sign back in to check that the current user's wallpaper persists
-5. for new-user inheritance, run `Capture and Replay the Current User Appearance for New Users` **before** creating those accounts; the default-profile version passed a fresh-account VM test, but first sign-in can be slow
-
-Mode B starts with the current user. It does not include the policy-enforcement block from Mode A.
-
-If wallpaper or personalization behaves inconsistently, restart or sign out
-and back in before proceeding. Do not use Mode B on top of Mode A policies;
-restore a pre-Mode-A checkpoint first.
-
-This mode leaves wallpaper editable; allow extra time at a new account's first sign-in for Windows profile setup and KMOS appearance replay.
-
-### Shared lock screen: test separately
-
-The lock screen matters for the KMOS look, but this block writes **device-wide**
-Windows settings. Test it **separately** from the Mode B desktop check, with a
-VM checkpoint first. On the modified Windows 11 Pro VM, the KMOS image appeared
-on the lock screen for both the original account and a fresh test account.
-News/Spotlight links remained visible. The Spotlight choice in Settings was
-already greyed out **before** this block was applied, without a visible
-"managed by your organization" message; this test does not establish what
-caused that restriction or whether users can change their lock-screen image.
-Leave the overlays alone unless a narrow, reversible fix is verified on this
-build. If user-editable lock screens are required, do not treat that aspect as
-validated; the verified behavior is the **shared image across accounts**.
+Run this once in Windows PowerShell (Admin) **after** staging the shared image
+and applying the current account's desktop appearance. It registers a
+machine-wide sign-in entry that runs as each Windows user **once**, setting
+that account's KMOS lock-screen Picture without a device-wide lock-screen
+policy. Existing accounts receive it at their next sign-in; future accounts
+receive it at their first sign-in. Because it does not continuously enforce the
+picture, users can subsequently choose another image in Settings. An account
+that never signs in does not receive this per-user setting; the pre-sign-in
+screen is not independently configured.
 
 ```powershell
-$wallpaperPath = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
-$fileUrl = 'file:///' + (($wallpaperPath -replace '\\', '/') -replace ' ', '%20')
-
-function Set-RegistryValue {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)]$Value,
-        [string]$Type = 'String'
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
-    }
-
-    try {
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -ErrorAction Stop | Out-Null
-    } catch {
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
-    }
+& {
+$ErrorActionPreference = 'Stop'
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run from Windows PowerShell (Admin).' }
+$image = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
+if (-not (Test-Path -LiteralPath $image -PathType Leaf)) { throw "Missing KMOS image: $image" }
+$dir = Join-Path $env:ProgramData 'kmos\scripts'
+$helper = Join-Path $dir 'Apply-KmosLockScreenOnce.ps1'
+$runKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+$name = 'KMOSLockScreenOnce'
+$command = 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $helper + '"'
+$existing = (Get-ItemProperty -Path $runKey -Name $name -ErrorAction SilentlyContinue).$name
+if ($existing -and $existing -ne $command) { throw "Existing $name startup entry differs; not replacing it." }
+$content = @'
+$ErrorActionPreference = 'Stop'
+$marker = 'HKCU:\Software\kmos\LockScreen'
+$log = Join-Path $env:LOCALAPPDATA 'kmos-lockscreen.log'
+if ((Get-ItemProperty -Path $marker -Name Applied -ErrorAction SilentlyContinue).Applied -eq 1) { exit 0 }
+try {
+    Add-Content -LiteralPath $log -Value "KMOS lock-screen started $(Get-Date -Format o)"
+    Start-Sleep -Seconds 30
+    $image = Join-Path $env:PUBLIC 'Pictures\kmos\kmos-wallpaper.png'
+    if (-not (Test-Path -LiteralPath $image -PathType Leaf)) { throw "Missing KMOS image: $image" }
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    [Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime] | Out-Null
+    [Windows.System.UserProfile.LockScreen,Windows.System.UserProfile,ContentType=WindowsRuntime] | Out-Null
+    $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+        $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and
+        $_.GetParameters().Count -eq 1 -and
+        $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+    } | Select-Object -First 1
+    if (-not $asTask) { throw 'Windows Runtime async adapter unavailable' }
+    $fileTask = $asTask.MakeGenericMethod([Windows.Storage.StorageFile]).Invoke($null, @([Windows.Storage.StorageFile]::GetFileFromPathAsync($image)))
+    $file = $fileTask.GetAwaiter().GetResult()
+    $action = [Windows.System.UserProfile.LockScreen]::SetImageFileAsync($file)
+    $actionMethod = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+        $_.Name -eq 'AsTask' -and -not $_.IsGenericMethod -and
+        $_.GetParameters().Count -eq 1 -and
+        $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction'
+    } | Select-Object -First 1
+    if (-not $actionMethod) { throw 'Windows Runtime action adapter unavailable' }
+    $actionMethod.Invoke($null, @($action)).GetAwaiter().GetResult()
+    $spotlight = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+    $slideshow = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lock Screen'
+    New-Item -Path $spotlight -Force | Out-Null
+    New-Item -Path $slideshow -Force | Out-Null
+    New-ItemProperty -Path $spotlight -Name RotatingLockScreenEnabled -Value 0 -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -Path $slideshow -Name SlideshowEnabled -Value 0 -PropertyType DWord -Force | Out-Null
+    New-Item -Path $marker -Force | Out-Null
+    New-ItemProperty -Path $marker -Name Applied -Value 1 -PropertyType DWord -Force | Out-Null
+    Add-Content -LiteralPath $log -Value "KMOS lock-screen completed $(Get-Date -Format o)"
+} catch {
+    Add-Content -LiteralPath $log -Value "KMOS lock-screen failed: $_"
+    exit 1
 }
-
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImagePath' -Value $wallpaperPath
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageUrl' -Value $fileUrl
-Set-RegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -Name 'LockScreenImageStatus' -Value 1 -Type DWord
+'@
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
+if (Test-Path -LiteralPath $helper) {
+    if ((Get-Content -Raw -LiteralPath $helper).TrimEnd([char[]]@("`r", "`n")) -cne $content) {
+        throw "Existing helper differs: $helper. Not overwriting it."
+    }
+} else {
+    Set-Content -LiteralPath $helper -Value $content -Encoding ASCII
+}
+if (-not $existing) {
+    New-ItemProperty -Path $runKey -Name $name -Value $command -PropertyType String | Out-Null
+}
+Write-Host "Registered $name for all accounts. At next sign-in, wait 30 seconds and inspect %LOCALAPPDATA%\kmos-lockscreen.log."
+Write-Host "To stop future runs: Remove-ItemProperty -Path '$runKey' -Name '$name' (Admin). This does not undo accounts already configured."
+}
 ```
 
-The lock-screen image setting does not disable news/Spotlight links. In the VM,
-Settings → Personalization → Lock screen offered **None** as the only lock-screen
-status choice, yet the links remained; do not assume the status choice controls
-these overlays.
+After registering, sign out and back in to set the **current** account too.
+Allow at least 30 seconds after the desktop loads, then check
+`%LOCALAPPDATA%\kmos-lockscreen.log` for `KMOS lock-screen completed`.
+Confirm Settings → Personalization → Lock screen shows **Picture**, the
+selector remains editable, and **Win+L** shows the KMOS image. Test again
+with a new account in the **last phase**. Failed attempts log an error and
+retry on the next sign-in. To stop future runs, remove only the
+`KMOSLockScreenOnce` value from
+`HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` as admin;
+this does not undo accounts already configured. Do not apply the old
+`PersonalizationCSP` lock-screen image keys: they can lock personalization.
 
 ---
 
