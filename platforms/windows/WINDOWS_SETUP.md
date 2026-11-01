@@ -770,6 +770,13 @@ It backs up an existing profile once and appends the KMOS lines instead of
 replacing other customizations; if Starship is already configured there, it
 leaves the profile alone. Close and reopen Preview after installation so its
 new `PATH` is available. New Windows accounts need their own profile setup.
+The Starship prompt is configured **only for PowerShell Preview**, not for
+the built-in Windows PowerShell 5.1 profile, even if the installer block was
+run from 5.1. For an everyday modern shell, choose **PowerShell Preview** as
+the default in **Windows Terminal → Settings → Startup → Default profile**.
+Keep Windows PowerShell 5.1 available for Windows-specific administrative
+commands such as `Get-WindowsCapability`; it failed with "Class not registered"
+when run from Preview in the VM.
 
 ---
 
