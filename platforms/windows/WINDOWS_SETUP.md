@@ -94,14 +94,14 @@ function Resize-SystemPartitionIfRequested {
         $targetWindowsBytes = [math]::Floor(([double]$disk.Size / 2) / 1MB) * 1MB
     } else {
         while ($true) {
-            $customGiB = (Read-Host 'Total Windows space in GiB (C: plus other partitions; type cancel to stop)').Trim()
+            $customGiB = (Read-Host 'Total Windows space in GiB (e.g. 33 or 33 GiB; type cancel to stop)').Trim()
             if ($customGiB -eq 'cancel') {
                 Write-Host 'Leaving the disk layout unchanged.'
                 return
             }
             $requestedGiB = 0.0
-            if ($customGiB -match '^\d+(\.\d+)?$' -and
-                [double]::TryParse($customGiB, [Globalization.NumberStyles]::AllowDecimalPoint,
+            if ($customGiB -match '^(?<number>\d+(?:\.\d+)?)\s*(?:GiB)?$' -and
+                [double]::TryParse($Matches['number'], [Globalization.NumberStyles]::AllowDecimalPoint,
                     [Globalization.CultureInfo]::InvariantCulture, [ref]$requestedGiB) -and
                 $requestedGiB -gt 0 -and $requestedGiB -le ($disk.Size / 1GB)) {
                 $targetWindowsBytes = [math]::Floor(($requestedGiB * 1GB) / 1MB) * 1MB
