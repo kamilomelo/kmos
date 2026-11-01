@@ -730,6 +730,7 @@ or discarding existing personalization.
 
 ```powershell
 winget install --id Starship.Starship --exact --source winget --scope machine
+if ($LASTEXITCODE -ne 0) { throw 'Starship installation failed; do not change the PowerShell profile.' }
 
 $starshipDir = 'C:\ProgramData\kmos\starship-presets'
 New-Item -ItemType Directory -Path $starshipDir -Force | Out-Null
@@ -741,15 +742,34 @@ Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/p
 
 $profilePath = Join-Path $HOME 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'
 $profileContent = @'
+# KMOS Starship
 $env:STARSHIP_CONFIG = 'C:\ProgramData\kmos\starship-presets\holow-light.toml'
 Invoke-Expression (& starship init powershell)
 '@
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $profilePath) -Force | Out-Null
-Set-Content -Path $profilePath -Value $profileContent -Encoding ASCII
+if (-not (Test-Path -LiteralPath $profilePath)) {
+    Set-Content -Path $profilePath -Value $profileContent -Encoding ASCII
+} else {
+    $existing = Get-Content -Raw -LiteralPath $profilePath
+    if ($existing -match '(?i)starship\s+init\s+powershell') {
+        Write-Warning 'Starship is already configured in this profile; leaving it unchanged.'
+    } else {
+        $backupPath = "$profilePath.kmos-backup"
+        if (-not (Test-Path -LiteralPath $backupPath)) {
+            Copy-Item -LiteralPath $profilePath -Destination $backupPath -ErrorAction Stop
+        }
+        Add-Content -Path $profilePath -Value "`r`n$profileContent"
+    }
+}
 ```
 
-This installs Starship system-wide, downloads all 4 `kmos` presets, and activates `holow-light.toml` for `PowerShell Preview`.
+This installs Starship system-wide, downloads all four `kmos` presets, and
+activates `holow-light.toml` for the current account's `PowerShell Preview`.
+It backs up an existing profile once and appends the KMOS lines instead of
+replacing other customizations; if Starship is already configured there, it
+leaves the profile alone. Close and reopen Preview after installation so its
+new `PATH` is available. New Windows accounts need their own profile setup.
 
 ---
 
