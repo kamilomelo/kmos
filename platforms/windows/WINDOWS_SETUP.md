@@ -695,10 +695,15 @@ explorer.exe $fontWork
 ```
 
 This **downloads** the current Kappa font system to a temporary folder; it
-does not install it. In the folder that opens, visit each family subfolder,
-select its `.ttf` files, right-click, and choose **Install for all users**
-(use **Show more options** if needed, and approve the administrator prompt).
-Repeat for these five frozen-baseline families:
+does not install it. To install all downloaded styles for **all Windows
+accounts** in one pass, search for `*.ttf` in the open `kmos-fonts` folder
+(including its subfolders), select the results with **Ctrl+A**, then right-click
+→ **Show more options** → **Install for all users** and approve the administrator
+prompt. This also selects the optional Kappa Page alpha; omit its files if you
+do not want it. This batch-selection shortcut has not yet been tested in the
+VM. The tested alternative is to open each family subfolder, select its `.ttf`
+files, and choose **Install for all users**. The five frozen-baseline families
+are:
 - `Kappa Text`
 - `Kappa Mark`
 - `Kappa Form`
