@@ -492,7 +492,6 @@ Run these on a fresh Windows 11 machine with internet access.
 
 ```powershell
 winget install --id Git.Git --exact --source winget
-winget install --id Microsoft.PowerShell.Preview --exact --source winget
 winget install --id GNU.Nano --exact --source winget --scope machine
 winget install --id KDE.Kate --exact --source winget --scope machine
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
@@ -514,8 +513,8 @@ winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agree
 
 The **client** lets Windows SSH into other machines; the **server** lets other
 machines SSH into Windows. **Copy and run this one block** from the guide
-inside the VM, in **Windows PowerShell (Admin)** (`powershell.exe`, not
-PowerShell Preview). It installs both when needed, starts `sshd`, creates
+inside the VM, in the Windows-supplied **Windows PowerShell (Admin)**
+(`powershell.exe`). It installs both when needed, starts `sshd`, creates
 only a missing firewall rule, and prints `SSH READY locally` after a client
 and server check. Rerunning it skips work already completed.
 
@@ -531,7 +530,7 @@ host gateway `10.0.2.2`**, not from arbitrary network machines.
 & {
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -ne 'Desktop') {
-    throw 'Use Windows PowerShell (powershell.exe), not PowerShell Preview.'
+    throw 'Use Windows PowerShell (powershell.exe).'
 }
 $computer = Get-CimInstance Win32_ComputerSystem
 $isKmosVm = $computer.Manufacturer -match 'QEMU' -or $computer.Model -match 'QEMU|Q35'
@@ -652,57 +651,16 @@ only the current Windows account's Terminal preferences, not other users'
 settings. Using Terminal Settings avoids rewriting the whole `settings.json`
 or discarding existing personalization.
 
-### Install and Configure Starship
+### Install Starship
+
+Starship is a separate program, not a PowerShell installation. Installing it
+alone does **not** enable its prompt in Windows PowerShell or over SSH.
+Machine-wide profile and SSH-shell configuration must be tested in the clean
+VM before it is added to this guide.
 
 ```powershell
 winget install --id Starship.Starship --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'Starship installation failed; do not change the PowerShell profile.' }
-
-$starshipDir = 'C:\ProgramData\kmos\starship-presets'
-New-Item -ItemType Directory -Path $starshipDir -Force | Out-Null
-
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/holow-light.toml' -OutFile (Join-Path $starshipDir 'holow-light.toml')
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/holow-dark.toml' -OutFile (Join-Path $starshipDir 'holow-dark.toml')
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/filled-light.toml' -OutFile (Join-Path $starshipDir 'filled-light.toml')
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/filled-dark.toml' -OutFile (Join-Path $starshipDir 'filled-dark.toml')
-
-$profilePath = Join-Path $HOME 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'
-$profileContent = @'
-# KMOS Starship
-$env:STARSHIP_CONFIG = 'C:\ProgramData\kmos\starship-presets\holow-light.toml'
-Invoke-Expression (& starship init powershell)
-'@
-
-New-Item -ItemType Directory -Path (Split-Path -Parent $profilePath) -Force | Out-Null
-if (-not (Test-Path -LiteralPath $profilePath)) {
-    Set-Content -Path $profilePath -Value $profileContent -Encoding ASCII
-} else {
-    $existing = Get-Content -Raw -LiteralPath $profilePath
-    if ($existing -match '(?i)starship\s+init\s+powershell') {
-        Write-Warning 'Starship is already configured in this profile; leaving it unchanged.'
-    } else {
-        $backupPath = "$profilePath.kmos-backup"
-        if (-not (Test-Path -LiteralPath $backupPath)) {
-            Copy-Item -LiteralPath $profilePath -Destination $backupPath -ErrorAction Stop
-        }
-        Add-Content -Path $profilePath -Value "`r`n$profileContent"
-    }
-}
 ```
-
-This installs Starship system-wide, downloads all four `kmos` presets, and
-activates `holow-light.toml` for the current account's `PowerShell Preview`.
-It backs up an existing profile once and appends the KMOS lines instead of
-replacing other customizations; if Starship is already configured there, it
-leaves the profile alone. Close and reopen Preview after installation so its
-new `PATH` is available. New Windows accounts need their own profile setup.
-The Starship prompt is configured **only for PowerShell Preview**, not for
-the built-in Windows PowerShell 5.1 profile, even if the installer block was
-run from 5.1. For an everyday modern shell, choose **PowerShell Preview** as
-the default in **Windows Terminal → Settings → Startup → Default profile**.
-Keep Windows PowerShell 5.1 available for Windows-specific administrative
-commands such as `Get-WindowsCapability`; it failed with "Class not registered"
-when run from Preview in the VM.
 
 ---
 
@@ -780,4 +738,4 @@ After creating the user:
 - if the wallpaper did not inherit, set the same staged wallpaper manually once from:
   `C:\Users\Public\Pictures\kmos\kmos-wallpaper.png`
 - verify dark mode and colors were inherited
-- verify `PowerShell Preview`, Terminal font, and Starship are working
+- verify the Terminal font; test Starship only after its PowerShell and SSH setup has been verified
