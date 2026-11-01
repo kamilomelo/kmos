@@ -172,32 +172,16 @@ function Prompt-YesNo {
     }
 }
 
-function Prompt-ConfirmedText {
-    param(
-        [Parameter(Mandatory)][string]$Prompt,
-        [string]$ConfirmLabel = 'Is this correct?'
-    )
-
-    while ($true) {
-        $value = ''
-        while ([string]::IsNullOrWhiteSpace($value)) {
-            $value = (Read-Host $Prompt).Trim()
-        }
-
-        if (Prompt-YesNo -Prompt ("{0}: {1}. {2}" -f $Prompt, $value, $ConfirmLabel) -Default $true) {
-            return $value
-        }
-    }
-}
-
 $currentName = $env:COMPUTERNAME
 Write-Host "Current computer name: $currentName"
 
-$newName = Prompt-ConfirmedText -Prompt 'Enter the desired computer name'
-if ($newName -eq $currentName) {
-    Write-Host 'Computer name already matches the requested name.'
+$newName = (Read-Host "New computer name (Enter keeps $currentName)").Trim()
+if (-not $newName -or $newName -eq $currentName) {
+    Write-Host 'Keeping the current computer name; no changes made.'
+} elseif (-not (Prompt-YesNo -Prompt "Rename this computer to $newName?" -Default $false)) {
+    Write-Host 'Computer name unchanged.'
 } else {
-    Rename-Computer -NewName $newName -Force -ErrorAction Stop
+    Rename-Computer -NewName $newName -ErrorAction Stop
     Write-Host "Computer renamed to $newName. Use Restart (not Shut down) to apply the name."
 }
 ```
