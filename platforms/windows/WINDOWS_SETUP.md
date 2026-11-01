@@ -717,42 +717,14 @@ you rerun the download block.
 
 ### Set Windows Terminal Default Font
 
-```powershell
-$settings = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
-$json = Get-Content -Raw -Path $settings | ConvertFrom-Json
-
-function Set-TerminalFont {
-    param([Parameter(Mandatory)]$Target)
-
-    if (-not $Target.font) {
-        $Target | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{})
-    }
-    $Target.font | Add-Member -NotePropertyName face -NotePropertyValue 'Kappa Mono' -Force
-    $Target.font | Add-Member -NotePropertyName size -NotePropertyValue 12 -Force
-    $Target | Add-Member -NotePropertyName fontFace -NotePropertyValue 'Kappa Mono' -Force
-    $Target | Add-Member -NotePropertyName fontSize -NotePropertyValue 12 -Force
-}
-
-if (-not $json.profiles) {
-    $json | Add-Member -NotePropertyName profiles -NotePropertyValue ([pscustomobject]@{
-        defaults = [pscustomobject]@{}
-        list = @()
-    })
-}
-if (-not $json.profiles.defaults) {
-    $json.profiles | Add-Member -NotePropertyName defaults -NotePropertyValue ([pscustomobject]@{})
-}
-
-Set-TerminalFont -Target $json.profiles.defaults
-
-foreach ($profile in $json.profiles.list) {
-    Set-TerminalFont -Target $profile
-}
-
-$json | ConvertTo-Json -Depth 100 | Set-Content -Path $settings -Encoding UTF8
-```
-
-Close and reopen Windows Terminal after running that block. The default Terminal font and every explicit Terminal profile, including normal and elevated PowerShell Preview sessions, will use `Kappa Mono`.
+Open **Windows Terminal → dropdown arrow → Settings → Profiles → Defaults →
+Appearance**. Set **Font face** to `Kappa Mono` and **Font size** to `12`, then
+click **Save**. Close and reopen Terminal to verify it. Defaults apply to
+profiles without their own font override; if a profile still shows another
+font, change that profile's **Appearance** setting individually. This changes
+only the current Windows account's Terminal preferences, not other users'
+settings. Using Terminal Settings avoids rewriting the whole `settings.json`
+or discarding existing personalization.
 
 ### Install and Configure Starship
 
