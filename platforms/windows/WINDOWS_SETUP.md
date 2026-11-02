@@ -485,8 +485,7 @@ this does not undo accounts already configured. Do not apply the old
 
 ## Phase 3: Core Tools
 
-Run these on a Windows 11 machine with internet access. The general OpenSSH
-installation step is not ready for fleet deployment; see its note below.
+Run these on a Windows 11 machine with internet access.
 
 ### Ensure WinGet Is Available
 
@@ -525,13 +524,64 @@ non-Lenovo hardware.
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
 ```
 
-### OpenSSH
+### Install and Verify OpenSSH
 
-This step is **not yet ready for fleet deployment**. Windows must obtain the
-built-in OpenSSH feature from a functioning Windows Update source or official
-Features on Demand media matching its version. Until that path works on the
-target installations, stop here rather than installing a Preview SSH server.
-Do not proceed to the Starship-over-SSH step until `sshd` is working.
+Run this one block in **Windows PowerShell (Admin)**. It installs a pinned
+Microsoft Win32-OpenSSH MSI if `sshd` is missing; it does **not** use Windows
+Update or `Add-WindowsCapability`. The x64 MSI and QEMU host-only firewall
+rule worked in the test installation. Other hardware and Windows editions
+still need their own SSH login test. **Microsoft labels this MSI Preview and
+non-production-ready**; unlike the built-in Windows feature, it requires
+manual security updates. Review that tradeoff before deploying it to other
+computers.
+
+```powershell
+& {
+$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Use Windows PowerShell (powershell.exe).' }
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run Windows PowerShell as Administrator.' }
+
+$computer = Get-CimInstance Win32_ComputerSystem
+$isQemu = $computer.Manufacturer -match 'QEMU' -or $computer.Model -match 'QEMU|Q35'
+if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
+    $arch = (Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Architecture)
+    if ($arch -eq 9) {
+        $asset = 'OpenSSH-Win64-v10.4.0.0.msi'
+        $expectedHash = '788D8643464A01EB63640A2FD746F9ED23D106B5A901A35F88DC8CD40E446AC9'
+    } elseif ($arch -eq 12) {
+        $asset = 'OpenSSH-ARM64-v10.4.0.0.msi'
+        $expectedHash = '75FA139D8975EEDB706D9180F454E2148AF09D417692825F383FE00610B00E21'
+    } else { throw "Unsupported OpenSSH MSI architecture: $arch" }
+    $msi = Join-Path $env:TEMP $asset
+    $url = "https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.4.0.0p1-Preview/$asset"
+    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $msi -ErrorAction Stop
+    if ((Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash -ne $expectedHash) { throw 'OpenSSH MSI checksum mismatch; do not install.' }
+    $install = Start-Process msiexec.exe -ArgumentList "/i `"$msi`"" -Wait -PassThru -ErrorAction Stop
+    if ($install.ExitCode -notin @(0, 3010)) { throw "OpenSSH MSI failed: $($install.ExitCode)" }
+    if ($install.ExitCode -eq 3010) { throw 'Restart Windows, then rerun this block.' }
+}
+Set-Service -Name sshd -StartupType Automatic -ErrorAction Stop
+if ((Get-Service sshd -ErrorAction Stop).Status -ne 'Running') { Start-Service sshd -ErrorAction Stop }
+if ($isQemu) {
+    if (-not (Get-NetFirewallRule -Name KMOS-SSH-QEMU-Host -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -Name KMOS-SSH-QEMU-Host -DisplayName 'KMOS SSH from QEMU host only' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Public -RemoteAddress 10.0.2.2 -ErrorAction Stop | Out-Null
+    }
+} elseif (-not (Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue) -and
+          -not (Get-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -DisplayName 'KMOS OpenSSH (private LAN)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Private -RemoteAddress LocalSubnet -ErrorAction Stop | Out-Null
+}
+$client = Get-Command ssh.exe -ErrorAction Stop
+if (-not (Test-NetConnection -ComputerName localhost -Port 22 -InformationLevel Quiet)) { throw 'SSH server is not listening on port 22.' }
+Write-Host "SSH READY locally: client $($client.Source); server listening on port 22."
+}
+```
+
+`SSH READY locally` does not test authentication or remote reachability.
+Keep a local administrator console open until a fresh SSH login succeeds. On
+the QEMU test launcher the Linux host connects to `127.0.0.1` port `2222`;
+on other machines use the Windows computer's address and check the active
+firewall rule's profiles and remote-address scope. Keep passwords private and
+verify any unexpected SSH host-key change before accepting it.
 
 ### Install Fonts
 
