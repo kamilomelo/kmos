@@ -485,8 +485,8 @@ this does not undo accounts already configured. Do not apply the old
 
 ## Phase 3: Core Tools
 
-Run these on a Windows 11 machine with internet access. Windows Update must be
-able to supply missing optional features for the OpenSSH step.
+Run these on a Windows 11 machine with internet access. The general OpenSSH
+installation step is not ready for fleet deployment; see its note below.
 
 ### Ensure WinGet Is Available
 
@@ -525,52 +525,17 @@ non-Lenovo hardware.
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
 ```
 
-### Install and Verify OpenSSH
+### OpenSSH
 
-The **client** lets Windows SSH into other machines; the **server** lets other
-machines SSH into Windows. In the Windows-supplied **Windows PowerShell
-(Admin)** (`powershell.exe`), copy and run this one block. It installs missing
-Windows OpenSSH optional features, starts `sshd`, creates a restricted Private
-network firewall rule only if no SSH rule exists, and checks the local client
-and listening server. Rerunning it skips features already installed.
+**QEMU test VM only:** follow the single block in [QEMU OpenSSH](QEMU_OPENSSH.md)
+instead of the previous Windows-capability instructions. That page cannot be
+used on real computers; its OpenSSH build is Preview/non-production-ready.
 
-```powershell
-& {
-$ErrorActionPreference = 'Stop'
-if ($PSVersionTable.PSEdition -ne 'Desktop') {
-    throw 'Use Windows PowerShell (powershell.exe).'
-}
-foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
-    $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
-    if (-not $feature) { throw "Cannot check $name; stop here." }
-    if ($feature.State -eq 'Installed') { continue }
-    if ($feature.State -ne 'NotPresent') { throw "Unexpected $name state: $($feature.State)" }
-    $result = Add-WindowsCapability -Online -Name $name -ErrorAction Stop
-    if (-not $result) { throw "$name installation failed; stop here." }
-    if ($result.RestartNeeded) { throw 'Restart Windows, then rerun this block.' }
-    if ((Get-WindowsCapability -Online -Name $name).State -ne 'Installed') { throw "$name did not finish installing." }
-}
-Set-Service -Name sshd -StartupType Automatic -ErrorAction Stop
-if ((Get-Service sshd -ErrorAction Stop).Status -ne 'Running') { Start-Service sshd -ErrorAction Stop }
-if (-not (Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue) -and
-    -not (Get-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -DisplayName 'KMOS OpenSSH (private LAN)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Private -RemoteAddress LocalSubnet -ErrorAction Stop | Out-Null
-}
-$client = Get-Command ssh.exe -ErrorAction Stop
-if (-not (Test-NetConnection -ComputerName localhost -Port 22 -InformationLevel Quiet)) { throw 'SSH server is not listening on port 22.' }
-Write-Host "SSH READY locally: client $($client.Source); server listening on port 22."
-}
-```
-
-If the install fails, stop; the block does not continue to firewall setup.
-If Windows requests a restart, restart and rerun this same block. Review any
-existing SSH firewall rule's enabled state, network profiles, and remote
-address scope before relying on remote access; this block does not override
-an existing rule. `SSH READY locally` checks the client and listening server,
-not authentication or remote reachability. From another trusted machine, test
-an authenticated SSH connection to the Windows computer using its hostname or
-IP address. Keep passwords private and verify any unexpected SSH host-key
-change before accepting it.
+**Real machines:** no OpenSSH installation block is currently approved for
+fleet deployment. This guide is incomplete for machines requiring SSH until
+Windows Update or a matching official Features on Demand source can install
+the built-in feature and the result has been verified. Do not proceed to the
+Starship-over-SSH step until `sshd` is working.
 
 ### Install Fonts
 
