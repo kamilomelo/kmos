@@ -39,7 +39,11 @@ function Find-WorkingWinGet {
 $package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller
 $working = Find-WorkingWinGet $package
 if (-not $working -and $package) {
-    Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction Stop
+    try {
+        Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction Stop
+    } catch {
+        Write-Host 'Registration failed; trying the official stable App Installer package instead.'
+    }
     $package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller
     $working = Find-WorkingWinGet $package
 }
@@ -48,6 +52,17 @@ if (-not $working) {
     Invoke-WebRequest -UseBasicParsing -Uri 'https://aka.ms/getwinget' -OutFile $bundle -ErrorAction Stop
     try {
         Add-AppxPackage -Path $bundle -ErrorAction Stop
+    } catch {
+        $failure = $_
+        Write-Host "App Installer deployment failed: $($failure.Exception.Message)"
+        if ($failure.Exception.Message -match '\[ActivityId\]\s+([0-9a-fA-F-]{36})') {
+            try {
+                Get-AppPackageLog -ActivityID $Matches[1] -ErrorAction Stop |
+                    Where-Object { $_.Message -match 'depend|framework|conflict|cannot install|0x' } |
+                    Select-Object -Last 6 -ExpandProperty Message | ForEach-Object { Write-Host $_ }
+            } catch { Write-Host 'Windows did not provide an App Installer deployment log.' }
+        }
+        throw 'App Installer could not be installed; see the dependency or conflict reason above.'
     } finally {
         Remove-Item -LiteralPath $bundle -ErrorAction SilentlyContinue
     }
@@ -64,6 +79,7 @@ Write-Host 'WINGET READY: continue with Phase 3 in this PowerShell window.'
 }
 ```
 
-If this block stops with an error, send the **exact error** so we can fix the
-root cause; do not install PowerShell Preview. `https://aka.ms/getwinget` is
+If this block stops with an error, send the **dependency or conflict reason**
+it prints; `0x80073CF3` alone does not identify which package Windows needs.
+Do not install PowerShell Preview. `https://aka.ms/getwinget` is
 [Microsoft's stable App Installer download](https://github.com/microsoft/winget-cli/blob/master/doc/troubleshooting/README.md#executing-winget-exits-with-no-message).
