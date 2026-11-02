@@ -1,4 +1,4 @@
-# KMOS Windows: Phases 1–3 in one block
+# KMOS Windows Fast Setup: Phases 1–3 in one block
 
 An **alternative** to pasting each block from [WINDOWS_SETUP.md](WINDOWS_SETUP.md).
 Run the single block below in **local Windows PowerShell (Admin)**, not SSH.
