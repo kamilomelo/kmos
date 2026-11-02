@@ -1,6 +1,6 @@
 # KMOS Windows Fast Setup: Phases 1–3 in one block
 
-An **alternative** to pasting each block from [WINDOWS_SETUP.md](WINDOWS_SETUP.md).
+An **alternative** to pasting each block from [windows_setup.md](windows_setup.md).
 Run the single block below in **local Windows PowerShell (Admin)**, not SSH.
 It retains the optional disk-resize confirmation, prompts before the optional
 Lenovo app, and pauses for the two Windows GUI font settings that the guide

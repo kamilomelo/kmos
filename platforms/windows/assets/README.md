@@ -1,7 +1,7 @@
 # kmos Windows assets
 
 These assets are the Windows-specific runtime assets used by
-`platforms/windows/WINDOWS_SETUP.md`.
+`platforms/windows/windows_setup.md`.
 
 Current contents:
 - `wallpapers/`
