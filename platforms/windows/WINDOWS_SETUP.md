@@ -487,6 +487,35 @@ this does not undo accounts already configured. Do not apply the old
 
 Run these on a fresh Windows 11 machine with internet access.
 
+### Check WinGet Before Installing Tools
+
+WinGet is supplied by Microsoft's **App Installer**. On a newly signed-in
+account it may not yet be registered. Run this block in the same Windows
+PowerShell account that will run the installation commands:
+
+```powershell
+& {
+$ErrorActionPreference = 'Stop'
+if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+    if (-not (Get-AppxPackage -Name Microsoft.DesktopAppInstaller)) {
+        throw 'App Installer is missing. Install it from https://apps.microsoft.com/detail/9nblggh4nns1, then open a new PowerShell window and rerun this check.'
+    }
+    Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction Stop
+}
+if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+    throw 'WinGet is still unavailable. Open a new PowerShell window and rerun this check before installing tools.'
+}
+winget --version
+if ($LASTEXITCODE -ne 0) { throw 'WinGet did not start successfully; stop before installing tools.' }
+}
+```
+
+If App Installer is missing, install the stable version from the linked
+[Microsoft Store listing](https://apps.microsoft.com/detail/9nblggh4nns1);
+the block does not install a preview build or bypass Store restrictions. If
+registration fails, stop and record the error rather than repeatedly changing
+app or system policies. See [Microsoft's WinGet installation guidance](https://learn.microsoft.com/en-us/windows/package-manager/winget/).
+
 ### Install Core Tools
 
 ```powershell
@@ -555,6 +584,53 @@ not authentication or remote reachability. From another trusted machine, test
 an authenticated SSH connection to the Windows computer using its hostname or
 IP address. Keep passwords private and verify any unexpected SSH host-key
 change before accepting it.
+
+#### If OpenSSH installation fails with `0x80240438`
+
+This Windows Update error means the configured update endpoint was
+unreachable; it is **not** evidence that SSH itself is broken. Restoring or
+reinstalling Windows can remove previously installed OpenSSH features while
+leaving the same update-source problem. First check the Windows build and which
+feature still needs installation (Windows PowerShell Admin):
+
+```powershell
+Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber, OSArchitecture
+Get-WindowsCapability -Online -Name 'OpenSSH*' | Select-Object Name, State
+```
+
+Check **Settings → Windows Update** for connectivity or update-service errors.
+If the machine is managed, ask its administrator which update source or
+Features on Demand (FoD) source it uses; do not disable update policies or
+replace them with broad registry edits. Once Windows Update works, rerun the
+**Install and Verify OpenSSH** block above. If Windows Update cannot supply
+the feature, obtain an **official FoD ISO matching this Windows release and
+architecture** (an ordinary Windows installation ISO is not necessarily a
+FoD source). Mount it, then use this alternative to install only the missing
+features. Enter the mounted FoD drive root, for example `E:\`, when prompted:
+
+```powershell
+& {
+$ErrorActionPreference = 'Stop'
+$source = Read-Host 'Mounted, matching Windows Features on Demand source (e.g. E:\)'
+if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw 'FoD source folder not found.' }
+foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
+    $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
+    if (-not $feature) { throw "Cannot check $name." }
+    if ($feature.State -eq 'Installed') { continue }
+    if ($feature.State -ne 'NotPresent') { throw "Unexpected $name state: $($feature.State)" }
+    $result = Add-WindowsCapability -Online -Name $name -Source $source -LimitAccess -ErrorAction Stop
+    if (-not $result) { throw "Could not install $name from this source." }
+    if ($result.RestartNeeded) { throw 'Restart Windows, then rerun the main OpenSSH block.' }
+    if ((Get-WindowsCapability -Online -Name $name).State -ne 'Installed') { throw "$name did not finish installing." }
+}
+Write-Host 'OpenSSH features installed. Rerun the main OpenSSH block to configure and verify the service.'
+}
+```
+
+Do **not** guess a FoD source or substitute an unrelated OpenSSH installer.
+If this fails, note the Windows build, the failing feature and the exact error
+before proceeding. This FoD recovery path has not yet been validated on every
+target Windows build. See [Microsoft's OpenSSH capability troubleshooting](https://learn.microsoft.com/en-us/troubleshoot/windows-server/system-management-components/cant-install-openssh-features).
 
 ### Install Fonts
 
