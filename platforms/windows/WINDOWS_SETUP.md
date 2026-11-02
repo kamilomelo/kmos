@@ -527,15 +527,11 @@ winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agree
 
 ### OpenSSH
 
-**QEMU test VM only:** follow the single block in [QEMU OpenSSH](QEMU_OPENSSH.md)
-instead of the previous Windows-capability instructions. That page cannot be
-used on real computers; its OpenSSH build is Preview/non-production-ready.
-
-**Real machines:** no OpenSSH installation block is currently approved for
-fleet deployment. This guide is incomplete for machines requiring SSH until
-Windows Update or a matching official Features on Demand source can install
-the built-in feature and the result has been verified. Do not proceed to the
-Starship-over-SSH step until `sshd` is working.
+This step is **not yet ready for fleet deployment**. Windows must obtain the
+built-in OpenSSH feature from a functioning Windows Update source or official
+Features on Demand media matching its version. Until that path works on the
+target installations, stop here rather than installing a Preview SSH server.
+Do not proceed to the Starship-over-SSH step until `sshd` is working.
 
 ### Install Fonts
 
