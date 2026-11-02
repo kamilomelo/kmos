@@ -257,8 +257,7 @@ This captures the current account's appearance and replays it at the first
 sign-in of **future** accounts. It uses the shared KMOS wallpaper, leaves
 personalization editable, and does not reset existing accounts. Run in
 Windows PowerShell (Admin) on the account whose appearance you want to copy.
-The block was tested on a new VM account; allow extra time for its first
-sign-in.
+Allow extra time for a new account's first sign-in.
 
 ```powershell
 $scriptDir = 'C:\ProgramData\kmos\scripts'
@@ -381,7 +380,7 @@ profile, prints the registered `Run` command for verification, and unloads
 the profile. Only accounts **created afterward** inherit that entry. At their
 sign-in it logs a start to `%LOCALAPPDATA%\kmos-appearance.log`, waits 30
 seconds for the desktop, applies the appearance, then removes the entry only
-after completion; an interrupted run retries on the next sign-in. The default-profile registration passed a fresh-account VM test.
+after completion; an interrupted run retries on the next sign-in.
 That first sign-in took a long time: allow Windows to finish creating the
 profile and the runner to finish after the desktop appears. The runner itself
 waits 30 seconds; do not shorten the delay without another fresh-account test.
@@ -500,10 +499,8 @@ winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --s
 #### Optional: Lenovo Commercial Vantage
 
 Install this Store-backed app on a Lenovo computer if you want its
-hardware-specific management features. It may also install on other hardware,
-but it is not required for KMOS or useful for testing Lenovo features in QEMU.
-The Store package **did install successfully** in the Windows 11 QEMU VM;
-Lenovo hardware features were not tested there.
+hardware-specific management features. It is not required for KMOS on
+non-Lenovo hardware.
 
 ```powershell
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
@@ -512,19 +509,14 @@ winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agree
 ### Install and Verify OpenSSH
 
 The **client** lets Windows SSH into other machines; the **server** lets other
-machines SSH into Windows. **Copy and run this one block** from the guide
-inside the VM, in the Windows-supplied **Windows PowerShell (Admin)**
-(`powershell.exe`). It installs both when needed, starts `sshd`, creates
-only a missing firewall rule, and prints `SSH READY locally` after a client
-and server check. Rerunning it skips work already completed.
-
-On a normal Windows machine it uses the supported Windows optional features,
-which Windows services through updates. On this QEMU test VM, whose Windows
-Update feature download failed with `0x80240438`, it instead uses a pinned
-Microsoft Win32-OpenSSH MSI. That release is **Preview/non-production ready**
-and needs manual updates; do not use the QEMU fallback on a real machine.
-The VM-only Public-network firewall rule permits port 22 **only from QEMU's
-host gateway `10.0.2.2`**, not from arbitrary network machines.
+machines SSH into Windows. In the Windows-supplied **Windows PowerShell
+(Admin)** (`powershell.exe`), copy and run this one block. It installs missing
+Windows OpenSSH optional features, starts `sshd`, creates a restricted Private
+network firewall rule only if no SSH rule exists, and checks the local client
+and listening server. Rerunning it skips features already installed. Windows
+may need access to its update service or a matching Features on Demand source
+to install missing features. Stop if installation fails; do not change broad
+Windows Update or organization policies as a workaround.
 
 ```powershell
 & {
@@ -532,38 +524,20 @@ $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -ne 'Desktop') {
     throw 'Use Windows PowerShell (powershell.exe).'
 }
-$computer = Get-CimInstance Win32_ComputerSystem
-$isKmosVm = $computer.Manufacturer -match 'QEMU' -or $computer.Model -match 'QEMU|Q35'
-if ($isKmosVm) {
-    $msiClient = Join-Path $env:ProgramFiles 'OpenSSH\ssh.exe'
-    if (-not (Test-Path $msiClient) -or -not (Get-Service sshd -ErrorAction SilentlyContinue)) {
-        $msi = Join-Path $env:TEMP 'OpenSSH-Win64-v10.4.0.0.msi'
-        Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.4.0.0p1-Preview/OpenSSH-Win64-v10.4.0.0.msi' -OutFile $msi
-        if ((Get-FileHash $msi -Algorithm SHA256).Hash -ne '788D8643464A01EB63640A2FD746F9ED23D106B5A901A35F88DC8CD40E446AC9') { throw 'OpenSSH download checksum mismatch; do not install.' }
-        $install = Start-Process msiexec.exe -ArgumentList "/i `"$msi`"" -Wait -PassThru
-        if ($install.ExitCode -notin @(0, 3010)) { throw "OpenSSH MSI failed: $($install.ExitCode)" }
-        if ($install.ExitCode -eq 3010) { throw 'Restart Windows, then rerun this block.' }
-    }
-} else {
-    foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
-        $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
-        if (-not $feature) { throw "Cannot check $name; stop here." }
-        if ($feature.State -eq 'Installed') { continue }
-        if ($feature.State -ne 'NotPresent') { throw "Unexpected $name state: $($feature.State)" }
-        $result = Add-WindowsCapability -Online -Name $name -ErrorAction Stop
-        if (-not $result) { throw "$name installation failed; stop here." }
-        if ($result.RestartNeeded) { throw 'Restart Windows, then rerun this block.' }
-        if ((Get-WindowsCapability -Online -Name $name).State -ne 'Installed') { throw "$name did not finish installing." }
-    }
+foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
+    $feature = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
+    if (-not $feature) { throw "Cannot check $name; stop here." }
+    if ($feature.State -eq 'Installed') { continue }
+    if ($feature.State -ne 'NotPresent') { throw "Unexpected $name state: $($feature.State)" }
+    $result = Add-WindowsCapability -Online -Name $name -ErrorAction Stop
+    if (-not $result) { throw "$name installation failed; stop here." }
+    if ($result.RestartNeeded) { throw 'Restart Windows, then rerun this block.' }
+    if ((Get-WindowsCapability -Online -Name $name).State -ne 'Installed') { throw "$name did not finish installing." }
 }
 Set-Service -Name sshd -StartupType Automatic -ErrorAction Stop
 if ((Get-Service sshd -ErrorAction Stop).Status -ne 'Running') { Start-Service sshd -ErrorAction Stop }
-if ($isKmosVm) {
-    if (-not (Get-NetFirewallRule -Name KMOS-SSH-QEMU-Host -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule -Name KMOS-SSH-QEMU-Host -DisplayName 'KMOS SSH from QEMU host only' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Public -RemoteAddress 10.0.2.2 -ErrorAction Stop | Out-Null
-    }
-} elseif (-not (Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue) -and
-          -not (Get-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -ErrorAction SilentlyContinue)) {
+if (-not (Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue) -and
+    -not (Get-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -Name KMOS-SSH-In-Private-LAN -DisplayName 'KMOS OpenSSH (private LAN)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Private -RemoteAddress LocalSubnet -ErrorAction Stop | Out-Null
 }
 $client = Get-Command ssh.exe -ErrorAction Stop
@@ -573,26 +547,14 @@ Write-Host "SSH READY locally: client $($client.Source); server listening on por
 ```
 
 If the install fails, stop; the block does not continue to firewall setup.
-On a real machine, check the existing firewall rule's scope before allowing
-remote access. `SSH READY locally` tests the client and listening server, not
-authentication or remote reachability. If Windows reports a restart is
-needed, restart and run the **same block** again.
-
-This only configures the **Windows guest**. The test VM launcher, when started
-with `./start-win11.sh --boot`, forwards **host `127.0.0.1:2222` → guest port `22`** on the
-next VM boot. This host-only forward does not expose SSH to other network
-machines. From the Linux host, test with `ssh -p 2222 <Windows-user>@127.0.0.1`
-and enter the Windows account password only into your own SSH prompt. If the
-connection is refused, check the guest's active network profile against the
-Windows firewall rule before changing its scope.
-
-**VM result:** With the narrow Public-network rule, the Linux host received the Windows
-OpenSSH 10.4 server banner and host keys through `127.0.0.1:2222`. Host-to-VM
-network reachability is verified. An authenticated SSH sign-in from the Linux
-host to the VM's `itadmin` account also succeeded. From Windows in the VM,
-`ssh kamilo@10.0.2.2` reached an authenticated shell on the Linux host as
-well. **Both SSH directions passed in this VM.** Keep passwords private and
-remember that the Preview MSI must be updated manually.
+If Windows requests a restart, restart and rerun this same block. Review any
+existing SSH firewall rule's enabled state, network profiles, and remote
+address scope before relying on remote access; this block does not override
+an existing rule. `SSH READY locally` checks the client and listening server,
+not authentication or remote reachability. From another trusted machine, test
+an authenticated SSH connection to the Windows computer using its hostname or
+IP address. Keep passwords private and verify any unexpected SSH host-key
+change before accepting it.
 
 ### Install Fonts
 
@@ -625,8 +587,7 @@ accounts** in one pass, search for `*.ttf` in the open `kmos-fonts` folder
 (including its subfolders), select the results with **Ctrl+A**, then right-click
 → **Show more options** → **Install for all users** and approve the administrator
 prompt. This also selects the optional Kappa Page alpha; omit its files if you
-do not want it. This batch-selection shortcut has not yet been tested in the
-VM. The tested alternative is to open each family subfolder, select its `.ttf`
+do not want it. Alternatively, open each family subfolder, select its `.ttf`
 files, and choose **Install for all users**. The five frozen-baseline families
 are:
 - `Kappa Text`
@@ -660,10 +621,8 @@ that PowerShell as the SSH server's default shell. It does **not** install
 PowerShell Preview. It can set `LocalMachine` execution policy to
 `RemoteSigned` if required to load the all-users profile on an unmanaged
 machine; it refuses restrictive organization policies. This affects every
-Windows account, so first make a matching disk/UEFI/TPM VM checkpoint and
-keep a local administrator console open until a fresh SSH login works. In the
-Windows 11 Pro VM, Starship appeared in fresh local and SSH PowerShell sessions
-and in newly created accounts. Test the same behavior on each real machine.
+Windows account, so back up the machine or establish a rollback point first,
+and keep a local administrator console open until a fresh SSH login works.
 
 ```powershell
 & {
@@ -756,9 +715,11 @@ Starship prompt. Then use a **fresh authenticated SSH login** and verify that
 it opens Windows PowerShell with the same prompt. If SSH still opens `cmd.exe`,
 restart `sshd` from the local console and reconnect; this can interrupt SSH
 sessions. Do not claim success until both fresh sessions have been checked.
-If either test fails, restore the VM checkpoint instead of repeatedly changing
-machine-wide settings. Windows Terminal's default profile choice is still a
-per-account preference.
+If either test fails, use the saved rollback point or restore only the prior
+settings rather than repeatedly changing machine-wide configuration. If the
+previous `DefaultShell` was absent, remove only that value to restore the
+default; importing a registry export alone does not remove newly added values.
+Windows Terminal's default profile choice is still a per-account preference.
 
 ---
 
@@ -812,8 +773,7 @@ In an elevated Windows PowerShell session, optionally launch:
 irm christitus.com/win | iex
 ```
 
-The interface launched in the Windows 11 Pro VM; no particular WinUtil tweak
-is required by KMOS or verified by that launch. Review any settings you choose
+No particular WinUtil tweak is required by KMOS. Review any settings you choose
 before applying them, especially if the machine is managed by an organization.
 
 ---
