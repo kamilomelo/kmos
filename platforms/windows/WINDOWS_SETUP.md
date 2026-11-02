@@ -651,9 +651,8 @@ only the current Windows account's Terminal preferences, not other users'
 settings. Using Terminal Settings avoids rewriting the whole `settings.json`
 or discarding existing personalization.
 
-### Test Starship with Windows PowerShell and SSH
+### Configure Starship for Windows PowerShell and SSH
 
-**Clean-VM test pending; do not treat this as verified deployment guidance yet.**
 Run this one block from a **local Windows PowerShell (Admin)** session, not
 through SSH. It installs Starship for the machine, stages four KMOS presets,
 configures the Windows-supplied PowerShell's all-users profile, and selects
@@ -662,7 +661,9 @@ PowerShell Preview. It can set `LocalMachine` execution policy to
 `RemoteSigned` if required to load the all-users profile on an unmanaged
 machine; it refuses restrictive organization policies. This affects every
 Windows account, so first make a matching disk/UEFI/TPM VM checkpoint and
-keep a local administrator console open until a fresh SSH login works.
+keep a local administrator console open until a fresh SSH login works. In the
+Windows 11 Pro VM, Starship appeared in fresh local and SSH PowerShell sessions
+and in newly created accounts. Test the same behavior on each real machine.
 
 ```powershell
 & {
@@ -803,21 +804,24 @@ If `nvidia-smi` is not in `PATH`, try:
 
 ---
 
-## Phase 5: Chris Titus WinUtil
+## Phase 5: Optional Chris Titus WinUtil
 
-Open an elevated PowerShell or Windows Terminal session and run:
+In an elevated Windows PowerShell session, optionally launch:
 
 ```powershell
 irm christitus.com/win | iex
 ```
 
-Then apply the WinUtil tweaks you want from its interface.
+The interface launched in the Windows 11 Pro VM; no particular WinUtil tweak
+is required by KMOS or verified by that launch. Review any settings you choose
+before applying them, especially if the machine is managed by an organization.
 
 ---
 
 ## Phase 6: Additional Users
 
-Create additional Windows users only after Phases 2 and 3 are complete, and after any reboot required by Phase 2 or Phase 4.
+This is the **last phase**. Create users only after the machine's appearance,
+core tools, optional hardware steps, and required reboots are complete.
 
 ### Create a Local Administrator
 
@@ -830,9 +834,14 @@ Add-LocalGroupMember -Group 'Administrators' -Member $username
 ```
 
 After creating the user:
-- sign in once as that user
-- verify dark mode and colors were inherited
-- if the wallpaper did not inherit, set the same staged wallpaper manually once from:
-  `C:\Users\Public\Pictures\kmos\kmos-wallpaper.png`
-- verify dark mode and colors were inherited
-- verify the Terminal font; test Starship only after its PowerShell and SSH setup has been verified
+- sign in once as that user; allow several minutes for Windows to create the
+  profile, then at least 30 seconds for the appearance and lock-screen helpers
+- verify the editable KMOS desktop wallpaper and dark mode; if missing, check
+  `%LOCALAPPDATA%\kmos-appearance.log` rather than changing it manually
+- verify the KMOS lock-screen image with **Win+L**, and verify Settings shows
+  **Picture** with an editable selector; if missing, check
+  `%LOCALAPPDATA%\kmos-lockscreen.log`
+- open **Windows Terminal → Settings → Profiles → Defaults → Appearance** for
+  this account, choose **Kappa Mono** (size 12), and save; the font files are
+  installed for all users, but this Terminal preference is per-account
+- open a fresh Windows PowerShell session and verify the KMOS Starship prompt
