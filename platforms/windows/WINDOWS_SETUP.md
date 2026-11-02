@@ -651,16 +651,113 @@ only the current Windows account's Terminal preferences, not other users'
 settings. Using Terminal Settings avoids rewriting the whole `settings.json`
 or discarding existing personalization.
 
-### Install Starship
+### Test Starship with Windows PowerShell and SSH
 
-Starship is a separate program, not a PowerShell installation. Installing it
-alone does **not** enable its prompt in Windows PowerShell or over SSH.
-Machine-wide profile and SSH-shell configuration must be tested in the clean
-VM before it is added to this guide.
+**Clean-VM test pending; do not treat this as verified deployment guidance yet.**
+Run this one block from a **local Windows PowerShell (Admin)** session, not
+through SSH. It installs Starship for the machine, stages four KMOS presets,
+configures the Windows-supplied PowerShell's all-users profile, and selects
+that PowerShell as the SSH server's default shell. It does **not** install
+PowerShell Preview. It can set `LocalMachine` execution policy to
+`RemoteSigned` if required to load the all-users profile on an unmanaged
+machine; it refuses restrictive organization policies. This affects every
+Windows account, so first make a matching disk/UEFI/TPM VM checkpoint and
+keep a local administrator console open until a fresh SSH login works.
 
 ```powershell
-winget install --id Starship.Starship --exact --source winget --scope machine
+& {
+$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Use the Windows-supplied PowerShell (powershell.exe).' }
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Open Windows PowerShell as Administrator.' }
+if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) { throw 'Install OpenSSH Server first.' }
+$policy = @{}
+foreach ($entry in (Get-ExecutionPolicy -List)) { $policy[$entry.Scope.ToString()] = $entry.ExecutionPolicy.ToString() }
+if ($policy['MachinePolicy'] -notin @('Undefined','RemoteSigned','Unrestricted','Bypass') -or
+    $policy['UserPolicy'] -notin @('Undefined','RemoteSigned','Unrestricted','Bypass') -or
+    $policy['CurrentUser'] -notin @('Undefined','RemoteSigned','Unrestricted','Bypass') -or
+    $policy['LocalMachine'] -eq 'AllSigned') { throw 'A restrictive higher-priority policy or AllSigned is present. No installation or SSH change attempted.' }
+
+if (-not (Get-Command starship.exe -ErrorAction SilentlyContinue)) {
+    winget install --id Starship.Starship --exact --source winget --scope machine
+    if ($LASTEXITCODE -ne 0) { throw 'Starship installation failed; SSH shell unchanged.' }
+}
+$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+$starship = Get-Command starship.exe -ErrorAction SilentlyContinue
+if (-not $starship -or -not (Test-Path -LiteralPath $starship.Source -PathType Leaf)) { throw 'Starship executable not found after installation. Reopen local PowerShell and retry; SSH shell unchanged.' }
+if ($starship.Source.StartsWith($env:USERPROFILE,[StringComparison]::OrdinalIgnoreCase)) { throw "Starship is per-user ($($starship.Source)); SSH shell unchanged. Resolve machine-wide install before continuing." }
+& $starship.Source --version
+if ($LASTEXITCODE -ne 0) { throw 'Starship executable did not start; SSH shell unchanged.' }
+
+$dir = Join-Path $env:ProgramData 'kmos\starship-presets'
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
+foreach ($preset in @('holow-light','holow-dark','filled-light','filled-dark')) {
+    $dest = Join-Path $dir "${preset}.toml"
+    if (-not (Test-Path -LiteralPath $dest -PathType Leaf)) {
+        Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/starship-presets/${preset}.toml" -OutFile $dest
+    }
+}
+$config = Join-Path $dir 'holow-light.toml'
+$profilePath = $PROFILE.AllUsersAllHosts
+$profileDir = Split-Path -Parent $profilePath
+$safeExe = $starship.Source.Replace("'","''")
+$safeConfig = $config.Replace("'","''")
+$profileContent = @"
+# KMOS Starship
+`$env:STARSHIP_CONFIG = '$safeConfig'
+Invoke-Expression (& '$safeExe' init powershell)
+"@
+if (Test-Path -LiteralPath $profilePath) {
+    $existingProfile = Get-Content -Raw -LiteralPath $profilePath
+    if ($existingProfile -match '# KMOS Starship') {
+        if (-not $existingProfile.Contains("`$env:STARSHIP_CONFIG = '$safeConfig'") -or
+            -not $existingProfile.Contains("Invoke-Expression (& '$safeExe' init powershell)")) {
+            throw "Existing KMOS Starship profile differs: $profilePath. Not replacing it."
+        }
+    } else {
+        if ($existingProfile -match '(?i)starship.*init\s+powershell') { throw "A different Starship setup already exists in $profilePath; not replacing it." }
+        $profileBackup = "$profilePath.kmos-backup"
+        if (-not (Test-Path -LiteralPath $profileBackup)) { Copy-Item -LiteralPath $profilePath -Destination $profileBackup -ErrorAction Stop }
+        Add-Content -LiteralPath $profilePath -Value "`r`n$profileContent"
+        Write-Host "Original all-users profile backed up to $profileBackup"
+    }
+} else {
+    New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+    Set-Content -LiteralPath $profilePath -Value $profileContent -Encoding ASCII
+}
+
+if ($policy['MachinePolicy'] -eq 'Undefined' -and $policy['LocalMachine'] -notin @('RemoteSigned','Unrestricted','Bypass')) {
+    $oldLocalPolicy = $policy['LocalMachine']
+    Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force -ErrorAction Stop
+    Write-Host "LocalMachine policy was $oldLocalPolicy; now RemoteSigned. Record previous value for rollback."
+}
+if ((Get-ExecutionPolicy) -notin @('RemoteSigned','Unrestricted','Bypass')) { throw 'Effective policy still blocks PowerShell profiles; SSH shell unchanged.' }
+
+$key = 'HKLM:\SOFTWARE\OpenSSH'
+$shell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+if (-not (Test-Path -LiteralPath $shell -PathType Leaf)) { throw "Windows-supplied PowerShell not found: $shell" }
+$oldShell = (Get-ItemProperty -Path $key -Name DefaultShell -ErrorAction SilentlyContinue).DefaultShell
+if ($oldShell -ne $shell) {
+    $backup = Join-Path $env:ProgramData ('kmos\OpenSSH-before-DefaultShell-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.reg')
+    & reg.exe export 'HKLM\SOFTWARE\OpenSSH' $backup /y | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Registry backup failed; SSH shell unchanged.' }
+    New-ItemProperty -Path $key -Name DefaultShell -Value $shell -PropertyType String -Force | Out-Null
+    Write-Host "Prior DefaultShell: $oldShell (blank means unset); registry backup: $backup"
+}
+Write-Host "KMOS READY TO TEST locally and over a fresh SSH session; all-users profile: $profilePath; SSH shell: $shell"
+}
 ```
+
+The block preserves an existing PowerShell profile (backing it up before
+appending) and exports the OpenSSH registry key before changing `DefaultShell`.
+Record any previous execution policy and SSH shell values printed for
+rollback. Open a **new local Windows PowerShell** window and verify the KMOS
+Starship prompt. Then use a **fresh authenticated SSH login** and verify that
+it opens Windows PowerShell with the same prompt. If SSH still opens `cmd.exe`,
+restart `sshd` from the local console and reconnect; this can interrupt SSH
+sessions. Do not claim success until both fresh sessions have been checked.
+If either test fails, restore the VM checkpoint instead of repeatedly changing
+machine-wide settings. Windows Terminal's default profile choice is still a
+per-account preference.
 
 ---
 
