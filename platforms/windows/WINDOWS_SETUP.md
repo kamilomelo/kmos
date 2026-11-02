@@ -491,7 +491,7 @@ Run these on a fresh Windows 11 machine with internet access.
 ### Install Core Tools
 
 ```powershell
-winget install --id Git.Git --exact --source winget
+winget install --id Git.Git --exact --source winget --scope machine
 winget install --id GNU.Nano --exact --source winget --scope machine
 winget install --id KDE.Kate --exact --source winget --scope machine
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
