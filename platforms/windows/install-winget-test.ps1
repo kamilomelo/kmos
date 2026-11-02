@@ -58,6 +58,28 @@ function Install-MicrosoftFrameworks {
     }
 }
 
+function Install-WindowsAppRuntime18 {
+    param($Folder)
+    $archCode = (Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Architecture)
+    if ($archCode -eq 9) { $arch = 'x64' }
+    elseif ($archCode -eq 12) { $arch = 'arm64' }
+    else { throw "Unsupported Windows architecture: $archCode" }
+
+    $installer = Join-Path $Folder 'WindowsAppRuntimeInstall.exe'
+    $url = "https://aka.ms/windowsappsdk/1.8/1.8.260921001/windowsappruntimeinstall-$arch.exe"
+    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $installer -ErrorAction Stop
+    $signature = Get-AuthenticodeSignature -LiteralPath $installer
+    if ($signature.Status -ne 'Valid' -or
+        $signature.SignerCertificate.Subject -notmatch '(^|,)\s*CN=Microsoft Corporation(,|$)') {
+        throw 'Windows App Runtime installer is not validly signed by Microsoft.'
+    }
+    $process = Start-Process -FilePath $installer -ArgumentList '--quiet' -Wait -PassThru -ErrorAction Stop
+    if ($process.ExitCode -ne 0) { throw "Windows App Runtime installer failed with exit code $($process.ExitCode)." }
+    $runtime = Get-AppxPackage -Name Microsoft.WindowsAppRuntime.1.8 |
+        Where-Object { $_.Version -ge [version]'8000.616.304.0' -and $_.Architecture -eq $arch }
+    if (-not $runtime) { throw 'Windows App Runtime 1.8 did not register for this account at the required version.' }
+}
+
 $package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller
 $working = Find-WinGet $package
 if (-not $working -and $package) {
@@ -72,21 +94,43 @@ if (-not $working) {
     try {
         $bundle = Join-Path $work 'AppInstaller.msixbundle'
         Invoke-WebRequest -UseBasicParsing -Uri 'https://aka.ms/getwinget' -OutFile $bundle -ErrorAction Stop
-        try {
-            Add-AppxPackage -Path $bundle -ErrorAction Stop
-        } catch {
-            $reason = Get-DeploymentReason $_
-            if ($reason -notmatch '(?i)Microsoft\.(VCLibs|UI\.Xaml\.2\.8)' -or
-                $reason -notmatch '(?i)framework.{0,120}(could not be found|not found|minimum version)|depends on a framework') {
-                Write-Host $reason
-                throw 'App Installer failed for a reason other than the two known Microsoft frameworks.'
+        $handled = @{}
+        $approved = $false
+        $installed = $false
+        foreach ($attempt in 1..4) {
+            try {
+                Add-AppxPackage -Path $bundle -ErrorAction Stop
+                $installed = $true
+                break
+            } catch {
+                $reason = Get-DeploymentReason $_
+                if ($reason -notmatch '(?i)framework.{0,120}(could not be found|not found|minimum version)|depends on a framework') {
+                    Write-Host $reason
+                    throw 'App Installer deployment is blocked; see the Windows reason above.'
+                }
+                if ($reason -match '(?i)Microsoft\.WindowsAppRuntime\.1\.8') { $needed = 'Windows App Runtime 1.8' }
+                elseif ($reason -match '(?i)Microsoft\.VCLibs') { $needed = 'Microsoft VCLibs Desktop' }
+                elseif ($reason -match '(?i)Microsoft\.UI\.Xaml\.2\.8') { $needed = 'Microsoft UI.Xaml 2.8' }
+                else {
+                    Write-Host $reason
+                    throw 'App Installer needs another dependency; see the Windows reason above.'
+                }
+                if ($handled.ContainsKey($needed)) {
+                    Write-Host $reason
+                    throw "Installing $needed did not resolve the App Installer dependency."
+                }
+                if (-not $approved) {
+                    $answer = Read-Host "Install required Microsoft frameworks (starting with $needed) and retry? [y/N]"
+                    if ($answer -ne 'y') { throw 'Framework installation declined; WinGet not installed.' }
+                    $approved = $true
+                }
+                Write-Host "Installing $needed from Microsoft's official source."
+                if ($needed -eq 'Windows App Runtime 1.8') { Install-WindowsAppRuntime18 $work }
+                else { Install-MicrosoftFrameworks $work $reason }
+                $handled[$needed] = $true
             }
-            Write-Host 'App Installer requires Microsoft VCLibs Desktop and/or UI.Xaml 2.8.'
-            $answer = Read-Host 'Install those Microsoft framework packages and retry? [y/N]'
-            if ($answer -ne 'y') { throw 'Framework installation declined; WinGet not installed.' }
-            Install-MicrosoftFrameworks $work $reason
-            Add-AppxPackage -Path $bundle -ErrorAction Stop
         }
+        if (-not $installed) { throw 'App Installer did not install after the available Microsoft prerequisites.' }
         $package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller
         $working = Find-WinGet $package
     } finally {
