@@ -1,9 +1,5 @@
 # kmos Windows Setup
 
-**Do not run this guide yet.** Its appearance, lock-screen, Terminal and
-Starship steps still create or execute `.ps1` files on Windows, contrary to
-the no-`.ps1` requirement. The guide must be redesigned before another run.
-
 This guide is the manual Windows path for `kmos`. Use it from an elevated PowerShell session and run one phase at a time. The commands here are meant to be pasted directly, verified, and only repeated if a step did not complete. For a single-block alternative for Phases 1–3, see [win_fast_track.md](win_fast_track.md).
 
 ## Phase 1: Optional Disk Resize
@@ -512,13 +508,13 @@ if ($LASTEXITCODE -ne 0) { throw 'WinGet did not start; stop before installing t
 ### Install Core Tools
 
 ```powershell
-winget install --id Git.Git --exact --source winget --scope machine
+winget install --id Git.Git --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing Git.Git ($LASTEXITCODE); stop here." }
-winget install --id GNU.Nano --exact --source winget --scope machine
+winget install --id GNU.Nano --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing GNU.Nano ($LASTEXITCODE); stop here." }
-winget install --id KDE.Kate --exact --source winget --scope machine
+winget install --id KDE.Kate --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing KDE.Kate ($LASTEXITCODE); stop here." }
-winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
+winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing Mozilla.Firefox.DeveloperEdition ($LASTEXITCODE); stop here." }
 ```
 
@@ -615,6 +611,9 @@ The block creates helper scripts **on Windows under ProgramData at runtime**;
 no `.ps1` files are stored in this repository. Existing Terminal JSON comments
 and formatting may be removed when the settings are merged, but other settings
 are preserved and the original is backed up as `settings.json.kmos-backup`.
+The installing account runs the helper in a separate Windows PowerShell process
+with a process-scoped `Bypass`, matching the first-sign-in runner; it does not
+change machine-wide execution policy at this step.
 
 ```powershell
 & {
@@ -809,7 +808,9 @@ if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
             New-Item -ItemType Directory -Path (Split-Path -Parent $settings) -Force | Out-Null
             [IO.File]::WriteAllText($settings, '{}', ([Text.UTF8Encoding]::new($false)))
         }
-        & $apply
+        $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $apply
+        if ($LASTEXITCODE -ne 0) { throw "Terminal font setup failed for this account ($LASTEXITCODE)." }
         [IO.File]::WriteAllText($marker, (Get-Date -Format o))
     } else { Write-Warning 'Terminal is not yet registered for this account; sign-in setup will retry later.' }
 }
@@ -853,7 +854,7 @@ if ($policy['MachinePolicy'] -notin @('Undefined','RemoteSigned','Unrestricted',
     $policy['LocalMachine'] -eq 'AllSigned') { throw 'A restrictive higher-priority policy or AllSigned is present. No installation or SSH change attempted.' }
 
 if (-not (Get-Command starship.exe -ErrorAction SilentlyContinue)) {
-    winget install --id Starship.Starship --exact --source winget --scope machine
+    winget install --id Starship.Starship --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) { throw 'Starship installation failed; SSH shell unchanged.' }
 }
 $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')

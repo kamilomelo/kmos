@@ -1,11 +1,11 @@
 # KMOS Windows Fast Track: Phases 1–3 in one block
 
-**Do not run this block yet.** The existing setup still creates and executes
-`.ps1` files on Windows, contrary to the no-`.ps1` requirement. It is blocked
-before making any changes until those features are redesigned.
-
 An **alternative** to pasting each block from [windows_setup.md](windows_setup.md).
 Run the single block below in **local Windows PowerShell (Admin)**, not SSH.
+It checks WinGet and restrictive execution policies before disk or appearance
+changes. After initial disk, name, and optional Lenovo choices, no KMOS prompts
+are expected during installation; vendor installers and network failures can
+still interrupt it.
 It retains the optional disk-resize confirmation and prompts before the optional
 Lenovo app. It installs all six Kappa font families (including Kappa Page alpha)
 and sets one-time, editable Terminal defaults for every account. Do **not** run
@@ -28,10 +28,25 @@ merging the font defaults; JSON comments/formatting may be removed.
 
 ```powershell
 & {
-throw 'KMOS fast track is disabled: this version creates .ps1 files on Windows. Do not run it.'
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Use Windows PowerShell (powershell.exe).' }
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run Windows PowerShell as Administrator.' }
+$policyList = Get-ExecutionPolicy -List
+foreach ($scope in @('MachinePolicy','UserPolicy','Process','CurrentUser')) {
+    $policy = ($policyList | Where-Object Scope -eq $scope).ExecutionPolicy.ToString()
+    if ($policy -notin @('Undefined','RemoteSigned','Unrestricted','Bypass')) { throw "Execution policy $scope=$policy blocks unsigned KMOS helpers or PowerShell profiles; no setup changes made." }
+}
+if (($policyList | Where-Object Scope -eq 'LocalMachine').ExecutionPolicy -eq 'AllSigned') { throw 'LocalMachine AllSigned blocks unsigned PowerShell profiles; no setup changes made.' }
+if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+    Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction Stop
+}
+if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+    throw 'WinGet is unavailable. Install App Installer and open a new PowerShell window before continuing; no setup changes made.'
+}
+winget --version
+if ($LASTEXITCODE -ne 0) { throw 'WinGet did not start; no setup changes made.' }
+$lenovo = (Get-CimInstance Win32_ComputerSystem).Manufacturer -match 'Lenovo'
+$installLenovo = $lenovo -and (Read-Host 'Install optional Lenovo Commercial Vantage? [y/N]') -eq 'y'
 Write-Host 'PHASE 1: Optional disk resize (defaults to no change)'
 
 function Prompt-YesNo {
@@ -435,30 +450,18 @@ Write-Host "Registered $name for all accounts. At next sign-in, wait 30 seconds 
 Write-Host "To stop future runs: Remove-ItemProperty -Path '$runKey' -Name '$name' (Admin). This does not undo accounts already configured."
 }
 
-Write-Host 'PHASE 3: Check WinGet'
-
-if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
-    Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction Stop
-}
-if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
-    throw 'WinGet is unavailable. Install App Installer and open a new PowerShell window before continuing.'
-}
-winget --version
-if ($LASTEXITCODE -ne 0) { throw 'WinGet did not start; stop before installing tools.' }
-
 Write-Host 'PHASE 3: Install core tools'
 
-winget install --id Git.Git --exact --source winget --scope machine
+winget install --id Git.Git --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing Git.Git ($LASTEXITCODE); stop here." }
-winget install --id GNU.Nano --exact --source winget --scope machine
+winget install --id GNU.Nano --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing GNU.Nano ($LASTEXITCODE); stop here." }
-winget install --id KDE.Kate --exact --source winget --scope machine
+winget install --id KDE.Kate --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing KDE.Kate ($LASTEXITCODE); stop here." }
-winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
+winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing Mozilla.Firefox.DeveloperEdition ($LASTEXITCODE); stop here." }
 
-$lenovo = (Get-CimInstance Win32_ComputerSystem).Manufacturer -match 'Lenovo'
-if ($lenovo -and (Read-Host "Optional Lenovo Commercial Vantage? [y/N]") -eq "y") {
+if ($installLenovo) {
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) { throw "Lenovo Commercial Vantage installation failed ($LASTEXITCODE)." }
 }
@@ -695,7 +698,9 @@ if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
             New-Item -ItemType Directory -Path (Split-Path -Parent $settings) -Force | Out-Null
             [IO.File]::WriteAllText($settings, '{}', ([Text.UTF8Encoding]::new($false)))
         }
-        & $apply
+        $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $apply
+        if ($LASTEXITCODE -ne 0) { throw "Terminal font setup failed for this account ($LASTEXITCODE)." }
         [IO.File]::WriteAllText($marker, (Get-Date -Format o))
     } else { Write-Warning 'Terminal is not yet registered for this account; sign-in setup will retry later.' }
 }
@@ -715,7 +720,7 @@ if ($policy['MachinePolicy'] -notin @('Undefined','RemoteSigned','Unrestricted',
     $policy['LocalMachine'] -eq 'AllSigned') { throw 'A restrictive higher-priority policy or AllSigned is present. No installation or SSH change attempted.' }
 
 if (-not (Get-Command starship.exe -ErrorAction SilentlyContinue)) {
-    winget install --id Starship.Starship --exact --source winget --scope machine
+    winget install --id Starship.Starship --exact --source winget --scope machine --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) { throw 'Starship installation failed; SSH shell unchanged.' }
 }
 $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
