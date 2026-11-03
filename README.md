@@ -87,7 +87,8 @@ old account. Home deletion requires separate approval.
   board-specific Arch Linux ARM workflow, not the x86 installer.
 - [Rocky Linux 10 Minimal](./platforms/rockylinux/kmos-rockylinux-install.sh):
   separate post-install workflow.
-- [Windows](./platforms/windows/windows_setup.md): manual guide.
+- [Windows](./platforms/windows/windows_setup.md): manual guide;
+  [fast track](./platforms/windows/win_fast_track.md) for Phases 1–3.
 
 The fresh x86_64 installer and KDE login were tested in isolated VMs. See the
 [v1.1.1 release notes](./docs/releases/v1.1.1.md) for scope and limits.
