@@ -163,4 +163,83 @@ Write-Host "Applied Kappa Mono, size 12 to $path; original backed up at $backup"
 
 Then reopen Windows Terminal for **this account** and check Settings → Profiles
 → Defaults → Appearance. The existing new-user account will not change from
-this test; it needs the separate sign-in automation after this merge succeeds.
+this test; it needs the separate sign-in automation below.
+
+## One-time default for every other account (VM test)
+
+Run this **third block** from the elevated `itadmin` SSH session **after** the
+current-account test succeeded. It reuses the tested second Markdown snippet
+from a pinned Git commit, with a SHA-256 check; it does not download a `.ps1`
+file from the repository. It creates a protected script **on the Windows VM at
+runtime** so a Windows sign-in can apply that preference in the user's own
+context. The machine-wide sign-in entry keeps retrying until each account has
+succeeded, then the user's marker prevents any later reset of their choice.
+Other Terminal settings are backed up and preserved, though comments may be
+removed. Before testing, close Terminal in the new account and sign out.
+
+```powershell
+& {
+$ErrorActionPreference = 'Stop'
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run as Administrator.' }
+$url = 'https://raw.githubusercontent.com/kamilomelo/kmos/77ee34d/platforms/windows/temporary_font_test.md'
+$expected = '5F1E6D145F62EB9B9F31005434A3F0892A16F7C16CF1223B9CC4403203713146'
+$download = Join-Path $env:TEMP 'kmos-tested-terminal-snippet.md'
+Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $download -ErrorAction Stop
+if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -ne $expected) { throw 'Tested Markdown snippet checksum mismatch; no sign-in entry registered.' }
+$text = [IO.File]::ReadAllText($download)
+$blocks = [regex]::Matches($text, '(?ms)^```powershell\r?\n(.*?)^```[ \t]*$')
+if ($blocks.Count -ne 2) { throw "Expected exactly two snippets in pinned Markdown; got $($blocks.Count)" }
+$code = $blocks[1].Groups[1].Value.TrimEnd("`r", "`n")
+if (-not $code.StartsWith("& {`n") -or -not $code.EndsWith('}')) { throw 'Unexpected Terminal snippet; no sign-in entry registered.' }
+
+$dir = Join-Path $env:ProgramData 'kmos\terminal-font'
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
+& icacls.exe $dir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-11:(OI)(CI)RX' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Could not protect Terminal font runtime directory; no sign-in entry registered.' }
+$apply = Join-Path $dir 'Apply-KmosTerminalFont.ps1'
+if ((Test-Path -LiteralPath $apply) -and (Get-Content -LiteralPath $apply -Raw).TrimEnd("`r", "`n") -ne $code) { throw "Different runtime script already exists: $apply" }
+if (-not (Test-Path -LiteralPath $apply)) { Set-Content -LiteralPath $apply -Value $code -Encoding UTF8 -ErrorAction Stop }
+
+$runner = Join-Path $dir 'Start-KmosTerminalFont.ps1'
+$runnerCode = @'
+$ErrorActionPreference = 'Stop'
+$marker = Join-Path $env:LOCALAPPDATA 'kmos-terminal-font-applied'
+if (Test-Path -LiteralPath $marker -PathType Leaf) { return }
+$log = Join-Path $env:LOCALAPPDATA 'kmos-terminal-font.log'
+try {
+    Start-Sleep -Seconds 30
+    if (-not (Get-AppxPackage -Name Microsoft.WindowsTerminal -ErrorAction SilentlyContinue)) { throw 'Windows Terminal package not yet registered for this account; will retry at next sign-in.' }
+    $settings = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
+    if (-not (Test-Path -LiteralPath $settings -PathType Leaf)) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $settings) -Force | Out-Null
+        [IO.File]::WriteAllText($settings, '{}', ([Text.UTF8Encoding]::new($false)))
+    }
+    & 'C:\ProgramData\kmos\terminal-font\Apply-KmosTerminalFont.ps1' *>> $log
+    if (-not $?) { throw 'Terminal font merge failed.' }
+    [IO.File]::WriteAllText($marker, (Get-Date -Format o))
+    Add-Content -LiteralPath $log -Value 'KMOS Terminal font applied once.'
+} catch {
+    Add-Content -LiteralPath $log -Value "KMOS Terminal font failed at $(Get-Date -Format o): $_"
+    exit 1
+}
+'@
+if ((Test-Path -LiteralPath $runner) -and (Get-Content -LiteralPath $runner -Raw).TrimEnd("`r", "`n") -ne $runnerCode.TrimEnd("`r", "`n")) { throw "Different runtime runner already exists: $runner" }
+if (-not (Test-Path -LiteralPath $runner)) { Set-Content -LiteralPath $runner -Value $runnerCode -Encoding UTF8 -ErrorAction Stop }
+
+$runKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+$command = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\ProgramData\kmos\terminal-font\Start-KmosTerminalFont.ps1"'
+$existing = (Get-ItemProperty -Path $runKey -Name 'kmos.terminalFont' -ErrorAction SilentlyContinue).'kmos.terminalFont'
+if ($existing -and $existing -ne $command) { throw 'A different kmos.terminalFont sign-in entry exists; not overwriting.' }
+if (-not $existing) { New-ItemProperty -Path $runKey -Name 'kmos.terminalFont' -Value $command -PropertyType String -ErrorAction Stop | Out-Null }
+if ((Get-ItemProperty -Path $runKey -Name 'kmos.terminalFont').'kmos.terminalFont' -ne $command) { throw 'Sign-in entry could not be verified.' }
+Write-Host 'Automatic one-time Terminal font setup registered for existing and future users.'
+}
+```
+
+Sign out the **new user** and sign back in. Wait at least 30 seconds, then
+reopen Terminal and check its defaults and visible font. From **that new user**
+in PowerShell, the log `%LOCALAPPDATA%\kmos-terminal-font.log` should end with
+`KMOS Terminal font applied once.` and
+`%LOCALAPPDATA%\kmos-terminal-font-applied` should exist. If the log reports
+a failure, share its text; **do not repeatedly edit the new user's settings**.
+After verification the temporary page can be folded into the two setup guides.
