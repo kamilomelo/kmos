@@ -514,16 +514,14 @@ winget install --id GNU.Nano --exact --source winget --scope machine
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing GNU.Nano ($LASTEXITCODE); stop here." }
 winget install --id KDE.Kate --exact --source winget --scope machine
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing KDE.Kate ($LASTEXITCODE); stop here." }
-winget install --id 9N41MSQ1WNM8 --exact --source msstore --accept-package-agreements --accept-source-agreements
-if ($LASTEXITCODE -ne 0) { throw "Okular Store installation failed ($LASTEXITCODE); stop here." }
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
 if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing Mozilla.Firefox.DeveloperEdition ($LASTEXITCODE); stop here." }
 ```
 
-Okular uses KDE's recommended Microsoft Store distribution instead of the
-`KDE.Okular` WinGet-source manifest, whose installer URL returned HTTP 404 in
-the VM. The Store install may be per-account; verify it in additional users
-before relying on fleet-wide availability.
+Okular is not included in this unattended core-tool list: the `KDE.Okular`
+WinGet-source installer returned HTTP 404 in the VM, and the alternative
+Microsoft Store app has not been verified for every account. Do not treat
+Okular as installed by this guide.
 
 #### Optional: Lenovo Commercial Vantage
 
