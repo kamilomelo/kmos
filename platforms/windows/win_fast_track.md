@@ -780,6 +780,7 @@ Write-Host "KMOS READY TO TEST locally and over a fresh SSH session; all-users p
 Write-Host 'Phases 1-3 finished. If you renamed the computer, Restart to apply the name.'
 Write-Host 'Sign out and back in to apply the current account lock screen; allow at least 30 seconds after sign-in.'
 Write-Host 'Verify a fresh local PowerShell and authenticated SSH session both show the KMOS Starship prompt.'
-Write-Host 'Kappa fonts are installed for all users; Terminal defaults are applied once per account at sign-in. Wait 30 seconds and verify in Terminal.'
+Write-Host 'Kappa fonts are installed for all users. At sign-in the appearance, lock-screen and Terminal helpers each wait 30 seconds; wait for completed logs, not only the timer.'
+Write-Host 'If first sign-in is interrupted by a Windows restart, sign in again so unfinished helpers retry. Then verify Terminal defaults (Kappa Mono, size 12).'
 }
 ```

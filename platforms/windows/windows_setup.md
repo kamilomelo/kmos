@@ -802,11 +802,16 @@ if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
 }
 ```
 
-After an account signs in, wait at least 30 seconds, then reopen Terminal and
-check **Profiles → Defaults → Appearance** for Kappa Mono, size 12. If it did
-not apply, inspect `%LOCALAPPDATA%\kmos-terminal-font.log` for that account;
-the sign-in action retries until successful. Individual profiles with their
-own font overrides may display another font.
+On first sign-in, appearance, lock-screen, and Terminal helpers start
+independently and each waits 30 seconds. Allow Windows to finish creating the
+profile, then wait for their **completed** log entries before checking the
+result; 30 seconds alone does not guarantee completion. None downloads fonts
+or initiates a restart at sign-in. If Windows restarts mid-run, a helper without
+its completion marker retries at the next sign-in; the Terminal helper may
+have no log at all if interrupted during its initial delay. Reopen Terminal
+and check **Profiles → Defaults → Appearance** for Kappa Mono, size 12; if it
+did not apply, inspect `%LOCALAPPDATA%\kmos-terminal-font.log` for that account.
+Individual profiles with their own font overrides may display another font.
 
 ### Configure Starship for Windows PowerShell and SSH
 
@@ -990,15 +995,16 @@ Add-LocalGroupMember -Group 'Administrators' -Member $username
 ```
 
 After creating the user:
-- sign in once as that user; allow several minutes for Windows to create the
-  profile, then at least 30 seconds for the appearance and lock-screen helpers
+- sign in as that user; allow several minutes for Windows to create the
+  profile, then wait for completion of all three helpers; if Windows restarts
+  during first sign-in, sign in again so interrupted helpers can retry
 - verify the editable KMOS desktop wallpaper and dark mode; if missing, check
   `%LOCALAPPDATA%\kmos-appearance.log` rather than changing it manually
 - verify the KMOS lock-screen image with **Win+L**, and verify Settings shows
   **Picture** with an editable selector; if missing, check
   `%LOCALAPPDATA%\kmos-lockscreen.log`
 - open **Windows Terminal → Settings → Profiles → Defaults → Appearance** and
-  verify **Kappa Mono**, size **12**, after at least 30 seconds; if missing,
+  verify **Kappa Mono**, size **12**, after its log shows completion; if missing,
   check `%LOCALAPPDATA%\kmos-terminal-font.log` for that account (the font
   files are system-wide, while this editable preference is applied at sign-in)
 - open a fresh Windows PowerShell session and verify the KMOS Starship prompt
