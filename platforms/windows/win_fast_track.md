@@ -8,16 +8,19 @@ and sets one-time, editable Terminal defaults for every account. Do **not** run
 it unattended. A requested installer restart stops the run; sign-out/sign-in
 and any restart for a computer rename happen **after** this block. Save a
 rollback point before changing the machine.
-If it stops partway through, resume at the named step in the main guide; do
-not blindly rerun the disk-resize step or reapply machine-wide settings.
+If it stops partway through, paste this same block again and choose the failed
+step at its first prompt; confirm only when all preceding steps completed. It
+skips disk resize, name, and appearance on a resume. Never choose `fresh` to
+recover from a partial run.
 
 This consolidated sequence has been assembled and checked against the guide,
 but **has not yet been run end-to-end on Windows**. The font and new-user
 Terminal steps worked separately in the QEMU VM. Its WinGet step still
 requires a working App Installer; its OpenSSH MSI is a Microsoft
 **Preview/non-production-ready** build requiring manual security updates.
-The current WinGet `KDE.Okular` manifest has an x64 machine-scope installer
-but no ARM64 installer; the fast block stops if that installation fails.
+Okular uses KDE's recommended Microsoft Store distribution instead of the
+WinGet-source manifest that returned HTTP 404 in the VM. The Store app may
+require per-account registration; check it in a fresh account.
 Its font step writes helper scripts on Windows at runtime, but there are no
 `.ps1` files in this repository. It backs up existing Terminal settings before
 merging the font defaults; JSON comments/formatting may be removed.
@@ -27,7 +30,14 @@ merging the font defaults; JSON comments/formatting may be removed.
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Use Windows PowerShell (powershell.exe).' }
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run Windows PowerShell as Administrator.' }
+$stages = @('fresh','git','nano','kate','okular','firefox','lenovo','ssh','fonts','starship')
+$stage = (Read-Host 'Start step [Enter=fresh; or git/nano/kate/okular/firefox/lenovo/ssh/fonts/starship]').Trim().ToLowerInvariant()
+if (-not $stage) { $stage = 'fresh' }
+$position = [array]::IndexOf($stages, $stage)
+if ($position -lt 0) { throw "Unknown start step: $stage" }
+if ($position -gt 0 -and (Read-Host "Skip steps before $stage? Type RESUME to confirm") -cne 'RESUME') { throw 'No steps run; resume not confirmed.' }
 
+if ($position -eq 0) {
 Write-Host 'PHASE 1: Optional disk resize (defaults to no change)'
 
 function Prompt-YesNo {
@@ -430,6 +440,7 @@ if (-not $existing) {
 Write-Host "Registered $name for all accounts. At next sign-in, wait 30 seconds and inspect %LOCALAPPDATA%\kmos-lockscreen.log."
 Write-Host "To stop future runs: Remove-ItemProperty -Path '$runKey' -Name '$name' (Admin). This does not undo accounts already configured."
 }
+}
 
 Write-Host 'PHASE 3: Check WinGet'
 
@@ -444,23 +455,36 @@ if ($LASTEXITCODE -ne 0) { throw 'WinGet did not start; stop before installing t
 
 Write-Host 'PHASE 3: Install core tools'
 
+if ($position -le 1) {
 winget install --id Git.Git --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing Git.Git; stop here.' }
+if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing Git.Git ($LASTEXITCODE); stop here." }
+}
+if ($position -le 2) {
 winget install --id GNU.Nano --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing GNU.Nano; stop here.' }
+if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing GNU.Nano ($LASTEXITCODE); stop here." }
+}
+if ($position -le 3) {
 winget install --id KDE.Kate --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing KDE.Kate; stop here.' }
-winget install --id KDE.Okular --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing KDE.Okular; stop here.' }
+if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing KDE.Kate ($LASTEXITCODE); stop here." }
+}
+if ($position -le 4) {
+winget install --id 9N41MSQ1WNM8 --exact --source msstore --accept-package-agreements --accept-source-agreements
+if ($LASTEXITCODE -ne 0) { throw "Okular Store installation failed ($LASTEXITCODE); stop here." }
+}
+if ($position -le 5) {
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing Mozilla.Firefox.DeveloperEdition; stop here.' }
+if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing Mozilla.Firefox.DeveloperEdition ($LASTEXITCODE); stop here." }
+}
 
+if ($position -le 6) {
 $lenovo = (Get-CimInstance Win32_ComputerSystem).Manufacturer -match 'Lenovo'
 if ($lenovo -and (Read-Host "Optional Lenovo Commercial Vantage? [y/N]") -eq "y") {
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
-    if ($LASTEXITCODE -ne 0) { throw 'Lenovo Commercial Vantage installation failed.' }
+    if ($LASTEXITCODE -ne 0) { throw "Lenovo Commercial Vantage installation failed ($LASTEXITCODE)." }
+}
 }
 
+if ($position -le 7) {
 Write-Host 'PHASE 3: OpenSSH'
 
 & {
@@ -501,7 +525,9 @@ $client = Get-Command ssh.exe -ErrorAction Stop
 if (-not (Test-NetConnection -ComputerName localhost -Port 22 -InformationLevel Quiet)) { throw 'SSH server is not listening on port 22.' }
 Write-Host "SSH READY locally: client $($client.Source); server listening on port 22."
 }
+}
 
+if ($position -le 8) {
 Write-Host 'PHASE 3: Install all Kappa fonts and configure Terminal defaults'
 
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run as Administrator.' }
@@ -696,6 +722,7 @@ if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
         & $apply
         [IO.File]::WriteAllText($marker, (Get-Date -Format o))
     } else { Write-Warning 'Terminal is not yet registered for this account; sign-in setup will retry later.' }
+}
 }
 
 Write-Host 'PHASE 3: Starship for Windows PowerShell and SSH'

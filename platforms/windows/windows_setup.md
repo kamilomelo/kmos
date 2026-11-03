@@ -509,20 +509,21 @@ if ($LASTEXITCODE -ne 0) { throw 'WinGet did not start; stop before installing t
 
 ```powershell
 winget install --id Git.Git --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing Git.Git; stop here.' }
+if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing Git.Git ($LASTEXITCODE); stop here." }
 winget install --id GNU.Nano --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing GNU.Nano; stop here.' }
+if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing GNU.Nano ($LASTEXITCODE); stop here." }
 winget install --id KDE.Kate --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing KDE.Kate; stop here.' }
-winget install --id KDE.Okular --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing KDE.Okular; stop here.' }
+if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing KDE.Kate ($LASTEXITCODE); stop here." }
+winget install --id 9N41MSQ1WNM8 --exact --source msstore --accept-package-agreements --accept-source-agreements
+if ($LASTEXITCODE -ne 0) { throw "Okular Store installation failed ($LASTEXITCODE); stop here." }
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
-if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing Mozilla.Firefox.DeveloperEdition; stop here.' }
+if ($LASTEXITCODE -ne 0) { throw "WinGet failed installing Mozilla.Firefox.DeveloperEdition ($LASTEXITCODE); stop here." }
 ```
 
-The current `KDE.Okular` WinGet manifest supplies an x64 machine-wide
-installer, but no ARM64 installer. On ARM64, stop rather than assuming this
-step succeeded; this package path has not been tested there.
+Okular uses KDE's recommended Microsoft Store distribution instead of the
+`KDE.Okular` WinGet-source manifest, whose installer URL returned HTTP 404 in
+the VM. The Store install may be per-account; verify it in additional users
+before relying on fleet-wide availability.
 
 #### Optional: Lenovo Commercial Vantage
 
@@ -532,7 +533,7 @@ non-Lenovo hardware.
 
 ```powershell
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
-if ($LASTEXITCODE -ne 0) { throw 'Lenovo Commercial Vantage installation failed.' }
+if ($LASTEXITCODE -ne 0) { throw "Lenovo Commercial Vantage installation failed ($LASTEXITCODE)." }
 ```
 
 ### Install and Verify OpenSSH
