@@ -33,10 +33,11 @@ $work = Join-Path $env:TEMP 'kmos-fonts'
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 $count = 0
 foreach ($family in $families) {
-    $items = @(Invoke-RestMethod -Uri "$api/$family/ttf?ref=main" -ErrorAction Stop)
+    $items = Invoke-RestMethod -Uri "$api/$family/ttf?ref=main" -ErrorAction Stop
     $files = @($items | Where-Object { $_.type -eq 'file' -and $_.name -match '\.ttf$' -and $_.download_url })
     if (-not $files.Count) { throw "No TTF files for $family" }
     foreach ($item in $files) {
+        if ($item.name -isnot [string]) { throw "Unexpected GitHub API response for $family (filename is not a string)" }
         if ($item.name -notmatch '^[A-Za-z0-9._-]+\.ttf$') { throw "Unexpected font filename: $($item.name)" }
         $source = Join-Path $work $item.name
         $target = Join-Path $dir $item.name
