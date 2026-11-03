@@ -1,5 +1,9 @@
 # KMOS Windows Fast Track: Phases 1–3 in one block
 
+**Do not run this block yet.** The existing setup still creates and executes
+`.ps1` files on Windows, contrary to the no-`.ps1` requirement. It is blocked
+before making any changes until those features are redesigned.
+
 An **alternative** to pasting each block from [windows_setup.md](windows_setup.md).
 Run the single block below in **local Windows PowerShell (Admin)**, not SSH.
 It retains the optional disk-resize confirmation and prompts before the optional
@@ -24,6 +28,7 @@ merging the font defaults; JSON comments/formatting may be removed.
 
 ```powershell
 & {
+throw 'KMOS fast track is disabled: this version creates .ps1 files on Windows. Do not run it.'
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Use Windows PowerShell (powershell.exe).' }
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run Windows PowerShell as Administrator.' }

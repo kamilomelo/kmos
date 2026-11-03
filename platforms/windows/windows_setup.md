@@ -1,5 +1,9 @@
 # kmos Windows Setup
 
+**Do not run this guide yet.** Its appearance, lock-screen, Terminal and
+Starship steps still create or execute `.ps1` files on Windows, contrary to
+the no-`.ps1` requirement. The guide must be redesigned before another run.
+
 This guide is the manual Windows path for `kmos`. Use it from an elevated PowerShell session and run one phase at a time. The commands here are meant to be pasted directly, verified, and only repeated if a step did not complete. For a single-block alternative for Phases 1–3, see [win_fast_track.md](win_fast_track.md).
 
 ## Phase 1: Optional Disk Resize
