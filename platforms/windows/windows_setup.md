@@ -514,9 +514,15 @@ winget install --id GNU.Nano --exact --source winget --scope machine
 if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing GNU.Nano; stop here.' }
 winget install --id KDE.Kate --exact --source winget --scope machine
 if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing KDE.Kate; stop here.' }
+winget install --id KDE.Okular --exact --source winget --scope machine
+if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing KDE.Okular; stop here.' }
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
 if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing Mozilla.Firefox.DeveloperEdition; stop here.' }
 ```
+
+The current `KDE.Okular` WinGet manifest supplies an x64 machine-wide
+installer, but no ARM64 installer. On ARM64, stop rather than assuming this
+step succeeded; this package path has not been tested there.
 
 #### Optional: Lenovo Commercial Vantage
 

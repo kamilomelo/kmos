@@ -16,6 +16,8 @@ but **has not yet been run end-to-end on Windows**. The font and new-user
 Terminal steps worked separately in the QEMU VM. Its WinGet step still
 requires a working App Installer; its OpenSSH MSI is a Microsoft
 **Preview/non-production-ready** build requiring manual security updates.
+The current WinGet `KDE.Okular` manifest has an x64 machine-scope installer
+but no ARM64 installer; the fast block stops if that installation fails.
 Its font step writes helper scripts on Windows at runtime, but there are no
 `.ps1` files in this repository. It backs up existing Terminal settings before
 merging the font defaults; JSON comments/formatting may be removed.
@@ -448,6 +450,8 @@ winget install --id GNU.Nano --exact --source winget --scope machine
 if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing GNU.Nano; stop here.' }
 winget install --id KDE.Kate --exact --source winget --scope machine
 if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing KDE.Kate; stop here.' }
+winget install --id KDE.Okular --exact --source winget --scope machine
+if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing KDE.Okular; stop here.' }
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
 if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing Mozilla.Firefox.DeveloperEdition; stop here.' }
 
