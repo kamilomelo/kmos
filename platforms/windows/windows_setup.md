@@ -195,7 +195,7 @@ if (-not $newName -or $newName -eq $currentName) {
 $wallpaperDir = Join-Path $env:PUBLIC 'Pictures\kmos'
 $wallpaperPath = Join-Path $wallpaperDir 'kmos-wallpaper.png'
 New-Item -ItemType Directory -Path $wallpaperDir -Force | Out-Null
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/wallpapers/kmos-wallpaper.png' -OutFile $wallpaperPath
+Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/kamilomelo/kmos/main/platforms/windows/assets/wallpapers/kmos-wallpaper.png' -OutFile $wallpaperPath
 ```
 
 Shared wallpaper path:
@@ -509,9 +509,13 @@ if ($LASTEXITCODE -ne 0) { throw 'WinGet did not start; stop before installing t
 
 ```powershell
 winget install --id Git.Git --exact --source winget --scope machine
+if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing Git.Git; stop here.' }
 winget install --id GNU.Nano --exact --source winget --scope machine
+if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing GNU.Nano; stop here.' }
 winget install --id KDE.Kate --exact --source winget --scope machine
+if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing KDE.Kate; stop here.' }
 winget install --id Mozilla.Firefox.DeveloperEdition --exact --source winget --scope machine
+if ($LASTEXITCODE -ne 0) { throw 'WinGet failed installing Mozilla.Firefox.DeveloperEdition; stop here.' }
 ```
 
 #### Optional: Lenovo Commercial Vantage
@@ -522,6 +526,7 @@ non-Lenovo hardware.
 
 ```powershell
 winget install --id 9NR5B8GVVM13 --exact --source msstore --accept-package-agreements --accept-source-agreements
+if ($LASTEXITCODE -ne 0) { throw 'Lenovo Commercial Vantage installation failed.' }
 ```
 
 ### Install and Verify OpenSSH
