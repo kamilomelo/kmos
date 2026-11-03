@@ -150,9 +150,12 @@ if ($check.profiles.defaults.font.face -ne 'Kappa Mono' -or $check.profiles.defa
 $backup = "$path.kmos-backup"
 if (-not (Test-Path -LiteralPath $backup)) { Copy-Item -LiteralPath $path -Destination $backup -ErrorAction Stop }
 $temp = "$path.kmos-$PID.tmp"
+$replaceBackup = "$path.kmos-replace-$PID.bak"
+if (Test-Path -LiteralPath $replaceBackup) { throw "Temporary replacement backup already exists; not overwriting: $replaceBackup" }
 try {
     [IO.File]::WriteAllText($temp, $updated, ([Text.UTF8Encoding]::new($false)))
-    [IO.File]::Replace($temp, $path, $null)
+    [IO.File]::Replace($temp, $path, $replaceBackup)
+    Remove-Item -LiteralPath $replaceBackup -ErrorAction SilentlyContinue
 } finally { Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue }
 Write-Host "Applied Kappa Mono, size 12 to $path; original backed up at $backup"
 }
