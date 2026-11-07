@@ -2224,6 +2224,39 @@ verify_krub_menu_policy() {
   fi
 }
 
+hint_krub_arch_efi_search() {
+  local config=$1 boot_uuid=$2 hinted
+  [[ "$boot_uuid" =~ ^[[:xdigit:]]{4}-[[:xdigit:]]{4}$ ]] \
+    || die "Unexpected EFI filesystem UUID: $boot_uuid"
+
+  # GRUB's unhinted UUID search can probe a slow/unresponsive second disk for
+  # minutes before reaching /boot. The current GRUB root is the EFI partition
+  # that supplied this menu; prefer it, but keep UUID matching and fallback
+  # search so a changed firmware disk order does not strand the machine.
+  hinted=$(mktemp "$config.kmos-hint.XXXXXXXX") || die 'Could not stage EFI search hints.'
+  if ! awk -v uuid="$boot_uuid" '
+    /^### BEGIN \/etc\/grub.d\/10_linux ###$/ { linux=1 }
+    /^### END \/etc\/grub.d\/10_linux ###$/ { linux=0 }
+    linux && $1 == "search" && $2 == "--no-floppy" && $3 == "--fs-uuid" && $4 == "--set=root" && $NF == uuid {
+      if ($0 !~ /--hint-efi=/) {
+        sub(/--set=root /, "--set=root --hint-efi=$root ")
+      }
+      count++
+    }
+    { print }
+    END {
+      if (count < 2) {
+        print "Expected at least two Arch EFI searches; refusing to change the generated menu." > "/dev/stderr"
+        exit 1
+      }
+    }
+  ' "$config" > "$hinted"; then
+    rm -f -- "$hinted"
+    die 'Could not safely hint the Arch EFI searches; existing menu preserved.'
+  fi
+  mv -- "$hinted" "$config" || die 'Could not activate the hinted staged menu.'
+}
+
 inspect_krub_menu() {
   local root=${1:-} config defaults
   config="$root/boot/grub/grub.cfg"
@@ -2305,7 +2338,7 @@ verify_krub_mounts() {
 }
 
 install_krub_bootloader() {
-  local config="$MOUNT_POINT/boot/grub/grub.cfg" staged backup generation_log
+  local config="$MOUNT_POINT/boot/grub/grub.cfg" staged backup generation_log boot_uuid
   verify_krub_mounts
   configure_krub_menu_policy
   write_boot_menu_krub_entry
@@ -2329,6 +2362,9 @@ install_krub_bootloader() {
   fi
   cat "$generation_log" >&2
   verify_krub_menu_policy "$staged"
+  boot_uuid=$(blkid -o value -s UUID "$BOOT_PARTITION") \
+    || die 'Cannot identify the EFI filesystem for the krub search hint.'
+  hint_krub_arch_efi_search "$staged" "$boot_uuid"
   if [[ "$INCLUDE_WINDOWS" == yes ]] \
     && ! grep -Fq "search --no-floppy --fs-uuid --set=root $WINDOWS_BOOT_UUID" "$staged"; then
     die 'Windows EFI filesystem search is missing from the staged menu; the existing menu was preserved.'
