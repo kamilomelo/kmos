@@ -15,10 +15,10 @@ rollback point before changing the machine.
 If it stops partway through, resume at the named step in the main guide; do
 not blindly rerun the disk-resize step or reapply machine-wide settings.
 
-This consolidated sequence has been assembled and checked against the guide,
-but **has not yet been run end-to-end on Windows**. The font and new-user
-Terminal steps worked separately in the QEMU VM. Its WinGet step still
-requires a working App Installer; its OpenSSH MSI is a Microsoft
+The updated fast track was reported to work on one production Windows computer;
+reliability across other machines and ISOs remains unverified. The font and
+new-user Terminal steps also worked separately in the QEMU VM. Its WinGet step
+still requires a working App Installer; its OpenSSH MSI is a Microsoft
 **Preview/non-production-ready** build requiring manual security updates.
 Okular is not installed by this block: its WinGet-source installer returned
 HTTP 404 in the VM, and the Store version is not verified for every account.
